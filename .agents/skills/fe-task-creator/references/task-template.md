@@ -8,21 +8,25 @@ READY
 
 ## Task ID
 fe-XX
-<!-- Use lowercase fe-XX for the task directory and task file. -->
+<!-- For Linear-backed tasks, replace with the Linear issue key or number, for example RUK-123. -->
+<!-- Use lowercase fe-XX only for local task directories and local task files. -->
 
 ## Task File
 .agents/tasks/<backlog|todo>/fe-XX/fe-XX.md
 <!-- Allowed canonical paths: .agents/tasks/backlog/fe-XX/fe-XX.md or .agents/tasks/todo/fe-XX/fe-XX.md -->
-<!-- All report, artifact, and deliverable paths must use the same root as Task File. -->
+<!-- For Linear-backed tasks, replace with the Linear issue key or number after creation, not a local fe-XX/fe-XX.md path. -->
+<!-- Report, artifact, and deliverable paths must use one planned execution root. For Linear-backed tasks, replace fe-XX with the Linear issue key or number. -->
 
 ## Task Path Status
 canonical
+<!-- linear: task is stored in Linear through the bundled Linear plugin. -->
+<!-- When linear, Task ID and Task File must both be the Linear issue key or number. -->
 <!-- canonical: Task File matches .agents/tasks/backlog/fe-XX/fe-XX.md or .agents/tasks/todo/fe-XX/fe-XX.md -->
 <!-- override-approved: the user explicitly requested a non-canonical path and the full task pack lives under that override root -->
 
 ### Override Reason
 None
-<!-- Remove this subsection entirely when Task Path Status = canonical. -->
+<!-- Remove this subsection entirely when Task Path Status = canonical or linear. -->
 <!-- Keep it only when Task Path Status = override-approved. -->
 
 ## Task Type
@@ -234,7 +238,7 @@ None
 ### fe-architect
 - Goal: {what the architect must do}
 - Deliverable: .agents/tasks/<backlog|todo>/fe-XX/reports/architecture_plan.md
-<!-- Use the same root as Task File: backlog or todo. -->
+<!-- Use one consistent planned task root: backlog or todo. -->
 
 ### fe-dev
 - Goal: {what the developer must do}
@@ -281,7 +285,8 @@ None
 - .agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md
 - .agents/tasks/<backlog|todo>/fe-XX/artifacts/screenshots/*
 - .agents/tasks/<backlog|todo>/fe-XX/artifacts/evidence/*
-<!-- All paths above must use the same root as Task File. -->
+<!-- For Linear-backed tasks, replace the local task file deliverable with the Linear issue key or number. -->
+<!-- All local paths above must use one consistent planned task root. -->
 
 ## Stage Outputs
 - fe-architect -> .agents/tasks/<backlog|todo>/fe-XX/reports/architecture_plan.md
@@ -290,6 +295,7 @@ None
 - fe-ui-inspector -> .agents/tasks/<backlog|todo>/fe-XX/reports/ui_inspector_report.md
 - fe-ux-reviewer -> .agents/tasks/<backlog|todo>/fe-XX/reports/ux_report.md
 - fe-gate -> .agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md
+<!-- For Linear-backed tasks, replace fe-XX in local report and artifact paths with the Linear issue key or number. -->
 <!-- Do not mix backlog and todo roots inside the same task pack. -->
 
 ## Dependencies

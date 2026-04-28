@@ -1,24 +1,38 @@
 ---
 name: fe-task-creator
-description: This skill should be used when the agent needs to create a frontend task file for maintmode-ui with FE task IDs, project-specific source-of-truth checks, explicit frontend contracts, and the repository's fixed frontend workflow.
+description: This skill should be used when the agent needs to create a frontend task for maintmode-ui in Linear by default, or as a local task file when explicitly needed, with Linear issue IDs for Linear-backed tasks, FE task IDs for local tasks, project-specific source-of-truth checks, explicit frontend contracts, and the repository's fixed frontend workflow.
 ---
 
 # FE Task Creator
 
 ## Purpose
 
-Create a project-specific frontend task in Markdown for `maintmode-ui`.
+Create a project-specific frontend task for `maintmode-ui`.
 
 Apply the base contract from:
 - `../task-creator/SKILL.md`
 
 Use this skill to narrow the universal tasking rules to this repository's frontend process.
 
-Save every task to one of these canonical paths:
+Tasks can be stored in either:
+- Linear, using the bundled Linear plugin;
+- local Markdown files under this repository's task directories.
+
+Use Linear by default unless the user explicitly requests a local task file, Linear is unavailable, or the task must stay local for repository-only workflow reasons.
+
+When creating the task in Linear:
+- use the same task structure and technical-English content required by this skill;
+- use the Linear issue key or number, for example `RUK-123`, as the task identifier after the issue is created;
+- set `Task ID` and `Task File` to the Linear issue key or number instead of `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md`;
+- do not invent or require a local `fe-XX` id for Linear-backed tasks;
+- include repository-local paths, contracts, workflow, and validation details in the Linear issue description;
+- do not also create a local task file unless the user asks for a mirrored local copy.
+
+When creating the task locally, save it to one of these canonical paths:
 - `.agents/tasks/backlog/fe-XX/fe-XX.md` for queued work;
 - `.agents/tasks/todo/fe-XX/fe-XX.md` for activated work.
 
-Do not save tasks outside `.agents/tasks/<backlog|todo>/fe-XX/`.
+Do not save local tasks outside `.agents/tasks/<backlog|todo>/fe-XX/`.
 
 Use:
 - `references/task-template.md`
@@ -137,8 +151,10 @@ If a test file is treated as a canonical executable contract for the task:
 ## Canonical Conventions
 
 Use these conventions in every new task file:
-- task id: `fe-XX`
-- task file: `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md`
+- Linear-backed task id: Linear issue key or number, for example `RUK-123`
+- local task id: `fe-XX`
+- task storage: Linear by default, local Markdown only when requested or required
+- local task file: `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md`
 - git branch: `feature/fe-XX-<short-kebab-slug>`
 - commit convention: `<type>(fe-XX): <summary>`
 - allowed commit types: `feat|fix|refactor|test|docs|chore|perf`
@@ -282,7 +298,7 @@ Every generated task must use the Markdown structure from `references/task-templ
 The task must include:
 - task title;
 - status;
-- task id and task file path;
+- task id and task storage location;
 - task path status;
 - task type;
 - priority;
@@ -413,17 +429,19 @@ Every task must define these stage outputs:
 - `fe-ux-reviewer` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/ux_report.md`
 - `fe-gate` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md`
 
+For Linear-backed tasks, replace `fe-XX` in report and artifact paths with the Linear issue key or number.
+
 Artifacts must stay inside:
 - `.agents/tasks/<backlog|todo>/fe-XX/artifacts/screenshots/`
 - `.agents/tasks/<backlog|todo>/fe-XX/artifacts/<type>/`
 
 Do not point final deliverables to shared directories such as `/tmp` or `screenshots/`.
 
-All report paths, artifact paths, and deliverables must use the same task root as `Task File`.
+All report paths, artifact paths, and deliverables must use one planned task root. For local tasks, use `.agents/tasks/<backlog|todo>/fe-XX/` and match `Task File`; for Linear-backed tasks, use `.agents/tasks/<backlog|todo>/<linear-issue-key>/` and record that planned artifact root in the issue.
 
 Do not mix `backlog` and `todo` roots inside one task pack.
 
-If the requested path does not match one of the canonical `.agents/tasks/<backlog|todo>/fe-XX/` roots:
+For local tasks, if the requested path does not match one of the canonical `.agents/tasks/<backlog|todo>/fe-XX/` roots:
 - treat the request as non-canonical;
 - do not silently normalize it;
 - raise the mismatch to the user before finalizing the task pack.
@@ -433,8 +451,17 @@ If the requested path does not match one of the canonical `.agents/tasks/<backlo
 Use `Task Path Status` as an explicit metadata field for storage validity.
 
 Allowed values:
+- `linear`
 - `canonical`
 - `override-approved`
+
+Use `linear` when the task is created in Linear through the bundled Linear plugin.
+
+When `Task Path Status` is `linear`:
+- set `Task ID` and `Task File` to the Linear issue key or number after creation;
+- do not use `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md` as the task file value;
+- omit the `Override Reason` subsection entirely;
+- keep report, artifact, and deliverable paths under the planned `.agents/tasks/<backlog|todo>/<linear-issue-key>/` root that execution will use.
 
 Use `canonical` only when `Task File` matches one of:
 - `.agents/tasks/backlog/fe-XX/fe-XX.md`
@@ -478,10 +505,12 @@ Before finalizing the task, verify that:
 - the task body is written in technical English except for required literals that must remain unchanged;
 - the task file does not mix Russian and English prose;
 - no narrative line contains accidental foreign-script garbage;
-- the task id uses `fe-XX`;
-- the file path uses `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md`;
+- the task id uses the Linear issue key or number for Linear-backed tasks;
+- the task id uses `fe-XX` for local tasks;
+- Linear is used by default unless a local task file was explicitly requested or is required;
+- the file path uses `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md` when the task is local;
 - `Task Path Status` matches the real path;
-- `Override Reason` is omitted when the path is canonical;
+- `Override Reason` is omitted when the path is canonical or Linear-backed;
 - the primary role is correct;
 - the checked files and docs are recorded;
 - every `Source of Truth` entry also appears in `What Was Checked`;
@@ -501,7 +530,7 @@ Before finalizing the task, verify that:
 - the workflow sequence matches the project convention;
 - selected skills identify whether they come from `.agents` or legacy `.kilocode`;
 - stage outputs point to the task folder;
-- every report and artifact path uses the same task root as `Task File`;
+- every report and artifact path uses the same planned task root;
 - `Override Reason` is present only when `Task Path Status` is `override-approved`;
 - validation gaps are explicit when present;
 - `Open Questions` are present for `BLOCKED` tasks and absent or `None` for `READY` tasks;
