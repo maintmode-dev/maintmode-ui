@@ -26,8 +26,8 @@ export function CalendarShellPlaceholder() {
           <div>
             <h1>Maintenance calendar</h1>
             <p>
-              Production routes and backend contracts are scaffolded. Real maintenance data is intentionally
-              deferred to integration tasks.
+              Production BFF contracts are wired. Browser data fetching is intentionally deferred to
+              integration tasks.
             </p>
           </div>
           <div className="toolbar" aria-label="Calendar actions">
@@ -35,7 +35,7 @@ export function CalendarShellPlaceholder() {
               className="button"
               type="button"
               disabled
-              aria-label="Create maintenance is unavailable until backend integration is implemented"
+              aria-label="Create maintenance is unavailable until the steps form is implemented"
             >
               Create maintenance
             </button>
@@ -45,11 +45,11 @@ export function CalendarShellPlaceholder() {
         <div className="status-row" aria-label="Current scaffold status">
           <div className="status-cell">
             <span>BFF routes</span>
-            <strong>501</strong>
+            <strong>Wired</strong>
           </div>
           <div className="status-cell">
             <span>Data source</span>
-            <strong>Pending</strong>
+            <strong>BFF</strong>
           </div>
           <div className="status-cell">
             <span>Mock fallback</span>
@@ -79,9 +79,9 @@ export function CalendarShellPlaceholder() {
               <h3 id="calendar-state-title">Data state</h3>
             </div>
             <div className="panel__body">
-              <EmptyState title="No production data is wired yet">
-                Route anchors, providers, and state primitives are ready. Calendar queries will be added behind
-                the BFF boundary.
+              <EmptyState title="Calendar data is not loaded in this shell">
+                Route anchors, providers, and state primitives are ready. Calendar queries will call the local
+                BFF boundary.
               </EmptyState>
             </div>
           </aside>

@@ -1,4 +1,11 @@
-import { notImplemented } from "@/app/api/_shared/not-implemented";
+import { NextResponse } from "next/server";
+
+import { backendRequest } from "@/server/backend/client/backend-client";
+import type { BackendMaintenanceViewResponseDto } from "@/server/backend/contracts/maintenance.contracts";
+import { routeErrorResponse } from "@/server/backend/errors/bff-error";
+import { normalizeMaintenanceView } from "@/server/backend/maintenance/adapters";
+import { buildMaintenanceWritePayload } from "@/server/backend/maintenance/write-payload";
+import { loadResources } from "@/server/backend/resources/resources-service";
 
 type MaintenanceRouteContext = {
   params: Promise<{
@@ -7,13 +14,51 @@ type MaintenanceRouteContext = {
 };
 
 export async function GET(_request: Request, context: MaintenanceRouteContext) {
-  const { id } = await context.params;
+  try {
+    const { id } = await context.params;
+    const detailResponse = await backendRequest<BackendMaintenanceViewResponseDto>({
+      method: "GET",
+      path: `/ui/v1/maintenances/${encodeURIComponent(id)}`,
+    });
 
-  return notImplemented(`/api/maintenance/${encodeURIComponent(id)}`);
+    return NextResponse.json(normalizeMaintenanceView(detailResponse));
+  } catch (error) {
+    return routeErrorResponse(error);
+  }
 }
 
-export async function PATCH(_request: Request, context: MaintenanceRouteContext) {
-  const { id } = await context.params;
+export async function PATCH(request: Request, context: MaintenanceRouteContext) {
+  try {
+    const { id } = await context.params;
+    const body = await readJsonBody(request);
+    const payload = await buildMaintenanceWritePayload(body, () => loadResources());
 
-  return notImplemented(`/api/maintenance/${encodeURIComponent(id)}`);
+    await backendRequest<void>({
+      method: "POST",
+      path: `/api/v1/maintenances/${encodeURIComponent(id)}/edit`,
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const detailResponse = await backendRequest<BackendMaintenanceViewResponseDto>({
+      method: "GET",
+      path: `/ui/v1/maintenances/${encodeURIComponent(id)}`,
+    });
+
+    return NextResponse.json(normalizeMaintenanceView(detailResponse));
+  } catch (error) {
+    return routeErrorResponse(error);
+  }
+}
+
+export const PUT = PATCH;
+
+async function readJsonBody(request: Request) {
+  try {
+    return await request.json();
+  } catch {
+    return {};
+  }
 }

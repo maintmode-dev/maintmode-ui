@@ -7,3 +7,10 @@ export class BackendRequestError extends Error {
     this.name = "BackendRequestError";
   }
 }
+
+export class BackendUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Maintmode backend is unavailable", { cause });
+    this.name = "BackendUnavailableError";
+  }
+}

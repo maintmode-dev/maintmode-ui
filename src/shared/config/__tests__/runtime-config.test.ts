@@ -7,10 +7,12 @@ describe("parseMaintmodeBackendConfig", () => {
       parseMaintmodeBackendConfig({
         MAINTMODE_API_BASE_URL: "https://api.example.test/",
         MAINTMODE_API_TIMEOUT_MS: "5000",
+        MAINTMODE_ENABLE_MOCK_DATA: "true",
       }),
     ).toEqual({
       apiBaseUrl: "https://api.example.test",
       requestTimeoutMs: 5000,
+      enableMockData: true,
     });
   });
 
@@ -22,6 +24,7 @@ describe("parseMaintmodeBackendConfig", () => {
     ).toEqual({
       apiBaseUrl: "http://localhost:8080",
       requestTimeoutMs: 10000,
+      enableMockData: false,
     });
   });
 
@@ -41,6 +44,26 @@ describe("parseMaintmodeBackendConfig", () => {
         {
           field: "MAINTMODE_API_TIMEOUT_MS",
           message: "must be between 100 and 60000",
+        },
+      ]);
+      return;
+    }
+
+    throw new Error("Expected config validation to fail");
+  });
+
+  it("reports invalid mock mode flag values", () => {
+    try {
+      parseMaintmodeBackendConfig({
+        MAINTMODE_API_BASE_URL: "https://api.example.test",
+        MAINTMODE_ENABLE_MOCK_DATA: "yes",
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ConfigValidationError);
+      expect((error as ConfigValidationError).issues).toEqual([
+        {
+          field: "MAINTMODE_ENABLE_MOCK_DATA",
+          message: "must be true or false",
         },
       ]);
       return;

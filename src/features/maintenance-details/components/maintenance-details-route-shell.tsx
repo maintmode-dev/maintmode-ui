@@ -34,7 +34,7 @@ export function MaintenanceDetailsRouteShell({ maintenanceId }: MaintenanceDetai
               className="button"
               type="button"
               disabled
-              aria-label="Edit maintenance is unavailable until details integration is implemented"
+              aria-label="Edit maintenance is unavailable until the steps form is implemented"
             >
               Edit
             </button>
@@ -53,7 +53,7 @@ export function MaintenanceDetailsRouteShell({ maintenanceId }: MaintenanceDetai
               </div>
               <div>
                 <dt>Backend state</dt>
-                <dd>Not implemented</dd>
+                <dd>BFF wired</dd>
               </div>
             </dl>
             <div className="workspace-grid">

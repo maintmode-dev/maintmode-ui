@@ -1,10 +1,11 @@
 export type MaintmodeBackendConfig = {
   apiBaseUrl: string;
   requestTimeoutMs: number;
+  enableMockData: boolean;
 };
 
 export type ConfigIssue = {
-  field: "MAINTMODE_API_BASE_URL" | "MAINTMODE_API_TIMEOUT_MS";
+  field: "MAINTMODE_API_BASE_URL" | "MAINTMODE_API_TIMEOUT_MS" | "MAINTMODE_ENABLE_MOCK_DATA";
   message: string;
 };
 
@@ -12,7 +13,9 @@ export class ConfigValidationError extends Error {
   readonly issues: ConfigIssue[];
 
   constructor(issues: ConfigIssue[]) {
-    super(`Invalid maintmode runtime config: ${issues.map((issue) => `${issue.field} ${issue.message}`).join("; ")}`);
+    super(
+      `Invalid maintmode runtime config: ${issues.map((issue) => `${issue.field} ${issue.message}`).join("; ")}`,
+    );
     this.name = "ConfigValidationError";
     this.issues = issues;
   }
@@ -26,6 +29,7 @@ export function parseMaintmodeBackendConfig(env: Record<string, string | undefin
   const issues: ConfigIssue[] = [];
   const rawBaseUrl = env.MAINTMODE_API_BASE_URL;
   const rawTimeout = env.MAINTMODE_API_TIMEOUT_MS;
+  const rawEnableMockData = env.MAINTMODE_ENABLE_MOCK_DATA;
   let apiBaseUrl = "";
 
   if (!rawBaseUrl) {
@@ -54,6 +58,7 @@ export function parseMaintmodeBackendConfig(env: Record<string, string | undefin
   }
 
   const requestTimeoutMs = parseTimeout(rawTimeout, issues);
+  const enableMockData = parseBooleanFlag(rawEnableMockData, "MAINTMODE_ENABLE_MOCK_DATA", issues);
 
   if (issues.length > 0) {
     throw new ConfigValidationError(issues);
@@ -62,6 +67,7 @@ export function parseMaintmodeBackendConfig(env: Record<string, string | undefin
   return {
     apiBaseUrl,
     requestTimeoutMs,
+    enableMockData,
   };
 }
 
@@ -88,4 +94,28 @@ function parseTimeout(rawTimeout: string | undefined, issues: ConfigIssue[]) {
   }
 
   return value;
+}
+
+function parseBooleanFlag(
+  rawValue: string | undefined,
+  field: "MAINTMODE_ENABLE_MOCK_DATA",
+  issues: ConfigIssue[],
+) {
+  if (!rawValue) {
+    return false;
+  }
+
+  const value = rawValue.trim().toLowerCase();
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+
+  issues.push({
+    field,
+    message: "must be true or false",
+  });
+  return false;
 }
