@@ -33,7 +33,8 @@
 ## Import Rules
 - Browser-owned modules under `src/features/**`, `src/shared/ui/**`, and `src/app/providers.tsx` must not import `src/server/**`.
 - Production modules must not import `src/shared/testing/**` or `tests/**`.
-- `src/app/api/**` may import `src/server/backend/**`, `src/domain/**`, and `src/shared/config/**`.
+- `src/app/api/**` may import `src/server/backend/**`, `src/server/auth/**`, `src/domain/**`, and `src/shared/config/**`.
+- `src/server/auth/**` and `next-auth` may only be imported from `src/server/**`, `src/app/api/**`, `src/middleware.ts`, and `src/app/(auth)/**` server components.
 - Domain modules must not import React, Next.js, route handlers, or styling primitives.
 - Avoid broad barrel exports until a module has a stable public API.
 
@@ -53,3 +54,12 @@
 - RUK-31 uses user-approved Linear ID naming: branch `feature/ruk-31` and task root `.agents/tasks/backlog/RUK-31/`.
 - Stage reports for this task live under `.agents/tasks/backlog/RUK-31/reports/**`.
 - Artifacts for this task live under `.agents/tasks/backlog/RUK-31/artifacts/**`.
+- RUK-18 follows the same naming: branch `feature/ruk-18` and task root `.agents/tasks/backlog/RUK-18/`.
+- Stage reports for RUK-18 live under `.agents/tasks/backlog/RUK-18/reports/**`.
+- Artifacts for RUK-18 live under `.agents/tasks/backlog/RUK-18/artifacts/**`.
+
+## Auth Boundary
+- Browser must never receive `access_token` or `refresh_token`. Tokens stay inside the NextAuth jwt cookie and are read only via `src/server/auth/session-token.ts` from server-only code.
+- BFF route handlers under `src/app/api/**` (other than `src/app/api/auth/**`) must use `authenticatedBackendRequest` from `src/server/backend/client/authenticated-backend-request.ts` instead of `backendRequest` directly.
+- A backend `401` must be normalized to `{ status: 401, code: "AUTH_REQUIRED" }`; the browser fetcher then redirects to `/login?next=<current path>`.
+- The Google OAuth code↔token exchange runs on the backend (`/api/v1/login/oauth/google/callback` with `Accept: application/json`); the frontend must not implement Google OAuth on its own.

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { backendRequest } from "@/server/backend/client/backend-client";
+import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
 import type {
   BackendCalendarViewResponseDto,
   BackendCreateDraftMaintResponseDto,
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   try {
     const { path, scope } = buildCalendarBackendQuery(request.url);
     const [backendResponse, resources] = await Promise.all([
-      backendRequest<BackendCalendarViewResponseDto>({
+      authenticatedBackendRequest<BackendCalendarViewResponseDto>({
         method: "GET",
         path,
       }),
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
   try {
     const body = await readJsonBody(request);
     const payload = await buildMaintenanceWritePayload(body, () => loadResources());
-    const response = await backendRequest<BackendCreateDraftMaintResponseDto>({
+    const response = await authenticatedBackendRequest<BackendCreateDraftMaintResponseDto>({
       method: "POST",
       path: "/api/v1/maintenances/create",
       headers: {
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
       body: JSON.stringify(payload),
     });
 
-    const detailResponse = await backendRequest<BackendMaintenanceViewResponseDto>({
+    const detailResponse = await authenticatedBackendRequest<BackendMaintenanceViewResponseDto>({
       method: "GET",
       path: `/ui/v1/maintenances/${encodeURIComponent(response.id)}`,
     });

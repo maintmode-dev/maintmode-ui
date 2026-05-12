@@ -1,304 +1,239 @@
 ---
 name: fe-task-creator
-description: This skill should be used when the agent needs to create a frontend task for maintmode-ui in Linear by default, or as a local task file when explicitly needed, with Linear issue IDs for Linear-backed tasks, FE task IDs for local tasks, project-specific source-of-truth checks, explicit frontend contracts, and the repository's fixed frontend workflow.
+description: Use this skill to create a frontend task for `maintmode-ui` — Linear by default, local Markdown when requested — with explicit scope, contracts, source-of-truth grounding, and verification expectations.
 ---
 
 # FE Task Creator
 
 ## Purpose
 
-Create a project-specific frontend task for `maintmode-ui`.
+Create a project-specific frontend task for `maintmode-ui`. The task is the
+single brief that the implementer (and all reviewers) read; it must capture
+what to build, what is in/out of scope, what contracts to preserve, what
+counts as done, and how done is verified.
 
-Apply the base contract from:
-- `../task-creator/SKILL.md`
-
-Use this skill to narrow the universal tasking rules to this repository's frontend process.
+## Storage
 
 Tasks can be stored in either:
-- Linear, using the bundled Linear plugin;
-- local Markdown files under this repository's task directories.
 
-Use Linear by default unless the user explicitly requests a local task file, Linear is unavailable, or the task must stay local for repository-only workflow reasons.
+- Linear, using the bundled Linear plugin;
+- local Markdown files under `.agents/tasks/<backlog|todo>/<task-id>/<task-id>.md`.
+
+Use Linear by default unless the user explicitly requests a local task file,
+Linear is unavailable, or the task must stay local for repository-only
+workflow reasons.
 
 When creating the task in Linear:
-- use the same task structure and technical-English content required by this skill;
-- use the Linear issue key or number, for example `RUK-123`, as the task identifier after the issue is created;
-- set `Task ID` and `Task File` to the Linear issue key or number instead of `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md`;
-- do not invent or require a local `fe-XX` id for Linear-backed tasks;
-- include repository-local paths, contracts, workflow, and validation details in the Linear issue description;
-- do not also create a local task file unless the user asks for a mirrored local copy.
 
-When creating the task locally, save it to one of these canonical paths:
-- `.agents/tasks/backlog/fe-XX/fe-XX.md` for queued work;
-- `.agents/tasks/todo/fe-XX/fe-XX.md` for activated work.
+- use the same task structure and technical-English content required by this
+  skill;
+- use the Linear issue key or number, for example `RUK-123`, as the task
+  identifier after the issue is created;
+- set `Task ID` and `Task File` to the Linear issue key or number instead of
+  a local path;
+- include repository-local paths, contracts, and validation details in the
+  Linear issue description;
+- do not also create a local task file unless the user asks for a mirrored
+  local copy.
 
-Do not save local tasks outside `.agents/tasks/<backlog|todo>/fe-XX/`.
+When creating the task locally, save it to one of:
 
-Use:
-- `references/task-template.md`
+- `.agents/tasks/backlog/<task-id>/<task-id>.md` for queued work;
+- `.agents/tasks/todo/<task-id>/<task-id>.md` for activated work.
 
-Write:
-- task titles in concise technical English;
-- saved task files in concise technical English;
-- user-facing tasking summaries in the current conversation language unless the user explicitly requests English.
+Local task ids may follow `fe-XX` (e.g. `fe-19`) when not Linear-backed.
 
-Use technical English for all narrative task sections.
+Apply the base contract from `../task-creator/SKILL.md`. If this skill
+conflicts with the universal skill, this skill is the narrower contract.
 
-Keep these as literals when relevant:
-- code identifiers;
-- route paths;
-- API fields and endpoint names;
-- literal UI labels when they are part of the product contract;
-- skill names;
-- exact file paths.
+## Language Rules
+
+Write task titles and saved task files in concise technical English.
+User-facing tasking summaries in chat may use the conversation language
+unless the user explicitly requests English.
+
+Keep the following as literals when relevant: code identifiers, route paths,
+API fields and endpoint names, literal UI labels that are part of the
+product contract, skill names, exact file paths.
 
 Do not mix Russian and English inside the task file.
 
-## Technical English Rules
-
-Before finalizing the task file:
-- run one terminology-consistency pass over the full document;
-- keep the title, description, business goal, discovery findings, requirements, criteria, contracts, selected-skill reasons, workflow goals, implementation plan, risks, assumptions, validation gaps, and open questions in technical English;
-- use stable terms consistently across the task file;
-- remove accidental mixed-language prose or foreign-script tokens.
-
-Prefer precise technical English over colloquial wording.
-
-If a concept has an exact established technical name in English:
-- use the English term consistently;
-- do not translate it back and forth across sections.
-
-Keep the prose direct, operational, and unambiguous.
-
 ## When To Use
 
-Use this skill when the request belongs to this repository and the main work is frontend-oriented:
-- UI changes;
-- calendar behavior changes;
-- maintenance details view changes;
-- frontend integration with backend API wrappers;
-- frontend refactors;
-- frontend QA, smoke, or validation tasks;
-- frontend architecture or frontend discovery tasks.
+Use this skill when the request belongs to this repository and the main work
+is frontend-oriented (UI changes, calendar/details behavior, API
+integration, refactors, frontend QA/smoke).
 
-Do not use this skill when:
-- the task is backend-only and does not require frontend tasking;
-- the task is generic and not tied to `maintmode-ui`;
-- the user explicitly asks to implement immediately without a separate tasking step.
-
-## Required Base Contract
-
-Before using this skill:
-- load `../task-creator/SKILL.md`;
-- follow all base rules from the universal `task-creator`;
-- apply the project-specific restrictions below.
-
-If this skill conflicts with the universal skill:
-- use this skill as the narrower contract for this repository.
+Do not use this skill when the task is backend-only, generic and not tied
+to `maintmode-ui`, or when the user explicitly asks to implement immediately
+without a separate tasking step.
 
 ## Required Sources Of Truth
 
 Always inspect:
+
 - `AGENTS.md`
 
 Inspect only the sources that are relevant to the current task:
-- `.agents/project-details/ui-specific/ui_rules.md` if the task affects UI structure, visibility, styling, or visual states;
-- `.agents/project-details/ui-specific/ux_heuristics.md` if the task affects usability, hierarchy, operator flow, or information density;
-- `.agents/project-details/ui-specific/calendar_month_packing.md` if the task touches month view behavior;
-- `https://github.com/ruko1202/maintmode/blob/main/docs/swagger.yaml` if the task affects API integration or backend contracts;
+
+- `.agents/project-details/ui-specific/ui_rules.md` — UI structure, visual
+  states;
+- `.agents/project-details/ui-specific/ux_heuristics.md` — usability,
+  hierarchy, operator flow;
+- `.agents/project-details/ui-specific/calendar_month_packing.md` — month
+  view;
+- `https://github.com/ruko1202/maintmode/blob/main/docs/swagger.yaml` — API
+  integration / backend contracts;
 - current frontend code in `src/**`;
-- current route handlers in `src/app/api/maintenance/**` if the task affects data flow or integration;
-- current task files in `.agents/tasks/backlog/fe-XX/` and `.agents/tasks/todo/fe-XX/` when the task depends on earlier FE work.
+- current route handlers in `src/app/api/**` for data flow / integration;
+- current task files in `.agents/tasks/<backlog|todo>/` when the task
+  depends on earlier FE work.
 
 Do not ask the user for information that can be derived from these sources.
 
 ## Source Classification Rules
 
 `Source of Truth` must contain only canonical frontend inputs:
+
 - project rules from `AGENTS.md`;
-- approved UI or UX rules;
+- approved UI/UX rules and month packing contract;
 - approved backend contracts;
-- current source code that defines live behavior;
-- approved design or architecture inputs.
+- current source code that defines live behavior.
 
-Every `Source of Truth` entry must also appear in `Discovery Summary -> What Was Checked`.
+Every `Source of Truth` entry must also appear in
+`Discovery Summary -> What Was Checked`. Do not list a canonical source if
+it was not actually inspected for the current task.
 
-Do not list a canonical source in `Source of Truth` if it was not actually inspected for the current task.
+`References / Previous Inputs` contains non-canonical but useful inputs:
+previous task files, old reports, prior prompts, historical issues,
+superseded drafts.
 
-`References / Previous Inputs` must contain non-canonical but useful inputs:
-- previous task files;
-- old reports;
-- prior prompts;
-- historical issues;
-- superseded drafts.
+`Verification Inputs` contains non-canonical verification artifacts:
+component tests, smoke specs, fixtures, configs, report templates, helper
+scripts. Do not place tests or smoke specs into `Source of Truth` by
+default.
 
-Do not place previous FE tasks into `Source of Truth` unless they are explicitly canonical for the current task.
-
-`Verification Inputs` must contain non-canonical verification artifacts:
-- component tests;
-- smoke specs;
-- test fixtures;
-- test configs;
-- report templates;
-- helper scripts used only to validate behavior.
-
-Do not place tests or smoke specs into `Source of Truth` by default.
-
-If a test file is treated as a canonical executable contract for the task:
-- include it in both `What Was Checked` and `Source of Truth`;
-- explain why it is canonical in `Discovery Summary -> Findings`.
-
-## Canonical Conventions
+## Conventions
 
 Use these conventions in every new task file:
-- Linear-backed task id: Linear issue key or number, for example `RUK-123`
+
+- Linear-backed task id: Linear issue key (e.g. `RUK-123`)
 - local task id: `fe-XX`
-- task storage: Linear by default, local Markdown only when requested or required
-- local task file: `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md`
-- git branch: `feature/fe-XX-<short-kebab-slug>`
-- commit convention: `<type>(fe-XX): <summary>`
+- task storage: Linear by default
+- local task file: `.agents/tasks/<backlog|todo>/<task-id>/<task-id>.md`
+- git branch: `feature/<task-id>-<short-kebab-slug>` (lowercase task id)
+- commit convention: `<type>(<task-id>): <summary>`
 - allowed commit types: `feat|fix|refactor|test|docs|chore|perf`
 - max commits per task: `5`
 
-Use this fixed execution workflow:
-- `entry_mode`: `fe-architect`
-- `execution_mode`: `fe-dev`
-- `workflow_sequence`: `fe-architect -> fe-dev -> fe-ui-inspector + fe-ux-reviewer -> fe-gate`
-
-Use these canonical workflow skills in `Selected Skills` for `READY` execution tasks:
-- `fe-task-creator`
-- `fe-architect-workflow`
-- `fe-coder-workflow`
-- `fe-aqa-workflow`
-- `fe-ui-inspector-workflow`
-- `fe-ux-reviewer-workflow`
-- `fe-gate-workflow`
-
-Add optional project skills only if the task actually needs them:
-- `fe-smoke-test-workflow`
-- `mcp-playwright-tools`
-
-Add generic legacy helpers only when the task explicitly needs them and no `.agents` equivalent exists:
-- `webapp-testing`
-- `vercel-react-best-practices`
-- `create-pull-request`
-- `code-review`
-
-Do not use legacy workflow naming such as:
-- `b2b-*`
-- `vibe-*`
-
-For `BLOCKED` tasks:
-- include `fe-task-creator` in `Selected Skills`;
-- include only the skills that are actively needed to resolve the blocking condition;
-- if you list downstream execution skills for traceability, mark the reason explicitly as `planned after unblock`;
-- do not imply that the full execution skill set is already active.
-
 ## Role Selection
 
-Select exactly one `Primary Role`.
+Select exactly one `Primary Role`. Default mapping:
 
-Use this mapping by default:
-- UI component, page, interaction, layout, or rendering changes -> `frontend developer`
-- frontend decomposition, integration strategy, complex calendar behavior, or architecture planning -> `frontend architect`
-- unclear requirements, scope shaping, or source-of-truth conflict resolution -> `analyst`
-- validation-heavy, reproduction-heavy, or acceptance-heavy work -> `qa engineer`
+- UI component, page, interaction, layout, or rendering changes →
+  `frontend developer`
+- frontend decomposition, integration strategy, complex calendar behavior,
+  or architecture planning baked into the implementation → `frontend
+  developer` (no separate architect role exists in this project)
+- unclear requirements, scope shaping, or source-of-truth conflict
+  resolution → `analyst`
+- validation-heavy or acceptance-heavy work → `qa engineer`
 
-Add `Supporting Roles` only if the task cannot be executed coherently by a single primary role.
-
-Do not assign multiple primary owners.
+Add `Supporting Roles` only if the task cannot be executed coherently by a
+single primary role. Do not assign multiple primary owners.
 
 ## Frontend-Specific Constraints
 
-Always encode the relevant frontend constraints into the task.
+Always encode the relevant frontend constraints into the task. Apply when
+they match:
 
-Apply these rules when they match the task:
 - do not connect the browser UI directly to backend APIs;
-- route backend integration through `src/app/api/maintenance/**`;
-- keep backend/frontend status mapping centralized, especially `canceled` <-> `cancelled`;
-- keep dates in ISO 8601 across transport and storage boundaries;
-- parse to `Date` only at rendering boundaries in the UI;
+- route backend integration through `src/app/api/**`;
+- keep backend ↔ frontend status mapping centralized, especially
+  `canceled` ↔ `cancelled`;
+- keep dates in ISO 8601 across transport and storage; parse to `Date`
+  only at rendering boundaries;
 - do not mix backend DTOs directly into UI components;
-- do not keep production behavior on `mock-data` when the task is about real integration;
-- do not mass-refactor unrelated UI while the integration layer is still unstable;
+- do not keep production behavior on `mock-data` for real integration tasks;
+- do not mass-refactor unrelated UI while integration is unstable;
 - implement changes in small increments.
 
-If the task touches month view:
-- include `.agents/project-details/ui-specific/calendar_month_packing.md` in `Source of Truth`;
-- add month-packing constraints explicitly;
-- include verification for `spanning` priority, visible row limits, and `+N more` behavior.
+If the task touches month view: include `calendar_month_packing.md` in
+`Source of Truth`, add month-packing constraints explicitly, and include
+verification for `spanning` priority, visible row limits, and `+N more`.
 
 ## Frontend-Specific Blocks
 
-The following blocks are first-class sections of the frontend task format.
+Include these universal blocks in every task:
 
-Always include these universal blocks:
 - `Decision Points`
 - `References / Previous Inputs`
 - `Task-Specific Contracts`
 - `Validation Gaps`
 
-Include these frontend-specific blocks explicitly when they are relevant:
-- `Routing Contract` for navigation, deep links, restore logic, query params, or router state;
-- `Interaction Contract` for CTA behavior, hidden or disabled states, action hierarchy, and user flow transitions;
-- `Data Contract` for field mapping, DTO normalization, status mapping, time normalization, and data-shape constraints;
-- `Designer Contract` for approved visual specs, layout contracts, block ordering, and UI redesign rules.
+Include these frontend-specific blocks explicitly when relevant:
 
-If a frontend-specific block is not relevant, write `None`.
+- `Routing Contract` — navigation, deep links, restore logic, query params,
+  router state;
+- `Interaction Contract` — CTA behavior, hidden/disabled states, action
+  hierarchy, user flow transitions;
+- `Data Contract` — field mapping, DTO normalization, status mapping, time
+  normalization, data-shape constraints;
+- `Designer Contract` — approved visual specs, layout contracts, block
+  ordering.
 
-Use `Task-Specific Contracts` for any additional exact sub-contracts that do not fit the named frontend blocks above.
+If a frontend-specific block is not relevant, write `None`. Use
+`Task-Specific Contracts` for any additional exact sub-contracts that do
+not fit the named blocks above.
 
 ## Discovery Rules
 
 Before writing the task:
+
 - inspect the minimum set of files needed to ground the request;
 - record exactly what was checked;
-- record what each checked source confirmed;
+- record what each source confirmed;
 - separate confirmed facts from assumptions;
 - surface inconsistencies between code, docs, and contracts.
 
-For frontend tasks, prefer checking these areas when relevant:
-- `src/app/page.tsx`
-- `src/app/api/maintenance/**`
-- `src/components/**`
-- `src/types/**`
-- `src/lib/**`
-- relevant tests in `tests/**` or component test directories
+Prefer checking these areas when relevant: `src/app/page.tsx`,
+`src/app/api/**`, `src/features/**`, `src/server/backend/**`,
+`src/domain/**`, `src/shared/**`, relevant tests in `tests/**`.
 
 Do not scan the entire repository if a smaller relevant subset is enough.
 
 ## READY / BLOCKED Rules
 
-Do not mark a task as `READY` unless all of the following are true:
+Mark the task as `READY` only when all of the following are true:
+
 - the frontend outcome is clear enough to execute;
 - `Scope In` and `Scope Out` are concrete at file, module, or route level;
 - the chosen primary role fits the task;
 - the frontend constraints are explicit;
 - the acceptance criteria are testable;
-- the verification matrix includes concrete checks;
-- the fixed workflow and stage outputs are fully defined.
+- the verification matrix includes concrete checks.
 
-Mark the task as `BLOCKED` if any of the following is true:
+Mark the task as `BLOCKED` if any of:
+
 - required frontend or contract information is missing;
-- two or more realistic implementation directions exist without a confirmed choice;
-- the task depends on an unavailable backend contract, design input, or product decision;
+- two or more realistic implementation directions exist without a confirmed
+  choice;
+- the task depends on an unavailable backend contract, design input, or
+  product decision;
 - safe execution would require guessing.
 
-For `BLOCKED` tasks:
-- keep the draft task file;
-- fill `Open Questions`;
-- add one question per blocking point;
-- include options, trade-offs, and a recommended direction for each blocking point;
-- do not present the task as execution-ready.
+For `BLOCKED` tasks: keep the draft, fill `Open Questions` with one
+question per blocking point including options, trade-offs, and a
+recommended direction; do not present the task as execution-ready.
 
 ## Required Task Sections
 
-Every generated task must use the Markdown structure from `references/task-template.md`.
+Every generated task must use the structure from `references/task-template.md`
+and include:
 
-The task must include:
 - task title;
-- status;
-- task id and task storage location;
+- status (`READY` / `BLOCKED`);
+- task id and storage location (Linear key or local path);
 - task path status;
 - task type;
 - priority;
@@ -314,22 +249,16 @@ The task must include:
 - scope in;
 - scope out;
 - constraints;
-- frontend requirements grouped by category;
+- frontend requirements grouped by category (Functional / UI / API /
+  Non-Functional / Edge Cases);
 - UI states;
 - acceptance criteria;
-- routing contract;
-- interaction contract;
-- data contract;
-- designer contract;
+- routing/interaction/data/designer contracts (or `None`);
 - task-specific contracts;
 - verification matrix;
-- selected skills;
-- execution workflow;
-- execution agents;
 - implementation plan;
 - git plan;
-- deliverables;
-- stage outputs;
+- deliverables (paths under the task root);
 - dependencies;
 - blockers;
 - risks;
@@ -338,207 +267,129 @@ The task must include:
 - open questions;
 - recommended approach.
 
-Do not leave required sections blank. If a section is not applicable, write `None`.
+Do not leave required sections blank. If a section is not applicable,
+write `None`.
 
 ## Structured Entry Rules
 
-Each frontend requirement entry must include:
-- `id`
-- `requirement`
-- `rationale`
-- `verification`
+Each frontend requirement entry: `id`, `requirement`, `rationale`,
+`verification`.
 
-Each edge-case entry must include:
-- `id`
-- `case`
-- `expected_handling`
-- `verification`
+Each edge-case entry: `id`, `case`, `expected_handling`, `verification`.
 
-Each acceptance criteria entry must include:
-- `id`
-- `text`
-- `evidence`
+Each acceptance criteria entry: `id`, `text`, `evidence`.
 
-Each decision point entry must include:
-- `topic`
-- `options`
-- `chosen`
-- `rationale`
+Each decision point entry: `topic`, `options`, `chosen`, `rationale`.
 
-Each task-specific contract entry must include:
-- `name`
-- `rules`
-- `verification`
+Each task-specific contract entry: `name`, `rules`, `verification`.
 
 ## Verification Matrix Rules
 
-Use `Verification Matrix` as the canonical verification block for frontend tasks.
+`Verification Matrix` is the canonical verification block. For tasks that
+include frontend code changes, include:
 
-For tasks that include frontend code changes, the verification matrix must include:
-- `Automated Checks`
-- `Manual Matrix`
+- `Automated Checks` (exact commands)
+- `Manual Matrix` (exact scenarios / observations)
 - `Acceptance Test Cases`
 - `Testing Gaps`
 
-If the task affects integration or route handlers, the matrix must explicitly cover the affected flow, for example:
-- calendar loading;
-- filters;
-- details opening;
-- save behavior;
-- status transitions;
-- error handling.
+If the task affects integration or route handlers, the matrix must
+explicitly cover the affected flow (calendar loading, filters, details
+opening, save behavior, status transitions, error handling). If the task
+affects month view, the matrix must explicitly cover the month-packing
+contract.
 
-If the task affects month view, the matrix must explicitly cover the month-packing contract.
+If `Scope In` includes tests, smoke specs, route handlers, or validation
+artifacts, the matrix must include either an exact test command or a
+`Testing Gap` entry explaining why that command cannot be provided yet.
 
-If `Scope In` includes tests, smoke specs, route handlers, or validation artifacts, the matrix must include either:
-- an exact test command; or
-- a `Testing Gap` entry explaining why that command cannot be provided yet.
+Do not use vague checks such as "run tests", "check UI", "verify
+manually". Name the exact command, scenario, or expected observation.
 
-Do not use vague checks such as:
-- "run tests"
-- "check UI"
-- "verify manually"
+Use `Testing Gaps` only for verification limitations tied to: missing test
+environment, absent executable command, unavailable browser/server/fixture,
+test instability that prevents a reliable run.
 
-Name the exact command, scenario, or expected observation.
+Use `Validation Gaps` for broader residual uncertainty after the
+verification matrix (production-only behavior, missing observability,
+unavailable upstream behavior, scenarios intentionally outside scope). If
+all known limitations are already in `Testing Gaps`, set `Validation Gaps`
+to `None`.
 
-Use `Testing Gaps` only for verification limitations tied to:
-- missing or unavailable test environment;
-- absent executable command;
-- unavailable browser, server, fixture, or harness;
-- test instability that prevents a reliable run.
+## Deliverables / Artifact Paths
 
-Do not place broader product-validation blind spots into `Testing Gaps`.
+All report paths, artifact paths, and deliverables must use one planned
+task root:
 
-Use `Validation Gaps` for broader residual uncertainty after the verification matrix, for example:
-- production-only behavior that cannot be reproduced locally;
-- missing observability or telemetry;
-- upstream dependency behavior that cannot be validated now;
-- scenarios intentionally left outside the current verification scope.
+- local: `.agents/tasks/<backlog|todo>/<task-id>/`
+- Linear-backed: `.agents/tasks/<backlog|todo>/<linear-issue-key>/`
 
-If all known validation limitations are already fully described in `Testing Gaps`, set `Validation Gaps` to `None`.
+Expected deliverables under the task root, when applicable:
 
-Do not duplicate the same gap in both sections unless the testing limitation creates an additional broader validation risk; if so, explain the broader impact explicitly.
+- `reports/implementation_report.md` (always for implementation tasks)
+- `reports/aqa_report.md` (when AQA is run)
+- `reports/smoke_test_report.md` (when smoke is run)
+- `reports/ui_inspector_report.md` (when UI inspection is run)
+- `reports/ux_report.md` (when UX review is run)
+- `artifacts/screenshots/**`
+- `artifacts/<type>/**`
 
-## Stage Outputs
+Do not point final deliverables to shared directories such as `/tmp` or
+the project-root `screenshots/`. Do not mix `backlog` and `todo` roots
+inside one task pack.
 
-Every task must define these stage outputs:
-- `fe-architect` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/architecture_plan.md`
-- `fe-dev` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/implementation_report.md`
-- `fe-dev` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/aqa_report.md`
-- `fe-ui-inspector` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/ui_inspector_report.md`
-- `fe-ux-reviewer` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/ux_report.md`
-- `fe-gate` -> `.agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md`
-
-For Linear-backed tasks, replace `fe-XX` in report and artifact paths with the Linear issue key or number.
-
-Artifacts must stay inside:
-- `.agents/tasks/<backlog|todo>/fe-XX/artifacts/screenshots/`
-- `.agents/tasks/<backlog|todo>/fe-XX/artifacts/<type>/`
-
-Do not point final deliverables to shared directories such as `/tmp` or `screenshots/`.
-
-All report paths, artifact paths, and deliverables must use one planned task root. For local tasks, use `.agents/tasks/<backlog|todo>/fe-XX/` and match `Task File`; for Linear-backed tasks, use `.agents/tasks/<backlog|todo>/<linear-issue-key>/` and record that planned artifact root in the issue.
-
-Do not mix `backlog` and `todo` roots inside one task pack.
-
-For local tasks, if the requested path does not match one of the canonical `.agents/tasks/<backlog|todo>/fe-XX/` roots:
-- treat the request as non-canonical;
-- do not silently normalize it;
-- raise the mismatch to the user before finalizing the task pack.
+For local tasks, if the requested path does not match one of the canonical
+roots, treat the request as non-canonical, do not silently normalize it,
+and raise the mismatch to the user before finalizing the task pack.
 
 ## Task Path Status Rules
 
 Use `Task Path Status` as an explicit metadata field for storage validity.
+Allowed values: `linear`, `canonical`, `override-approved`.
 
-Allowed values:
-- `linear`
-- `canonical`
-- `override-approved`
-
-Use `linear` when the task is created in Linear through the bundled Linear plugin.
-
-When `Task Path Status` is `linear`:
-- set `Task ID` and `Task File` to the Linear issue key or number after creation;
-- do not use `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md` as the task file value;
-- omit the `Override Reason` subsection entirely;
-- keep report, artifact, and deliverable paths under the planned `.agents/tasks/<backlog|todo>/<linear-issue-key>/` root that execution will use.
-
-Use `canonical` only when `Task File` matches one of:
-- `.agents/tasks/backlog/fe-XX/fe-XX.md`
-- `.agents/tasks/todo/fe-XX/fe-XX.md`
-
-When `Task Path Status` is `canonical`:
-- omit the `Override Reason` subsection entirely.
-
-Use `override-approved` only when:
-- the user explicitly requested a non-canonical path;
-- the task pack keeps all reports, artifacts, and deliverables under the same overridden root;
-- the task includes `Override Reason` immediately under `Task Path Status`.
+- `linear` — task created in Linear; `Task ID` and `Task File` are the
+  Linear key; omit `Override Reason`.
+- `canonical` — `Task File` matches `.agents/tasks/<backlog|todo>/<task-id>/<task-id>.md`;
+  omit `Override Reason`.
+- `override-approved` — user explicitly requested a non-canonical path;
+  task pack keeps all reports/artifacts under that overridden root;
+  include `Override Reason` immediately under `Task Path Status`.
 
 Do not use `override-approved` for silent drift or accidental path changes.
-
-If the path is non-canonical and the user did not explicitly request it:
-- do not mark the task as final;
-- raise the mismatch before handoff.
-
-## Selected Skills Rules
-
-`Selected Skills` is a traceability block, not a free-form list.
-
-Each selected skill entry must include:
-- `Name`
-- `Source`
-- `Reason`
-
-Use `Source: .agents` for skills that exist under `.agents/skills/**`.
-
-Use `Source: legacy (.kilocode)` for project skills that still exist only under `.kilocode/skills/**`.
-
-Prefer `.agents` skills when an equivalent exists there.
-
-Do not imply that a skill exists under `.agents/skills` if it only exists in `.kilocode`.
 
 ## Quality Checklist
 
 Before finalizing the task, verify that:
-- the title is written in technical English;
-- the task body is written in technical English except for required literals that must remain unchanged;
+
+- the title and body use technical English (literals preserved);
 - the task file does not mix Russian and English prose;
-- no narrative line contains accidental foreign-script garbage;
-- the task id uses the Linear issue key or number for Linear-backed tasks;
-- the task id uses `fe-XX` for local tasks;
-- Linear is used by default unless a local task file was explicitly requested or is required;
-- the file path uses `.agents/tasks/<backlog|todo>/fe-XX/fe-XX.md` when the task is local;
-- `Task Path Status` matches the real path;
-- `Override Reason` is omitted when the path is canonical or Linear-backed;
+- the task id matches the storage convention (Linear key or `fe-XX`);
+- Linear is used by default unless local was explicitly requested;
+- `Task Path Status` matches the real path; `Override Reason` is present
+  only for `override-approved`;
 - the primary role is correct;
-- the checked files and docs are recorded;
 - every `Source of Truth` entry also appears in `What Was Checked`;
 - `Source of Truth` contains only canonical sources;
 - `References / Previous Inputs` contains non-canonical historical inputs;
-- `Verification Inputs` contains tests, smoke specs, and other non-canonical verification artifacts;
+- `Verification Inputs` contains tests, smoke specs, and other
+  non-canonical verification artifacts;
 - `Scope In` and `Scope Out` do not overlap;
 - frontend constraints are explicit and relevant;
-- selected-skill reasons, workflow goals, and implementation steps also follow the technical-English rules;
-- every requirement entry is structured and traceable;
-- every acceptance criteria entry is structured and traceable;
+- every requirement and acceptance criteria entry is structured and
+  traceable;
 - decision points are explicit when the task implies a chosen direction;
-- routing, interaction, data, and designer contracts are present when relevant;
-- task-specific contracts use structured entries when they are not `None`;
-- the verification matrix includes exact commands, manual scenarios, acceptance cases, and testing gaps;
-- `Testing Gaps` and `Validation Gaps` do not duplicate each other without explicit broader impact;
-- the workflow sequence matches the project convention;
-- selected skills identify whether they come from `.agents` or legacy `.kilocode`;
-- stage outputs point to the task folder;
-- every report and artifact path uses the same planned task root;
-- `Override Reason` is present only when `Task Path Status` is `override-approved`;
-- validation gaps are explicit when present;
-- `Open Questions` are present for `BLOCKED` tasks and absent or `None` for `READY` tasks;
+- routing/interaction/data/designer contracts are present when relevant;
+- the verification matrix includes exact commands, manual scenarios,
+  acceptance cases, and testing gaps;
+- `Testing Gaps` and `Validation Gaps` do not duplicate each other without
+  explicit broader impact;
+- artifact paths point to the task folder;
+- `Open Questions` are present for `BLOCKED` tasks and absent or `None`
+  for `READY` tasks;
 - month-view tasks explicitly reference the month-packing contract.
 
 Reject the draft internally and rewrite it if any checklist item fails.
 
 ## Resource
 
-Use:
-- `references/task-template.md` - canonical Markdown template for project-specific frontend task files.
+Use `references/task-template.md` as the canonical Markdown template.

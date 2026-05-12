@@ -11,3 +11,10 @@ playwright-report/
 test-results/
 
 .tmp/
+
+.env
+.env.local
+.env.*.local
+
+tsconfig.tsbuildinfo
+.claude/skills

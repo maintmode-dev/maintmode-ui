@@ -1,11 +1,16 @@
 export type MaintmodeBackendConfig = {
   apiBaseUrl: string;
+  authApiBaseUrl: string;
   requestTimeoutMs: number;
   enableMockData: boolean;
 };
 
 export type ConfigIssue = {
-  field: "MAINTMODE_API_BASE_URL" | "MAINTMODE_API_TIMEOUT_MS" | "MAINTMODE_ENABLE_MOCK_DATA";
+  field:
+    | "MAINTMODE_API_BASE_URL"
+    | "MAINTMODE_AUTH_API_BASE_URL"
+    | "MAINTMODE_API_TIMEOUT_MS"
+    | "MAINTMODE_ENABLE_MOCK_DATA";
   message: string;
 };
 
@@ -27,38 +32,30 @@ const MAX_TIMEOUT_MS = 60_000;
 
 export function parseMaintmodeBackendConfig(env: Record<string, string | undefined>): MaintmodeBackendConfig {
   const issues: ConfigIssue[] = [];
-  const rawBaseUrl = env.MAINTMODE_API_BASE_URL;
   const rawTimeout = env.MAINTMODE_API_TIMEOUT_MS;
   const rawEnableMockData = env.MAINTMODE_ENABLE_MOCK_DATA;
-  let apiBaseUrl = "";
 
-  if (!rawBaseUrl) {
-    issues.push({
-      field: "MAINTMODE_API_BASE_URL",
-      message: "is required",
-    });
-  } else {
-    try {
-      const parsed = new URL(rawBaseUrl);
-
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        issues.push({
-          field: "MAINTMODE_API_BASE_URL",
-          message: "must use http or https",
-        });
-      } else {
-        apiBaseUrl = parsed.toString().replace(/\/$/, "");
-      }
-    } catch {
-      issues.push({
-        field: "MAINTMODE_API_BASE_URL",
-        message: "must be a valid URL",
-      });
-    }
-  }
+  const apiBaseUrl = parseHttpUrl(env.MAINTMODE_API_BASE_URL, "MAINTMODE_API_BASE_URL", issues);
+  // Auth-service base URL (login/exchange/refresh/logout/me). The maintmode and
+  // auth services live in separate Go services in the backend repo; in local
+  // development they are usually exposed through nginx with `/auth/` and
+  // `/maintmode/` prefixes. This env defaults to the same host as the resource
+  // server when the auth-service is not split out (legacy single-binary mode).
+  const rawAuthBaseUrl = env.MAINTMODE_AUTH_API_BASE_URL ?? env.MAINTMODE_API_BASE_URL;
+  const authApiBaseUrl = parseHttpUrl(rawAuthBaseUrl, "MAINTMODE_AUTH_API_BASE_URL", issues);
 
   const requestTimeoutMs = parseTimeout(rawTimeout, issues);
   const enableMockData = parseBooleanFlag(rawEnableMockData, "MAINTMODE_ENABLE_MOCK_DATA", issues);
+
+  // Guard against shipping mock-mode to production. The flag is only legal
+  // for local development; setting it to `true` while `NODE_ENV=production`
+  // is almost certainly an env-leak from a developer machine.
+  if (enableMockData && env.NODE_ENV === "production") {
+    issues.push({
+      field: "MAINTMODE_ENABLE_MOCK_DATA",
+      message: "must not be enabled in production",
+    });
+  }
 
   if (issues.length > 0) {
     throw new ConfigValidationError(issues);
@@ -66,9 +63,32 @@ export function parseMaintmodeBackendConfig(env: Record<string, string | undefin
 
   return {
     apiBaseUrl,
+    authApiBaseUrl,
     requestTimeoutMs,
     enableMockData,
   };
+}
+
+function parseHttpUrl(
+  raw: string | undefined,
+  field: ConfigIssue["field"],
+  issues: ConfigIssue[],
+): string {
+  if (!raw) {
+    issues.push({ field, message: "is required" });
+    return "";
+  }
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      issues.push({ field, message: "must use http or https" });
+      return "";
+    }
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    issues.push({ field, message: "must be a valid URL" });
+    return "";
+  }
 }
 
 function parseTimeout(rawTimeout: string | undefined, issues: ConfigIssue[]) {

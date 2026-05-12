@@ -1,0 +1,45 @@
+.fc {
+  font-family: inherit;
+  color: var(--foreground);
+}
+
+.fc .fc-toolbar-title {
+  font-size: 16px;
+}
+
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number {
+  color: var(--muted-strong);
+}
+
+.fc .fc-daygrid-day-frame {
+  border-color: var(--border);
+}
+
+.fc-theme-standard td,
+.fc-theme-standard th,
+.fc-theme-standard .fc-scrollgrid {
+  border-color: var(--border);
+}
+
+.fc-event {
+  cursor: pointer;
+}
+
+.fc-event:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.fc-event-title {
+  font-weight: 600;
+}
+
+.fc-daygrid-event-dot {
+  display: none;
+}
+
+.fc-h-event,
+.fc-v-event {
+  border-radius: 6px;
+}

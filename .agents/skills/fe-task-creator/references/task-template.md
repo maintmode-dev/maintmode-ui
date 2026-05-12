@@ -220,54 +220,23 @@ None
 - Reason: canonical frontend tasking skill
 
 ### SK-2
-- Name: fe-architect-workflow
-- Source: legacy (.kilocode)
-- Reason: architecture stage of the frontend workflow
+- Name: fe-coder
+- Source: .agents
+- Reason: implementation
 <!-- Keep the selected skill set minimally sufficient. -->
-<!-- If a skill has a .agents equivalent, use Source: .agents. -->
-<!-- If a skill exists only in .kilocode, mark it as legacy (.kilocode). -->
-<!-- For READY tasks, include the full execution skill set here. -->
-<!-- For BLOCKED tasks, include `fe-task-creator` and only the skills needed to remove the blocker; future execution skills must be marked in Reason as planned after unblock. -->
-
-## Execution Workflow
-- Entry Mode: fe-architect
-- Execution Mode: fe-dev
-- Workflow Sequence: fe-architect -> fe-dev -> fe-ui-inspector + fe-ux-reviewer -> fe-gate
-
-## Execution Agents
-### fe-architect
-- Goal: {what the architect must do}
-- Deliverable: .agents/tasks/<backlog|todo>/fe-XX/reports/architecture_plan.md
-<!-- Use one consistent planned task root: backlog or todo. -->
-
-### fe-dev
-- Goal: {what the developer must do}
-- Deliverables:
-  - .agents/tasks/<backlog|todo>/fe-XX/reports/implementation_report.md
-  - .agents/tasks/<backlog|todo>/fe-XX/reports/aqa_report.md
-
-### fe-ui-inspector
-- Goal: {what the UI reviewer must check}
-- Deliverable: .agents/tasks/<backlog|todo>/fe-XX/reports/ui_inspector_report.md
-
-### fe-ux-reviewer
-- Goal: {what the UX reviewer must check}
-- Deliverable: .agents/tasks/<backlog|todo>/fe-XX/reports/ux_report.md
-
-### fe-gate
-- Goal: {what the gate stage must decide}
-- Deliverable: .agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md
+<!-- Add only skills that the implementer or reviewer will actually use. -->
+<!-- For BLOCKED tasks, include only `fe-task-creator` plus skills needed to remove the blocker. -->
 
 ## Implementation Plan
 - {step 1}
 - {step 2}
 - {step 3}
 - {step 4}
-<!-- The plan must be executable and should move from discovery or architecture into implementation and verification. -->
+<!-- The plan must be executable. List the smallest meaningful slices that move discovery into implementation and verification. -->
 
 ## Git Plan
-- Branch: feature/fe-XX-short-kebab-slug
-- Commit Convention: <type>(fe-XX): <summary>
+- Branch: feature/<task-id>-short-kebab-slug
+- Commit Convention: <type>(<task-id>): <summary>
 - Allowed Types: feat, fix, refactor, test, docs, chore, perf
 - Max Commits: 5
 - Planned Commits:
@@ -276,26 +245,16 @@ None
   - {commit 3}
 
 ## Deliverables
-- .agents/tasks/<backlog|todo>/fe-XX/fe-XX.md
-- .agents/tasks/<backlog|todo>/fe-XX/reports/architecture_plan.md
-- .agents/tasks/<backlog|todo>/fe-XX/reports/implementation_report.md
-- .agents/tasks/<backlog|todo>/fe-XX/reports/aqa_report.md
-- .agents/tasks/<backlog|todo>/fe-XX/reports/ui_inspector_report.md
-- .agents/tasks/<backlog|todo>/fe-XX/reports/ux_report.md
-- .agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md
-- .agents/tasks/<backlog|todo>/fe-XX/artifacts/screenshots/*
-- .agents/tasks/<backlog|todo>/fe-XX/artifacts/evidence/*
-<!-- For Linear-backed tasks, replace the local task file deliverable with the Linear issue key or number. -->
+- .agents/tasks/<backlog|todo>/<task-id>/<task-id>.md
+- .agents/tasks/<backlog|todo>/<task-id>/reports/implementation_report.md
+- .agents/tasks/<backlog|todo>/<task-id>/reports/aqa_report.md
+- .agents/tasks/<backlog|todo>/<task-id>/reports/ui_inspector_report.md
+- .agents/tasks/<backlog|todo>/<task-id>/reports/ux_report.md
+- .agents/tasks/<backlog|todo>/<task-id>/artifacts/screenshots/*
+- .agents/tasks/<backlog|todo>/<task-id>/artifacts/evidence/*
+<!-- Include only the deliverables that this task actually produces. -->
+<!-- For Linear-backed tasks, replace <task-id> with the Linear issue key. -->
 <!-- All local paths above must use one consistent planned task root. -->
-
-## Stage Outputs
-- fe-architect -> .agents/tasks/<backlog|todo>/fe-XX/reports/architecture_plan.md
-- fe-dev -> .agents/tasks/<backlog|todo>/fe-XX/reports/implementation_report.md
-- fe-dev -> .agents/tasks/<backlog|todo>/fe-XX/reports/aqa_report.md
-- fe-ui-inspector -> .agents/tasks/<backlog|todo>/fe-XX/reports/ui_inspector_report.md
-- fe-ux-reviewer -> .agents/tasks/<backlog|todo>/fe-XX/reports/ux_report.md
-- fe-gate -> .agents/tasks/<backlog|todo>/fe-XX/reports/gate_result.md
-<!-- For Linear-backed tasks, replace fe-XX in local report and artifact paths with the Linear issue key or number. -->
 <!-- Do not mix backlog and todo roots inside the same task pack. -->
 
 ## Dependencies

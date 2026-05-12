@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { backendRequest } from "@/server/backend/client/backend-client";
+import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
 import type { BackendMaintenanceViewResponseDto } from "@/server/backend/contracts/maintenance.contracts";
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 import { normalizeMaintenanceView } from "@/server/backend/maintenance/adapters";
@@ -16,7 +16,7 @@ type MaintenanceRouteContext = {
 export async function GET(_request: Request, context: MaintenanceRouteContext) {
   try {
     const { id } = await context.params;
-    const detailResponse = await backendRequest<BackendMaintenanceViewResponseDto>({
+    const detailResponse = await authenticatedBackendRequest<BackendMaintenanceViewResponseDto>({
       method: "GET",
       path: `/ui/v1/maintenances/${encodeURIComponent(id)}`,
     });
@@ -33,7 +33,7 @@ export async function PATCH(request: Request, context: MaintenanceRouteContext) 
     const body = await readJsonBody(request);
     const payload = await buildMaintenanceWritePayload(body, () => loadResources());
 
-    await backendRequest<void>({
+    await authenticatedBackendRequest<void>({
       method: "POST",
       path: `/api/v1/maintenances/${encodeURIComponent(id)}/edit`,
       headers: {
@@ -42,7 +42,7 @@ export async function PATCH(request: Request, context: MaintenanceRouteContext) 
       body: JSON.stringify(payload),
     });
 
-    const detailResponse = await backendRequest<BackendMaintenanceViewResponseDto>({
+    const detailResponse = await authenticatedBackendRequest<BackendMaintenanceViewResponseDto>({
       method: "GET",
       path: `/ui/v1/maintenances/${encodeURIComponent(id)}`,
     });

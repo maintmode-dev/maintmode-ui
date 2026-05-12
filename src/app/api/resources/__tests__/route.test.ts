@@ -14,7 +14,7 @@ describe("/api/resources route", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns normalized backend errors by default instead of mock resources", async () => {
+  it("returns normalized backend errors and never silently falls back to mock data", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => jsonResponse({ code: "BACKEND_DOWN", message: "resources down" }, 503)),
@@ -31,11 +31,27 @@ describe("/api/resources route", () => {
     });
   });
 
-  it("uses explicit local mock resources only when MAINTMODE_ENABLE_MOCK_DATA is true", async () => {
-    process.env.MAINTMODE_ENABLE_MOCK_DATA = "true";
+  it("propagates backend 401 as the normalized AUTH_REQUIRED payload", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => jsonResponse({ code: "BACKEND_DOWN", message: "resources down" }, 503)),
+      vi.fn(async () => jsonResponse({ code: "TOKEN_INVALID", message: "Unauthorized" }, 401)),
+    );
+
+    const response = await GET(new Request("https://ui.test/api/resources"));
+    const data = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(data.code).toBe("AUTH_REQUIRED");
+  });
+
+  it("returns the normalized resource catalog on success", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse({
+          resources: [{ id: "r1", name: "Primary DB", type: "database" }],
+        }),
+      ),
     );
 
     const response = await GET(new Request("https://ui.test/api/resources"));
@@ -43,13 +59,7 @@ describe("/api/resources route", () => {
 
     expect(response.status).toBe(200);
     expect(data).toEqual({
-      resources: [
-        {
-          id: "00000000-0000-4000-8000-000000000001",
-          name: "Mock service",
-          type: "service",
-        },
-      ],
+      resources: [{ id: "r1", name: "Primary DB", type: "database" }],
     });
   });
 });

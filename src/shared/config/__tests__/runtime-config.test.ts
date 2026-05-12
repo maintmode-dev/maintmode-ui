@@ -6,23 +6,26 @@ describe("parseMaintmodeBackendConfig", () => {
     expect(
       parseMaintmodeBackendConfig({
         MAINTMODE_API_BASE_URL: "https://api.example.test/",
+        MAINTMODE_AUTH_API_BASE_URL: "https://auth.example.test/",
         MAINTMODE_API_TIMEOUT_MS: "5000",
         MAINTMODE_ENABLE_MOCK_DATA: "true",
       }),
     ).toEqual({
       apiBaseUrl: "https://api.example.test",
+      authApiBaseUrl: "https://auth.example.test",
       requestTimeoutMs: 5000,
       enableMockData: true,
     });
   });
 
-  it("uses the default timeout when no timeout is provided", () => {
+  it("falls back the auth base URL to the resource server URL when not split", () => {
     expect(
       parseMaintmodeBackendConfig({
         MAINTMODE_API_BASE_URL: "http://localhost:8080",
       }),
     ).toEqual({
       apiBaseUrl: "http://localhost:8080",
+      authApiBaseUrl: "http://localhost:8080",
       requestTimeoutMs: 10000,
       enableMockData: false,
     });
@@ -50,6 +53,25 @@ describe("parseMaintmodeBackendConfig", () => {
     }
 
     throw new Error("Expected config validation to fail");
+  });
+
+  it("rejects MAINTMODE_ENABLE_MOCK_DATA=true in production", () => {
+    expect(() =>
+      parseMaintmodeBackendConfig({
+        MAINTMODE_API_BASE_URL: "https://api.example.test",
+        MAINTMODE_ENABLE_MOCK_DATA: "true",
+        NODE_ENV: "production",
+      }),
+    ).toThrow(ConfigValidationError);
+  });
+
+  it("allows MAINTMODE_ENABLE_MOCK_DATA=true outside production", () => {
+    const config = parseMaintmodeBackendConfig({
+      MAINTMODE_API_BASE_URL: "https://api.example.test",
+      MAINTMODE_ENABLE_MOCK_DATA: "true",
+      NODE_ENV: "development",
+    });
+    expect(config.enableMockData).toBe(true);
   });
 
   it("reports invalid mock mode flag values", () => {

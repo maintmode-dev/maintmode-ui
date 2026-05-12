@@ -1,18 +1,30 @@
 import "server-only";
 
-import { readMaintmodeBackendConfig } from "@/server/backend/config";
-import { BackendRequestError, BackendUnavailableError } from "@/server/backend/errors/backend-request-error";
+import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
+import {
+  BackendRequestError,
+  BackendUnauthorizedError,
+  BackendUnavailableError,
+} from "@/server/backend/errors/backend-request-error";
 
-type BackendRequestOptions = RequestInit & {
+export type BackendRequestOptions = RequestInit & {
   path: string;
+  /**
+   * Optional access token. When provided, the request gains an
+   * `Authorization: Bearer <accessToken>` header. The authenticated wrapper
+   * in `authenticated-backend-request.ts` is responsible for sourcing the
+   * token from the active NextAuth session.
+   */
+  accessToken?: string;
 };
 
 export async function backendRequest<TResponse>({
   path,
+  accessToken,
   ...init
 }: BackendRequestOptions): Promise<TResponse> {
   const config = readMaintmodeBackendConfig();
-  const target = new URL(path, config.apiBaseUrl);
+  const target = resolveBackendUrl(config.apiBaseUrl, path);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -26,6 +38,7 @@ export async function backendRequest<TResponse>({
         signal: controller.signal,
         headers: {
           accept: "application/json",
+          ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
           ...init.headers,
         },
       });
@@ -37,11 +50,25 @@ export async function backendRequest<TResponse>({
       throw error;
     }
 
+    if (response.status === 401) {
+      throw new BackendUnauthorizedError(body || response.statusText);
+    }
+
     if (!response.ok) {
       throw new BackendRequestError(response.status, body || response.statusText);
     }
 
-    return (body ? JSON.parse(body) : undefined) as TResponse;
+    if (!body) {
+      return undefined as TResponse;
+    }
+    try {
+      return JSON.parse(body) as TResponse;
+    } catch {
+      throw new BackendRequestError(
+        response.status,
+        body,
+      );
+    }
   } finally {
     clearTimeout(timeout);
   }

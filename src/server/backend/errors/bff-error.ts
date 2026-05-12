@@ -1,6 +1,19 @@
+/**
+ * Server-side BFF error envelope.
+ *
+ * The browser counterpart lives in `src/features/_shared/api/bff-error.ts`
+ * and intentionally mirrors `BffErrorPayload` / `FieldError` because the
+ * `server-only` boundary forbids the browser layer from importing this
+ * module. Keep both shapes in sync when changing either one.
+ */
+
 import { NextResponse } from "next/server";
 
-import { BackendRequestError, BackendUnavailableError } from "@/server/backend/errors/backend-request-error";
+import {
+  BackendRequestError,
+  BackendUnauthorizedError,
+  BackendUnavailableError,
+} from "@/server/backend/errors/backend-request-error";
 import { ConfigValidationError } from "@/shared/config/runtime-config";
 
 export type FieldError = {
@@ -64,6 +77,15 @@ export function normalizeRouteError(error: unknown): NormalizedRouteError {
       hint: error.hint,
       fieldErrors: error.fieldErrors,
       status: 400,
+    };
+  }
+
+  if (error instanceof BackendUnauthorizedError) {
+    return {
+      error: "Sign-in is required",
+      code: "AUTH_REQUIRED",
+      hint: "The maintmode backend rejected the access token. Re-authenticate via /login.",
+      status: 401,
     };
   }
 

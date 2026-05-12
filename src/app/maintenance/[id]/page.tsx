@@ -1,4 +1,4 @@
-import { MaintenanceDetailsRouteShell } from "@/features/maintenance-details/components/maintenance-details-route-shell";
+import { redirect } from "next/navigation";
 
 type MaintenancePageProps = {
   params: Promise<{
@@ -6,8 +6,13 @@ type MaintenancePageProps = {
   }>;
 };
 
+/**
+ * Deep-link entry for `/maintenance/<id>` URLs. The product UX keeps the
+ * details panel mounted on top of the calendar via `?maintenance=<id>`, so
+ * we just rewrite to the canonical query-string form. This preserves
+ * shareable links without forking the rendering path.
+ */
 export default async function MaintenancePage({ params }: MaintenancePageProps) {
   const { id } = await params;
-
-  return <MaintenanceDetailsRouteShell maintenanceId={id} />;
+  redirect(`/?maintenance=${encodeURIComponent(id)}`);
 }
