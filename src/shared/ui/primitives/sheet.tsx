@@ -38,7 +38,7 @@ export const SheetContent = React.forwardRef<React.ElementRef<typeof DialogPrimi
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            "fixed inset-y-0 z-50 flex w-full max-w-[480px] flex-col gap-4 border-[var(--border)] bg-[var(--surface)] p-6 shadow-lg outline-none",
+            "fixed inset-y-0 z-50 flex w-full max-h-screen flex-col gap-4 overflow-hidden border-[var(--border)] bg-[var(--surface)] p-4 shadow-lg outline-none sm:max-w-[420px] sm:p-6 lg:max-w-[540px] xl:max-w-[600px]",
             side === "right" ? "right-0 border-l" : "left-0 border-r",
             className,
           )}

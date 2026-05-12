@@ -56,7 +56,7 @@ export function CalendarFilterPanel({
   };
 
   return (
-    <aside className="flex w-full flex-col gap-5 border-l border-[var(--border)] bg-[var(--surface)] p-4 lg:w-[280px]">
+    <div className="flex w-full flex-col gap-5 p-4">
       <section aria-labelledby="filter-scope-title" className="flex flex-col gap-2">
         <h3 id="filter-scope-title" className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
           Scope
@@ -156,6 +156,6 @@ export function CalendarFilterPanel({
           </ul>
         )}
       </section>
-    </aside>
+    </div>
   );
 }

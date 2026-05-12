@@ -9,7 +9,7 @@ test("unauthenticated visit to / redirects to the login page", async ({ page }) 
 
 test("login page surfaces a normalized OAuth error", async ({ page }) => {
   await page.goto("/login?error=oauth_handoff_failed");
-  await expect(page.getByRole("alert")).toContainText("OAuth handoff");
+  await expect(page.locator(".login-card__error")).toContainText("OAuth handoff");
 });
 
 test("BFF maintenance route requires authentication", async ({ request }) => {

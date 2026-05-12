@@ -17,6 +17,36 @@
   --warning-border: #fde68a;
   --warning-fg: #92400e;
   --focus: #2563eb;
+
+  --info-soft: #e0ecff;
+  --info-border: #bfd4ff;
+  --info-fg: #1d4ed8;
+
+  --success-soft: #dcf6e4;
+  --success-border: #bce5c9;
+  --success-fg: #166534;
+
+  --conflict: #d92d20;
+
+  --status-draft-bg: #f1f2f4;
+  --status-draft-border: #d7dde5;
+  --status-draft-text: #485567;
+
+  --status-planned-bg: #e0ecff;
+  --status-planned-border: #bfd4ff;
+  --status-planned-text: #1d4ed8;
+
+  --status-in_progress-bg: #fef3c7;
+  --status-in_progress-border: #fde68a;
+  --status-in_progress-text: #92400e;
+
+  --status-completed-bg: #dcf6e4;
+  --status-completed-border: #bce5c9;
+  --status-completed-text: #166534;
+
+  --status-canceled-bg: #fee4e2;
+  --status-canceled-border: #f5a6a0;
+  --status-canceled-text: #761b16;
 }
 
 * {

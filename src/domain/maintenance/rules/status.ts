@@ -20,9 +20,29 @@ export const MAINTENANCE_STATUS_LABEL: Record<MaintenanceStatus, string> = {
  * coming from the prototype recognise events.
  */
 export const MAINTENANCE_STATUS_COLORS: Record<MaintenanceStatus, { bg: string; border: string; text: string }> = {
-  draft: { bg: "#F1F2F4", border: "#D7DDE5", text: "#485567" },
-  planned: { bg: "#E0ECFF", border: "#BFD4FF", text: "#1D4ED8" },
-  in_progress: { bg: "#FEF3C7", border: "#FDE68A", text: "#92400E" },
-  completed: { bg: "#DCF6E4", border: "#BCE5C9", text: "#166534" },
-  canceled: { bg: "#FEE4E2", border: "#F5A6A0", text: "#761B16" },
+  draft: {
+    bg: "var(--status-draft-bg)",
+    border: "var(--status-draft-border)",
+    text: "var(--status-draft-text)",
+  },
+  planned: {
+    bg: "var(--status-planned-bg)",
+    border: "var(--status-planned-border)",
+    text: "var(--status-planned-text)",
+  },
+  in_progress: {
+    bg: "var(--status-in_progress-bg)",
+    border: "var(--status-in_progress-border)",
+    text: "var(--status-in_progress-text)",
+  },
+  completed: {
+    bg: "var(--status-completed-bg)",
+    border: "var(--status-completed-border)",
+    text: "var(--status-completed-text)",
+  },
+  canceled: {
+    bg: "var(--status-canceled-bg)",
+    border: "var(--status-canceled-border)",
+    text: "var(--status-canceled-text)",
+  },
 };

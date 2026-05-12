@@ -182,7 +182,10 @@ export function MaintenanceDetailsSheet({
         guard.requestClose();
       }}
     >
-      <SheetContent aria-describedby={SHEET_DESCRIPTION_ID} className="overflow-hidden">
+      <SheetContent
+        aria-describedby={SHEET_DESCRIPTION_ID}
+        className="overflow-hidden sm:max-w-[78vw] lg:max-w-[560px] xl:max-w-[640px]"
+      >
         <SheetHeader>
           <SheetTitle>{titleForMode(mode, data)}</SheetTitle>
           <SheetDescription id={SHEET_DESCRIPTION_ID}>{descriptionForMode(mode)}</SheetDescription>

@@ -12,6 +12,7 @@ import {
   type CalendarScopeFilter,
   type CalendarViewMode,
 } from "@/features/calendar/lib/calendar-navigation";
+import { CalendarFilterDrawer } from "@/features/calendar/components/calendar-filter-drawer";
 import { CalendarFilterPanel } from "@/features/calendar/components/calendar-filter-panel";
 import { CalendarTopPanel } from "@/features/calendar/components/calendar-top-panel";
 import { MaintenanceCalendar } from "@/features/calendar/components/maintenance-calendar";
@@ -37,6 +38,7 @@ export function CalendarPage() {
 
   const [state, setState] = useState<CalendarFilterState>(initialState);
   const [sheetState, setSheetState] = useState<SheetState>(() => parseInitialSheetState(searchParams));
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const lastSyncedHref = useRef<string | null>(null);
 
   // Mirror state into the URL so deep-links + reload keep filters and sheet
@@ -102,6 +104,9 @@ export function CalendarPage() {
     [],
   );
 
+  const activeFilterCount =
+    (state.scope !== "all" ? 1 : 0) + state.statuses.length + state.resourceIds.length;
+
   return (
     <div className="flex h-full min-h-[calc(100vh-64px)] flex-col">
       <CalendarTopPanel
@@ -110,6 +115,8 @@ export function CalendarPage() {
         onViewChange={(view: CalendarViewMode) => update("view", view)}
         onDateChange={(date) => update("date", date)}
         onCreate={() => setSheetState({ mode: "create" })}
+        onOpenFilters={() => setFiltersOpen(true)}
+        activeFilterCount={activeFilterCount}
       />
       <div className="flex flex-1 flex-col lg:flex-row">
         <div className="flex flex-1 min-h-[480px] flex-col">
@@ -132,15 +139,30 @@ export function CalendarPage() {
             </>
           )}
         </div>
-        <CalendarFilterPanel
-          scope={state.scope}
-          statuses={state.statuses}
-          resourceIds={state.resourceIds}
-          onScopeChange={(scope: CalendarScopeFilter) => update("scope", scope)}
-          onStatusesChange={(statuses: MaintenanceStatus[]) => update("statuses", statuses)}
-          onResourceIdsChange={(resourceIds) => update("resourceIds", resourceIds)}
-        />
+        <aside
+          className="hidden w-[280px] shrink-0 border-l border-[var(--border)] bg-[var(--surface)] lg:flex"
+          data-testid="calendar-filter-aside"
+        >
+          <CalendarFilterPanel
+            scope={state.scope}
+            statuses={state.statuses}
+            resourceIds={state.resourceIds}
+            onScopeChange={(scope: CalendarScopeFilter) => update("scope", scope)}
+            onStatusesChange={(statuses: MaintenanceStatus[]) => update("statuses", statuses)}
+            onResourceIdsChange={(resourceIds) => update("resourceIds", resourceIds)}
+          />
+        </aside>
       </div>
+      <CalendarFilterDrawer
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        scope={state.scope}
+        statuses={state.statuses}
+        resourceIds={state.resourceIds}
+        onScopeChange={(scope: CalendarScopeFilter) => update("scope", scope)}
+        onStatusesChange={(statuses: MaintenanceStatus[]) => update("statuses", statuses)}
+        onResourceIdsChange={(resourceIds) => update("resourceIds", resourceIds)}
+      />
       <MaintenanceDetailsSheet
         maintenanceId={sheetId}
         mode={sheetMode}

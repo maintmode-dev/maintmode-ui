@@ -10,8 +10,8 @@ export type BadgeProps = React.HTMLAttributes<HTMLSpanElement> & {
 
 const TONE_CLASS: Record<BadgeTone, string> = {
   neutral: "bg-[var(--surface-subtle)] text-[var(--foreground)] border-[var(--border)]",
-  info: "bg-[#e0ecff] text-[#1d4ed8] border-[#bfd4ff]",
-  success: "bg-[#dcf6e4] text-[#166534] border-[#bce5c9]",
+  info: "bg-[var(--info-soft)] text-[var(--info-fg)] border-[var(--info-border)]",
+  success: "bg-[var(--success-soft)] text-[var(--success-fg)] border-[var(--success-border)]",
   warning: "bg-[var(--warning-soft)] text-[var(--warning-fg)] border-[var(--warning-border)]",
   danger: "bg-[var(--danger-soft)] text-[var(--danger-fg)] border-[var(--danger-border)]",
   muted: "bg-transparent text-[var(--muted)] border-[var(--border)]",

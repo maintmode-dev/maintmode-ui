@@ -75,7 +75,7 @@ export function MaintenanceCalendar({ view, date, maintenances, onSelectMaintena
   };
 
   return (
-    <div className="flex-1 overflow-hidden bg-[var(--surface)] p-3" data-testid="maintenance-calendar">
+    <div className="fc-scope flex-1 overflow-hidden bg-[var(--surface)] p-3" data-testid="maintenance-calendar">
       <FullCalendar
         ref={calendarRef}
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -103,7 +103,7 @@ function toCalendarEvent(maintenance: MaintenanceSummary) {
     start: maintenance.planned_start_at,
     end: maintenance.planned_end_at,
     backgroundColor: colors.bg,
-    borderColor: maintenance.has_conflict ? "#d92d20" : colors.border,
+    borderColor: maintenance.has_conflict ? "var(--conflict)" : colors.border,
     textColor: colors.text,
     extendedProps: {
       status: maintenance.status,

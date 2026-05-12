@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, SlidersHorizontal } from "lucide-react";
 
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -15,15 +15,27 @@ type CalendarTopPanelProps = {
   onViewChange: (view: CalendarViewMode) => void;
   onDateChange: (date: string) => void;
   onCreate?: () => void;
+  /** Open filters drawer (mobile/tablet only). When omitted, the Filters button is hidden. */
+  onOpenFilters?: () => void;
+  /** Number of active filters to surface on the mobile Filters button. */
+  activeFilterCount?: number;
 };
 
-const VIEW_BUTTONS: ReadonlyArray<{ value: CalendarViewMode; label: string }> = [
-  { value: "month", label: "Month" },
-  { value: "week", label: "Week" },
-  { value: "day", label: "Day" },
+const VIEW_BUTTONS: ReadonlyArray<{ value: CalendarViewMode; label: string; short: string }> = [
+  { value: "month", label: "Month", short: "M" },
+  { value: "week", label: "Week", short: "W" },
+  { value: "day", label: "Day", short: "D" },
 ];
 
-export function CalendarTopPanel({ view, date, onViewChange, onDateChange, onCreate }: CalendarTopPanelProps) {
+export function CalendarTopPanel({
+  view,
+  date,
+  onViewChange,
+  onDateChange,
+  onCreate,
+  onOpenFilters,
+  activeFilterCount = 0,
+}: CalendarTopPanelProps) {
   const anchor = parseLocalDateParam(date) ?? new Date();
 
   const shift = (direction: -1 | 1) => {
@@ -43,8 +55,8 @@ export function CalendarTopPanel({ view, date, onViewChange, onDateChange, onCre
   const formattedAnchor = formatAnchorLabel(view, anchor);
 
   return (
-    <div className="flex items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3">
-      <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2 sm:px-4 sm:py-3 md:flex-nowrap">
+      <div className="flex flex-wrap items-center gap-2">
         <Button variant="secondary" size="sm" onClick={() => shift(-1)} aria-label="Previous range">
           <ChevronLeft className="h-4 w-4" />
         </Button>
@@ -54,35 +66,64 @@ export function CalendarTopPanel({ view, date, onViewChange, onDateChange, onCre
         <Button variant="secondary" size="sm" onClick={goToday}>
           Today
         </Button>
-        <span className="ml-3 text-sm font-semibold text-[var(--foreground)]">{formattedAnchor}</span>
+        <span className="ml-1 max-w-[55vw] truncate text-sm font-semibold text-[var(--foreground)] sm:ml-3 sm:max-w-none">
+          {formattedAnchor}
+        </span>
       </div>
-      <div className="flex items-center gap-2">
-        {onCreate ? (
-          <Button variant="primary" size="sm" onClick={onCreate} data-testid="create-maintenance-button">
-            <Plus className="h-4 w-4" />
-            New maintenance
+      <div className="flex flex-wrap items-center gap-2">
+        {onOpenFilters ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onOpenFilters}
+            aria-label="Open filters"
+            className="lg:hidden"
+            data-testid="open-filters-button"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            <span className="hidden sm:inline">Filters</span>
+            {activeFilterCount > 0 ? (
+              <span
+                aria-label={`${activeFilterCount} active filters`}
+                className="ml-1 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-[var(--accent)] px-1 text-[10px] font-bold text-white"
+              >
+                {activeFilterCount}
+              </span>
+            ) : null}
           </Button>
         ) : null}
-        <div role="group" aria-label="Calendar view" className="inline-flex overflow-hidden rounded-md border border-[var(--border)]">
+        {onCreate ? (
+          <Button variant="primary" size="sm" onClick={onCreate} data-testid="create-maintenance-button" aria-label="New maintenance">
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">New maintenance</span>
+          </Button>
+        ) : null}
+        <div
+          role="group"
+          aria-label="Calendar view"
+          className="inline-flex overflow-hidden rounded-md border border-[var(--border)]"
+        >
           {VIEW_BUTTONS.map((option) => {
-          const active = option.value === view;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onViewChange(option.value)}
-              className={
-                "px-3 py-1.5 text-xs font-semibold transition " +
-                (active
-                  ? "bg-[var(--surface-subtle)] text-[var(--foreground)]"
-                  : "bg-[var(--surface)] text-[var(--muted-strong)] hover:bg-[var(--surface-subtle)]")
-              }
-            >
-              {option.label}
-            </button>
-          );
-        })}
+            const active = option.value === view;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                aria-pressed={active}
+                aria-label={option.label}
+                onClick={() => onViewChange(option.value)}
+                className={
+                  "px-2 py-1.5 text-xs font-semibold transition sm:px-3 " +
+                  (active
+                    ? "bg-[var(--surface-subtle)] text-[var(--foreground)]"
+                    : "bg-[var(--surface)] text-[var(--muted-strong)] hover:bg-[var(--surface-subtle)]")
+                }
+              >
+                <span className="hidden sm:inline">{option.label}</span>
+                <span className="sm:hidden">{option.short}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
