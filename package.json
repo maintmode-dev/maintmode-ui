@@ -8,11 +8,16 @@
     "build": "next build",
     "lint": "eslint .",
     "format": "prettier --check .",
-    "test": "vitest run",
+    "test": "npm run test:unit && npm run test:bff",
+    "test:unit": "vitest run -c vitest.unit.config.ts",
+    "test:bff": "vitest run -c vitest.bff.config.ts",
     "test:watch": "vitest",
+    "test:coverage": "vitest run -c vitest.unit.config.ts --coverage && vitest run -c vitest.bff.config.ts --coverage",
     "test:contracts": "node scripts/check-boundaries.mjs",
-    "test:smoke": "playwright test -c tests/playwright.config.ts",
-    "verify": "npm run lint && npm run test:contracts && npm run test && npm run build"
+    "test:smoke": "playwright test -c tests/playwright.config.ts --ignore-snapshots --grep-invert @a11y",
+    "test:smoke:headed": "playwright test -c tests/playwright.config.ts --headed --grep-invert @a11y",
+    "test:a11y": "playwright test -c tests/playwright.config.ts --grep @a11y",
+    "verify": "npm run lint && npm run test:contracts && npm run test:unit && npm run test:bff && npm run build"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
@@ -40,7 +45,9 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
+    "@axe-core/playwright": "^4.10.0",
     "@playwright/test": "^1.53.2",
+    "@vitest/coverage-v8": "^4.0.18",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",

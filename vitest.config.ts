@@ -1,7 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-export default defineConfig({
+// Base Vitest config — shared aliases/stubs only. The `include` glob is set
+// by the layer-specific configs (`vitest.unit.config.ts` and
+// `vitest.bff.config.ts`) so they can scope each test layer cleanly.
+//
+// Default export still works for `vitest:watch` against the whole tree because
+// the include below catches every `*.test.ts` under src and tests.
+
+export const baseTestConfig = {
   resolve: {
     alias: [
       {
@@ -23,7 +30,14 @@ export default defineConfig({
     ],
   },
   test: {
-    environment: "node",
+    environment: "node" as const,
+  },
+};
+
+export default defineConfig({
+  ...baseTestConfig,
+  test: {
+    ...baseTestConfig.test,
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
   },
 });

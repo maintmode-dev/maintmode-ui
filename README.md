@@ -18,12 +18,22 @@ npm install
 npm run dev
 npm run lint
 npm run test:contracts
-npm run test
+npm run test:unit
+npm run test:bff
 npm run build
-npm run test:smoke
+PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:smoke
+PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:a11y
 ```
 
 `npm run dev` starts the app on `http://localhost:3000`.
+
+## Test layers
+- `npm run test:unit` — pure logic (utils, adapters, schemas, query keys).
+- `npm run test:bff` — Next route handlers under `src/app/api/**` with stubbed `fetch`.
+- `npm run test:smoke` — Playwright app-shell flow (excludes `@a11y`).
+- `npm run test:a11y` — Playwright + `@axe-core/playwright` on the auth surface.
+
+See [`docs/testing.md`](docs/testing.md) for the full runbook: required env, artifacts on failure, release-gate cases, and the decision tree for where new tests belong.
 
 ## Required Environment
 Real backend calls are not implemented in this scaffold. Future backend integration will require:
