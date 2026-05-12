@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { signIn } from "@/server/auth/auth-config";
+import { DEV_BYPASS_ENABLED, signIn } from "@/server/auth/auth-config";
 import { isSafeOriginalUri } from "@/shared/config/auth-config";
 
 // Maps both NextAuth-default `error` codes and our typed `code` values from
@@ -45,6 +45,11 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     await signIn("google", { redirectTo: callbackUrl });
   }
 
+  async function startDevBypassLogin() {
+    "use server";
+    await signIn("dev-bypass", { redirectTo: callbackUrl });
+  }
+
   return (
     <main className="login-card" aria-labelledby="login-title">
       <header className="login-card__header">
@@ -67,6 +72,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           Continue with Google
         </button>
       </form>
+
+      {DEV_BYPASS_ENABLED ? (
+        <form action={startDevBypassLogin} style={{ marginTop: "0.75rem" }}>
+          <button
+            className="button button--secondary"
+            type="submit"
+            data-testid="login-dev-bypass"
+          >
+            Continue as dev user (no real OAuth)
+          </button>
+        </form>
+      ) : null}
 
       <p className="login-card__hint">
         Sessions are short-lived. Sign in again if your access token has been revoked.

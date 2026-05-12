@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeCalendarResponse, normalizeMaintenanceView } from "@/server/backend/maintenance/adapters";
+import {
+  durationToMinutes,
+  normalizeCalendarResponse,
+  normalizeMaintenanceView,
+} from "@/server/backend/maintenance/adapters";
 
 describe("maintenance backend adapters", () => {
   it("normalizes maintenance details without leaking backend date/action/conflict shapes", () => {
@@ -138,5 +142,31 @@ describe("maintenance backend adapters", () => {
       resources: [{ id: "r1", name: "API", type: "service" }],
       has_conflict: true,
     });
+  });
+});
+
+describe("durationToMinutes", () => {
+  it("returns numeric duration unchanged", () => {
+    expect(durationToMinutes(30)).toBe(30);
+  });
+
+  it("parses bare integer strings as minutes", () => {
+    expect(durationToMinutes("45")).toBe(45);
+  });
+
+  it("parses hours and minutes", () => {
+    expect(durationToMinutes("1h30m")).toBe(90);
+  });
+
+  it("parses Go time.Duration.String() trailing seconds", () => {
+    // Go formats e.g. time.Minute*15 as "15m0s"; we ignore the seconds part.
+    expect(durationToMinutes("15m0s")).toBe(15);
+    expect(durationToMinutes("1h30m0s")).toBe(90);
+    expect(durationToMinutes("1h0m0s")).toBe(60);
+  });
+
+  it("returns 0 for unparseable input", () => {
+    expect(durationToMinutes("")).toBe(0);
+    expect(durationToMinutes("garbage")).toBe(0);
   });
 });

@@ -150,8 +150,11 @@ export function durationToMinutes(duration: number | string): number {
     return Number(trimmed);
   }
 
-  const match = trimmed.match(/^(?:(\d+)h)?(?:(\d+)m)?$/);
-  if (!match || (!match[1] && !match[2])) {
+  // Go's time.Duration.String() always includes every non-zero unit and may
+  // include a trailing "0s" — e.g. "15m0s", "1h30m0s", "1h0m". Match each
+  // unit independently and ignore seconds (they round down to 0 minutes).
+  const match = trimmed.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/);
+  if (!match || (!match[1] && !match[2] && !match[3])) {
     return 0;
   }
 

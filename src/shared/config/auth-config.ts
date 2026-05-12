@@ -3,6 +3,13 @@ export type MaintmodeAuthConfig = {
   appBaseUrl: string;
   googleClientId: string;
   googleClientSecret: string;
+  /**
+   * When `true` AND `NODE_ENV !== "production"`, the login page exposes a
+   * one-click "Continue as dev user" button that runs the same backend
+   * exchange as Google but with a placeholder `id_token`. Real Google OAuth
+   * stays available alongside. Production builds ignore this flag entirely.
+   */
+  devAuthBypassEnabled: boolean;
 };
 
 export type AuthConfigIssue = {
@@ -71,12 +78,27 @@ export function parseMaintmodeAuthConfig(env: Record<string, string | undefined>
     throw new AuthConfigValidationError(issues);
   }
 
+  // Dev-bypass is gated twice: the env flag must be set AND the runtime must
+  // not be production. This makes it impossible to enable the bypass in a
+  // production build even if the env var is accidentally set.
+  const devAuthBypassEnabled =
+    env.NODE_ENV !== "production" && parseBoolean(env.MAINTMODE_DEV_AUTH_BYPASS);
+
   return {
     authSecret: rawSecret ?? "",
     appBaseUrl,
     googleClientId: rawGoogleClientId ?? "",
     googleClientSecret: rawGoogleClientSecret ?? "",
+    devAuthBypassEnabled,
   };
+}
+
+function parseBoolean(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "1" || normalized === "yes";
 }
 
 /**

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 
 import { Button } from "@/shared/ui/primitives/button";
 import {
@@ -14,6 +14,7 @@ type CalendarTopPanelProps = {
   date: string;
   onViewChange: (view: CalendarViewMode) => void;
   onDateChange: (date: string) => void;
+  onCreate?: () => void;
 };
 
 const VIEW_BUTTONS: ReadonlyArray<{ value: CalendarViewMode; label: string }> = [
@@ -22,7 +23,7 @@ const VIEW_BUTTONS: ReadonlyArray<{ value: CalendarViewMode; label: string }> = 
   { value: "day", label: "Day" },
 ];
 
-export function CalendarTopPanel({ view, date, onViewChange, onDateChange }: CalendarTopPanelProps) {
+export function CalendarTopPanel({ view, date, onViewChange, onDateChange, onCreate }: CalendarTopPanelProps) {
   const anchor = parseLocalDateParam(date) ?? new Date();
 
   const shift = (direction: -1 | 1) => {
@@ -55,8 +56,15 @@ export function CalendarTopPanel({ view, date, onViewChange, onDateChange }: Cal
         </Button>
         <span className="ml-3 text-sm font-semibold text-[var(--foreground)]">{formattedAnchor}</span>
       </div>
-      <div role="group" aria-label="Calendar view" className="inline-flex overflow-hidden rounded-md border border-[var(--border)]">
-        {VIEW_BUTTONS.map((option) => {
+      <div className="flex items-center gap-2">
+        {onCreate ? (
+          <Button variant="primary" size="sm" onClick={onCreate} data-testid="create-maintenance-button">
+            <Plus className="h-4 w-4" />
+            New maintenance
+          </Button>
+        ) : null}
+        <div role="group" aria-label="Calendar view" className="inline-flex overflow-hidden rounded-md border border-[var(--border)]">
+          {VIEW_BUTTONS.map((option) => {
           const active = option.value === view;
           return (
             <button
@@ -75,6 +83,7 @@ export function CalendarTopPanel({ view, date, onViewChange, onDateChange }: Cal
             </button>
           );
         })}
+        </div>
       </div>
     </div>
   );

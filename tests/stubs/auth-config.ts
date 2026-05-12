@@ -16,3 +16,4 @@ export const handlers = {
   POST: vi.fn(),
 };
 export const config = {} as Record<string, unknown>;
+export const DEV_BYPASS_ENABLED = false;

@@ -21,7 +21,26 @@ describe("auth-config", () => {
       appBaseUrl: "http://localhost:3000",
       googleClientId: "client-id",
       googleClientSecret: "client-secret",
+      devAuthBypassEnabled: false,
     });
+  });
+
+  it("enables dev auth bypass when flag is set and NODE_ENV is not production", () => {
+    const config = parseMaintmodeAuthConfig({
+      ...validEnv,
+      MAINTMODE_DEV_AUTH_BYPASS: "true",
+      NODE_ENV: "development",
+    });
+    expect(config.devAuthBypassEnabled).toBe(true);
+  });
+
+  it("forces dev auth bypass off in production even if flag is set", () => {
+    const config = parseMaintmodeAuthConfig({
+      ...validEnv,
+      MAINTMODE_DEV_AUTH_BYPASS: "true",
+      NODE_ENV: "production",
+    });
+    expect(config.devAuthBypassEnabled).toBe(false);
   });
 
   it("strips a trailing slash on the app base URL", () => {

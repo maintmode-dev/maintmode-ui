@@ -1,57 +1,145 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { format, parseISO } from "date-fns";
-
-import type { MaintenanceStatus, MaintenanceSummary } from "@/domain/maintenance/models/maintenance";
-import { MAINTENANCE_STATUS_LABEL } from "@/domain/maintenance/rules/status";
-import { useMaintenanceDetailsQuery } from "@/features/maintenance-details/queries/use-maintenance-details-query";
-import { useMaintenanceActionMutation } from "@/features/maintenance-details/mutations/use-maintenance-action-mutation";
+import type { MaintenanceSummary } from "@/domain/maintenance/models/maintenance";
 import { CancelDialog, type CancelDialogResult } from "@/features/maintenance-details/components/cancel-dialog";
-import { Badge } from "@/shared/ui/primitives/badge";
+import { MaintenanceDetailsContent } from "@/features/maintenance-details/components/maintenance-details-content";
+import { MaintenanceForm } from "@/features/maintenance-details/components/form/maintenance-form";
+import { UnsavedChangesAlert } from "@/features/maintenance-details/components/unsaved-changes-alert";
+import { mapFieldErrors } from "@/features/maintenance-details/hooks/use-field-error-mapper";
+import { useMaintenanceForm } from "@/features/maintenance-details/hooks/use-maintenance-form";
+import { useUnsavedChangesGuard } from "@/features/maintenance-details/hooks/use-unsaved-changes-guard";
+import { useCreateMaintenanceMutation } from "@/features/maintenance-details/mutations/use-create-maintenance-mutation";
+import { useMaintenanceActionMutation } from "@/features/maintenance-details/mutations/use-maintenance-action-mutation";
+import { useUpdateMaintenanceMutation } from "@/features/maintenance-details/mutations/use-update-maintenance-mutation";
+import { useMaintenanceDetailsQuery } from "@/features/maintenance-details/queries/use-maintenance-details-query";
+import type { MaintenanceFormValues } from "@/features/maintenance-details/schemas/maintenance-form-schema";
 import { Button } from "@/shared/ui/primitives/button";
 import { Skeleton } from "@/shared/ui/primitives/skeleton";
 import {
   Sheet,
-  SheetClose,
   SheetContent,
   SheetDescription,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/shared/ui/primitives/sheet";
 
+export type MaintenanceSheetMode = "view" | "create" | "edit";
+
 type MaintenanceDetailsSheetProps = {
   maintenanceId: string | null;
+  mode: MaintenanceSheetMode;
+  /** ISO datetime used as `planned_start_at` default in create mode. */
+  createDefaultStart?: string;
   onClose: () => void;
+  onModeChange?: (mode: MaintenanceSheetMode) => void;
 };
 
-const STATUS_TONE: Record<MaintenanceStatus, "info" | "warning" | "success" | "danger" | "neutral"> = {
-  draft: "neutral",
-  planned: "info",
-  in_progress: "warning",
-  completed: "success",
-  canceled: "danger",
-};
+const SHEET_DESCRIPTION_ID = "maintenance-details-description";
 
-export function MaintenanceDetailsSheet({ maintenanceId, onClose }: MaintenanceDetailsSheetProps) {
-  const detailsQuery = useMaintenanceDetailsQuery(maintenanceId);
+export function MaintenanceDetailsSheet({
+  maintenanceId,
+  mode,
+  createDefaultStart,
+  onClose,
+  onModeChange,
+}: MaintenanceDetailsSheetProps) {
+  const isOpen = mode === "create" ? true : Boolean(maintenanceId);
+  const detailsQuery = useMaintenanceDetailsQuery(mode === "create" ? null : maintenanceId);
   const actionMutation = useMaintenanceActionMutation();
+  const createMutation = useCreateMaintenanceMutation();
+  const updateMutation = useUpdateMaintenanceMutation();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const isOpen = Boolean(maintenanceId);
   const data = detailsQuery.data;
+  const isFormMode = mode === "create" || mode === "edit";
+  const formDefaults = useMemo<Partial<MaintenanceFormValues> | undefined>(() => {
+    if (mode === "create") {
+      return createDefaultStart ? { planned_start_at: createDefaultStart } : undefined;
+    }
+    if (mode === "edit" && data) {
+      return {
+        title: data.title,
+        description: data.description,
+        planned_start_at: toDatetimeLocal(data.planned_start_at),
+        impact: (data.impact as MaintenanceFormValues["impact"]) ?? "none",
+        scope: data.scope,
+        resource_ids: data.resources.map((resource) => resource.id),
+        steps: (data.steps ?? []).map((step) => ({
+          order: step.order,
+          description: step.description,
+          rollback_description: step.rollback_description,
+          duration_minutes: step.duration_minutes,
+        })),
+      };
+    }
+    return undefined;
+  }, [mode, createDefaultStart, data]);
+
+  const { form, steps } = useMaintenanceForm({ defaultValues: formDefaults });
+
+  // Re-sync defaults when entering edit mode with newly-loaded details, or
+  // when the create default start changes (e.g. user picks a different slot).
+  // We track the keys that should trigger a reset and avoid calling setState
+  // synchronously inside the effect body.
+  const lastResetKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isFormMode || !formDefaults) {
+      return;
+    }
+    const key = `${mode}:${maintenanceId ?? "new"}:${data?.revision ?? "-"}:${createDefaultStart ?? "-"}`;
+    if (lastResetKeyRef.current === key) {
+      return;
+    }
+    lastResetKeyRef.current = key;
+    form.reset(formDefaults as MaintenanceFormValues);
+  }, [isFormMode, mode, maintenanceId, data?.revision, createDefaultStart, form, formDefaults]);
+
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const handleClose = () => {
+    setSubmitError(null);
+    onClose();
+  };
+
+  const guard = useUnsavedChangesGuard({
+    isDirty: isFormMode && form.formState.isDirty,
+    onDiscard: handleClose,
+  });
+
+  const handleSubmit = async (values: MaintenanceFormValues) => {
+    setSubmitError(null);
+    const input = {
+      title: values.title,
+      description: values.description,
+      planned_start_at: toIso(values.planned_start_at),
+      impact: values.impact,
+      scope: values.scope,
+      resource_ids: values.scope === "resource" ? values.resource_ids : undefined,
+      steps: values.steps,
+    };
+    try {
+      if (mode === "create") {
+        await createMutation.mutateAsync(input);
+      } else if (mode === "edit" && maintenanceId) {
+        await updateMutation.mutateAsync({ id: maintenanceId, ...input });
+      }
+      onClose();
+    } catch (error) {
+      const mapped = mapFieldErrors<MaintenanceFormValues>(error, form.setError);
+      if (!mapped) {
+        setSubmitError(error instanceof Error ? error.message : "Save failed");
+      }
+    }
+  };
 
   const runAction = (action: "approve" | "start" | "finish") => {
     if (!data || !maintenanceId) {
       return;
     }
     if (action === "approve") {
-      // `revision` is required by the backend optimistic-concurrency check.
-      // `0` is a valid value, so we cannot fall back to it — bail out and
-      // let the human re-open the sheet to fetch a real revision instead
-      // of silently approving a stale view.
       if (typeof data.revision !== "number") {
         return;
       }
@@ -85,75 +173,52 @@ export function MaintenanceDetailsSheet({ maintenanceId, onClose }: MaintenanceD
   };
 
   return (
-    <Sheet open={isOpen} onOpenChange={(open) => (open ? null : onClose())}>
-      <SheetContent aria-describedby="maintenance-details-description">
-        {detailsQuery.isLoading ? (
+    <Sheet
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (open) {
+          return;
+        }
+        guard.requestClose();
+      }}
+    >
+      <SheetContent aria-describedby={SHEET_DESCRIPTION_ID} className="overflow-hidden">
+        <SheetHeader>
+          <SheetTitle>{titleForMode(mode, data)}</SheetTitle>
+          <SheetDescription id={SHEET_DESCRIPTION_ID}>{descriptionForMode(mode)}</SheetDescription>
+        </SheetHeader>
+
+        {isFormMode ? (
+          <MaintenanceForm
+            form={form}
+            steps={steps}
+            mode={mode === "edit" ? "edit" : "create"}
+            isPending={isPending}
+            submitError={submitError}
+            onSubmit={handleSubmit}
+            onCancel={() => guard.requestClose()}
+          />
+        ) : detailsQuery.isLoading ? (
           <DetailsSkeleton />
         ) : detailsQuery.isError ? (
-          <DetailsErrorState onClose={onClose} />
+          <DetailsErrorState onClose={handleClose} />
         ) : !data ? null : (
           <>
-            <SheetHeader>
-              <div className="flex items-center justify-between gap-2">
-                <Badge tone={STATUS_TONE[data.status] ?? "neutral"}>{MAINTENANCE_STATUS_LABEL[data.status]}</Badge>
-                {data.has_conflict ? <Badge tone="danger">Conflict</Badge> : null}
-              </div>
-              <SheetTitle>{data.title}</SheetTitle>
-              <SheetDescription id="maintenance-details-description">{data.description}</SheetDescription>
-            </SheetHeader>
-
-            <section className="flex flex-col gap-3 text-sm">
-              <DetailRow label="Planned">
-                {formatRange(data.planned_start_at, data.planned_end_at)}
-              </DetailRow>
-              {data.actual_start_at || data.actual_end_at ? (
-                <DetailRow label="Actual" tone="warning">
-                  {formatRange(data.actual_start_at, data.actual_end_at)}
-                </DetailRow>
-              ) : null}
-              <DetailRow label="Scope">{data.scope === "global" ? "Global" : "Resource"}</DetailRow>
-              <DetailRow label="Impact">{formatImpact(data.impact)}</DetailRow>
-              {data.resources.length > 0 ? (
-                <DetailRow label="Resources">
-                  <ul className="flex flex-wrap gap-1">
-                    {data.resources.map((resource) => (
-                      <li key={resource.id}>
-                        <Badge tone="muted">{resource.name}</Badge>
-                      </li>
-                    ))}
-                  </ul>
-                </DetailRow>
-              ) : null}
-              {data.conflicts.length > 0 ? (
-                <DetailRow label="Conflicts" tone="danger">
-                  <ul className="flex flex-col gap-1 text-xs">
-                    {data.conflicts.map((conflict) => (
-                      <li key={conflict.maintenance_id}>
-                        <span className="font-semibold">{conflict.maintenance_title}</span>{" "}
-                        <span className="text-[var(--muted)]">
-                          ({formatRange(conflict.overlap_start, conflict.overlap_end)})
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </DetailRow>
-              ) : null}
-            </section>
-
-            <SheetFooter className="flex-wrap gap-2">
+            <div className="flex-1 overflow-y-auto pb-4">
+              <MaintenanceDetailsContent data={data} />
+            </div>
+            <div className="mt-auto flex flex-wrap items-center justify-end gap-2 border-t border-[var(--border)] pt-3">
               <ActionButtons
                 summary={data}
                 pending={actionMutation.isPending}
                 onAction={runAction}
                 onCancelClick={() => setCancelOpen(true)}
+                onEditClick={() => onModeChange?.("edit")}
               />
-              <SheetClose asChild>
-                <Button variant="ghost" size="sm">
-                  Close
-                </Button>
-              </SheetClose>
-            </SheetFooter>
-
+              <Button variant="ghost" size="sm" onClick={handleClose} disabled={actionMutation.isPending}>
+                Close
+              </Button>
+            </div>
             {actionMutation.error ? (
               <p className="text-xs text-[var(--danger-fg)]" role="alert">
                 {actionMutation.error.message}
@@ -168,6 +233,11 @@ export function MaintenanceDetailsSheet({ maintenanceId, onClose }: MaintenanceD
         onOpenChange={setCancelOpen}
         onConfirm={submitCancel}
       />
+      <UnsavedChangesAlert
+        open={guard.guardOpen}
+        onCancel={guard.cancelDiscard}
+        onConfirm={guard.confirmDiscard}
+      />
     </Sheet>
   );
 }
@@ -177,17 +247,23 @@ function ActionButtons({
   pending,
   onAction,
   onCancelClick,
+  onEditClick,
 }: {
   summary: MaintenanceSummary;
   pending: boolean;
   onAction: (action: "approve" | "start" | "finish") => void;
   onCancelClick: () => void;
+  onEditClick?: () => void;
 }) {
   const actions = summary.actions;
-  // Approve requires the backend revision for optimistic concurrency.
   const canApprove = actions?.can_approve === true && typeof summary.revision === "number";
   return (
     <div className="flex flex-wrap gap-2">
+      {actions?.can_edit && onEditClick ? (
+        <Button variant="secondary" size="sm" disabled={pending} onClick={onEditClick}>
+          Edit
+        </Button>
+      ) : null}
       {actions?.can_approve ? (
         <Button
           variant="primary"
@@ -218,29 +294,6 @@ function ActionButtons({
   );
 }
 
-function DetailRow({
-  label,
-  children,
-  tone,
-}: {
-  label: string;
-  children: React.ReactNode;
-  tone?: "warning" | "danger";
-}) {
-  const labelClass =
-    tone === "warning"
-      ? "text-[var(--warning-fg)]"
-      : tone === "danger"
-        ? "text-[var(--danger-fg)]"
-        : "text-[var(--muted)]";
-  return (
-    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-3 border-t border-[var(--border)] py-2">
-      <span className={`text-xs font-semibold uppercase tracking-wide ${labelClass}`}>{label}</span>
-      <div className="text-[var(--foreground)]">{children}</div>
-    </div>
-  );
-}
-
 function DetailsSkeleton() {
   return (
     <div className="flex flex-col gap-3" aria-busy="true">
@@ -265,28 +318,37 @@ function DetailsErrorState({ onClose }: { onClose: () => void }) {
   );
 }
 
-function formatRange(startIso: string | undefined, endIso: string | undefined): string {
-  if (!startIso) {
-    return "—";
-  }
-  const start = parseISO(startIso);
-  const end = endIso ? parseISO(endIso) : null;
-  if (end && sameDay(start, end)) {
-    return `${format(start, "PPp")} – ${format(end, "p")}`;
-  }
-  if (end) {
-    return `${format(start, "PPp")} – ${format(end, "PPp")}`;
-  }
-  return format(start, "PPp");
+function titleForMode(mode: MaintenanceSheetMode, data: MaintenanceSummary | undefined) {
+  if (mode === "create") return "New maintenance";
+  if (mode === "edit") return data?.title ? `Edit: ${data.title}` : "Edit maintenance";
+  return data?.title ?? "Maintenance details";
 }
 
-function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+function descriptionForMode(mode: MaintenanceSheetMode) {
+  if (mode === "create") return "Schedule a maintenance with planned start and ordered steps.";
+  if (mode === "edit") return "Update the draft. Computed end follows the step durations.";
+  return "Review the details and run available actions.";
 }
 
-function formatImpact(impact: string) {
-  if (impact === "partial_outage") return "Partial outage";
-  if (impact === "full_outage") return "Full outage";
-  if (impact === "none") return "No impact";
-  return impact;
+function toDatetimeLocal(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
+  const date = new Date(iso);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toIso(value: string): string {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return value;
+  }
+  return date.toISOString();
 }

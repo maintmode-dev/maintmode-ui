@@ -1,6 +1,7 @@
 import "server-only";
 
 import NextAuth, { type NextAuthConfig, CredentialsSignin } from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import type { JWT } from "next-auth/jwt";
 
@@ -28,6 +29,36 @@ function getAuthConfig(): MaintmodeAuthConfig {
 
 const authConfig = getAuthConfig();
 
+const DEV_BYPASS_PROVIDER_ID = "dev-bypass";
+
+// Auth providers are resolved ONCE at module load. `devAuthBypassEnabled`
+// already encodes the prod-safety decision (see parseMaintmodeAuthConfig:
+// it returns false when NODE_ENV === "production"). No further runtime
+// checks below — if the provider is registered, the bypass is on.
+const providers: NextAuthConfig["providers"] = [
+  Google({
+    clientId: authConfig.googleClientId,
+    clientSecret: authConfig.googleClientSecret,
+    authorization: { params: { prompt: "select_account", access_type: "offline" } },
+  }),
+];
+
+if (authConfig.devAuthBypassEnabled) {
+  providers.push(
+    Credentials({
+      id: DEV_BYPASS_PROVIDER_ID,
+      name: "Dev bypass",
+      credentials: {},
+      async authorize() {
+        // Defer the actual backend exchange to the signIn callback so the
+        // logic (and error mapping) lives in one place. We just need to
+        // return a non-null user here for NextAuth to proceed.
+        return { id: "dev-bypass" };
+      },
+    }),
+  );
+}
+
 /**
  * Typed sign-in failure. NextAuth maps `CredentialsSignin.code` to
  * `?code=<code>` on the configured `pages.error` URL, so the login page can
@@ -51,41 +82,27 @@ export const config = {
     signIn: "/login",
     error: "/login",
   },
-  providers: [
-    Google({
-      clientId: authConfig.googleClientId,
-      clientSecret: authConfig.googleClientSecret,
-      authorization: { params: { prompt: "select_account", access_type: "offline" } },
-    }),
-  ],
+  providers,
   callbacks: {
     async signIn({ account }) {
-      if (!account || account.provider !== "google") {
+      if (!account) {
         return false;
       }
-      const idToken = typeof account.id_token === "string" ? account.id_token : undefined;
-      if (!idToken) {
-        throw new BackendExchangeError(AUTH_ERROR_CODES.invalidIdToken);
+      if (account.provider === "google") {
+        const idToken = typeof account.id_token === "string" ? account.id_token : undefined;
+        if (!idToken) {
+          throw new BackendExchangeError(AUTH_ERROR_CODES.invalidIdToken);
+        }
+        return runBackendExchange(account, idToken);
       }
-      try {
-        const tokens = await exchangeGoogleIdToken(idToken);
-        const me = await fetchBackendMe(tokens.access_token);
-        account.maintmodeTokens = tokens;
-        account.maintmodeUser = {
-          id: me.id,
-          email: me.email,
-          displayName: me.display_name,
-          roles: me.roles,
-        };
-        return true;
-      } catch (error) {
-        // Tag the failure with a stable code so `/login?error=...` shows a
-        // precise message. Backend response bodies stay out of telemetry.
-        const code = isIdentityLookupError(error)
-          ? AUTH_ERROR_CODES.identityLookupFailed
-          : AUTH_ERROR_CODES.oauthHandoffFailed;
-        throw new BackendExchangeError(code);
+      if (account.provider === DEV_BYPASS_PROVIDER_ID) {
+        // Provider is only registered in non-prod (see providers list above),
+        // so reaching this branch implies the bypass is active. Backend in
+        // non-prod accepts any id_token; the placeholder makes the bypass
+        // auditable in backend logs.
+        return runBackendExchange(account, "dev-bypass");
       }
+      return false;
     },
     async jwt({ token, account }) {
       // First call after a successful `signIn` carries the freshly enriched
@@ -135,6 +152,13 @@ export const config = {
 
 export const { handlers, auth, signIn, signOut } = NextAuth(config);
 
+/**
+ * Single source of truth for the dev-bypass flow. Resolved at module load
+ * from env + NODE_ENV (see `parseMaintmodeAuthConfig`). Consumers (login
+ * page, tests) should read this value, never re-derive from env.
+ */
+export const DEV_BYPASS_ENABLED = authConfig.devAuthBypassEnabled;
+
 function enrichTokenWithPair(token: JWT, pair: BackendTokenPair, user: AuthSessionUser): JWT {
   const expiresIn =
     typeof pair.expires_in === "number" && Number.isFinite(pair.expires_in) && pair.expires_in > 0
@@ -159,6 +183,29 @@ function readString(value: unknown): string | undefined {
 
 function readNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+async function runBackendExchange(
+  account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
+  idToken: string,
+): Promise<true> {
+  try {
+    const tokens = await exchangeGoogleIdToken(idToken);
+    const me = await fetchBackendMe(tokens.access_token);
+    account.maintmodeTokens = tokens;
+    account.maintmodeUser = {
+      id: me.id,
+      email: me.email,
+      displayName: me.display_name,
+      roles: me.roles,
+    };
+    return true;
+  } catch (error) {
+    const code = isIdentityLookupError(error)
+      ? AUTH_ERROR_CODES.identityLookupFailed
+      : AUTH_ERROR_CODES.oauthHandoffFailed;
+    throw new BackendExchangeError(code);
+  }
 }
 
 function isIdentityLookupError(error: unknown): boolean {

@@ -5,7 +5,7 @@ import FullCalendar from "@fullcalendar/react";
 import type { EventClickArg } from "@fullcalendar/core";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
-import interactionPlugin from "@fullcalendar/interaction";
+import interactionPlugin, { type DateClickArg } from "@fullcalendar/interaction";
 
 import type { MaintenanceSummary } from "@/domain/maintenance/models/maintenance";
 import { MAINTENANCE_STATUS_COLORS } from "@/domain/maintenance/rules/status";
@@ -26,9 +26,10 @@ type MaintenanceCalendarProps = {
   date: string;
   maintenances: MaintenanceSummary[];
   onSelectMaintenance: (id: string) => void;
+  onSelectSlot?: (startIso: string) => void;
 };
 
-export function MaintenanceCalendar({ view, date, maintenances, onSelectMaintenance }: MaintenanceCalendarProps) {
+export function MaintenanceCalendar({ view, date, maintenances, onSelectMaintenance, onSelectSlot }: MaintenanceCalendarProps) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const events = useMemo(() => maintenances.map(toCalendarEvent), [maintenances]);
 
@@ -64,6 +65,15 @@ export function MaintenanceCalendar({ view, date, maintenances, onSelectMaintena
     }
   };
 
+  const handleDateClick = (arg: DateClickArg) => {
+    if (!onSelectSlot) {
+      return;
+    }
+    // Month view returns midnight at clicked day; time views return the slot
+    // start. In both cases use the local date and let the form normalize.
+    onSelectSlot(arg.date.toISOString());
+  };
+
   return (
     <div className="flex-1 overflow-hidden bg-[var(--surface)] p-3" data-testid="maintenance-calendar">
       <FullCalendar
@@ -78,6 +88,7 @@ export function MaintenanceCalendar({ view, date, maintenances, onSelectMaintena
         eventOrder={["allDay", "start", "title"]}
         events={events}
         eventClick={handleEventClick}
+        dateClick={handleDateClick}
         nowIndicator
       />
     </div>
