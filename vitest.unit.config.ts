@@ -10,6 +10,7 @@ export default defineConfig({
   test: {
     ...baseTestConfig.test,
     include: [
+      "src/domain/**/__tests__/**/*.test.ts",
       "src/features/**/__tests__/**/*.test.ts",
       "src/features/**/*.test.ts",
       "src/shared/**/__tests__/**/*.test.ts",

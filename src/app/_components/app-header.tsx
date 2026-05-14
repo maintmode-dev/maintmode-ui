@@ -6,6 +6,7 @@ import { auth, signOut } from "@/server/auth/auth-config";
 import { readActiveSession } from "@/server/auth/session-token";
 import { revokeBackendSession } from "@/server/auth/backend-token-exchange";
 import { readMaintmodeBackendConfig } from "@/server/backend/config";
+import { isAdmin } from "@/domain/auth/permissions";
 
 async function performSignOut() {
   "use server";
@@ -24,8 +25,12 @@ async function performSignOut() {
 export async function AppHeader() {
   const session = await auth();
   const config = safeReadConfig();
-  const user = session?.user as { email?: string; displayName?: string } | undefined;
+  const user = session?.user as
+    | { email?: string; displayName?: string; roles?: string[] }
+    | undefined;
   const mockMode = config?.enableMockData ?? false;
+  const isAuthenticated = Boolean(user?.email);
+  const isAdminUser = isAdmin(user?.roles);
 
   return (
     <header className="app-header">
@@ -35,9 +40,22 @@ export async function AppHeader() {
           <span>Maintmode</span>
         </Link>
         <nav className="app-nav" aria-label="Primary">
-          <Link href="/" aria-current="page">
-            Calendar
-          </Link>
+          <Link href="/">Calendar</Link>
+          {isAuthenticated ? (
+            <Link href="/resources" data-testid="nav-resources">
+              Resources
+            </Link>
+          ) : null}
+          {isAdminUser ? (
+            <>
+              <Link href="/admin/users" data-testid="nav-admin">
+                Admin
+              </Link>
+              <Link href="/audit" data-testid="nav-audit">
+                Audit log
+              </Link>
+            </>
+          ) : null}
         </nav>
         <div className="flex items-center gap-3 text-sm">
           {mockMode ? (

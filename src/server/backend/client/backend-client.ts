@@ -16,15 +16,23 @@ export type BackendRequestOptions = RequestInit & {
    * token from the active NextAuth session.
    */
   accessToken?: string;
+  /**
+   * When `true`, resolves `path` against `authApiBaseUrl` instead of the
+   * default `apiBaseUrl`. Used by admin/audit BFF routes whose endpoints live
+   * under the auth-service prefix (e.g. `/auth/api/v1/roles`).
+   */
+  useAuthBase?: boolean;
 };
 
 export async function backendRequest<TResponse>({
   path,
   accessToken,
+  useAuthBase,
   ...init
 }: BackendRequestOptions): Promise<TResponse> {
   const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.apiBaseUrl, path);
+  const baseUrl = useAuthBase ? config.authApiBaseUrl : config.apiBaseUrl;
+  const target = resolveBackendUrl(baseUrl, path);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
