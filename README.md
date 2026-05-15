@@ -30,8 +30,8 @@ PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:a11y
 ## Test layers
 - `npm run test:unit` — pure logic (utils, adapters, schemas, query keys).
 - `npm run test:bff` — Next route handlers under `src/app/api/**` with stubbed `fetch`.
-- `npm run test:smoke` — Playwright app-shell flow (excludes `@a11y`).
-- `npm run test:a11y` — Playwright + `@axe-core/playwright` on the auth surface.
+- `npm run test:smoke` — Playwright structural specs: app-shell flow, authenticated calendar shell, maintenance details (excludes `@a11y`). Authenticated specs mock `/api/*` via `page.route()` and inject a NextAuth session cookie — no live backend required.
+- `npm run test:a11y` — Playwright + `@axe-core/playwright` on login, calendar (incl. filter drawer), and maintenance details (read-only + edit).
 
 See [`docs/testing.md`](docs/testing.md) for the full runbook: required env, artifacts on failure, release-gate cases, and the decision tree for where new tests belong.
 

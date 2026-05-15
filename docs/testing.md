@@ -9,8 +9,8 @@ This page is the source of truth for which test layers exist in `maintmode-ui`, 
 | Unit | `npm run test:unit` | Pure logic: utils, adapters, schemas, query-key shapes, calendar/timezone helpers, shared config. `environment: node`. No Next runtime, no `src/app/api/**`. | BFF route handlers, browser DOM, real network. |
 | BFF | `npm run test:bff` | Next route handlers under `src/app/api/**` and the backend client. `fetch` is stubbed at the network boundary — every test runs with no live backend. | Real backend integration, browser. |
 | Contracts | `npm run test:contracts` | Static boundary enforcement (`scripts/check-boundaries.mjs`). Catches `src/features/**` importing `src/server/**`, production code importing test fixtures, etc. | Runtime behaviour. |
-| Smoke | `PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:smoke` | Playwright specs in `tests/smoke/specs/**` that do NOT carry the `@a11y` tag. Drives a real browser against `npm run dev`. | Authenticated flows pending `RUK-18/19/20` fixtures. |
-| A11y | `PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:a11y` | Playwright specs tagged `@a11y` — currently the login surface. Uses `@axe-core/playwright` with WCAG 2.0/2.1 A+AA rule sets. Fails on `serious`/`critical` violations only. | Authenticated calendar/details a11y (follow-up). |
+| Smoke | `PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:smoke` | Playwright specs in `tests/smoke/specs/**` that do NOT carry the `@a11y` tag. Drives a real browser against `npm run dev`. Authenticated calendar/details specs intercept `/api/*` via Playwright `page.route()` and inject a NextAuth session cookie — no live backend required. | Real-backend integration; status transitions; create/edit mutation paths beyond rendering. |
+| A11y | `PLAYWRIGHT_ENABLE_WEBSERVER=1 npm run test:a11y` | Playwright specs tagged `@a11y`. Covers the login surface, the authenticated calendar shell (incl. filter drawer), and the maintenance details page (read-only + edit). Uses `@axe-core/playwright` with WCAG 2.0/2.1 A+AA rule sets. Fails on `serious`/`critical` violations only. | Admin/audit/resources surfaces (follow-up). |
 
 Aggregate scripts:
 
@@ -74,8 +74,10 @@ CI uses the `github` reporter in addition to HTML so step annotations link to fa
 A release MUST NOT ship until these specs pass:
 
 - `tests/smoke/specs/app-shell.spec.ts` — unauth redirect to `/login`, OAuth error normalization, `/api/maintenance` 401 contract, `/api/maintenance` 400 validation contract.
+- `tests/smoke/specs/calendar-shell.spec.ts` — authenticated calendar landmarks, fixture data renders, no horizontal overflow.
+- `tests/smoke/specs/maintenance-details.spec.ts` — authenticated details page renders title/status, no horizontal overflow.
 
-A11y specs (`*.a11y.spec.ts`) are **advisory** until authenticated fixtures land — they should be green but a failure is not a release blocker on its own. Track via Linear ticket.
+A11y specs (`*.a11y.spec.ts`) are gate-relevant: a `serious`/`critical` violation in `login.a11y.spec.ts`, `calendar.a11y.spec.ts`, or `maintenance-details.a11y.spec.ts` should block the release. Lower-impact violations (moderate/minor) are advisory.
 
 ## Adding a new test — decision tree
 
@@ -84,10 +86,30 @@ A11y specs (`*.a11y.spec.ts`) are **advisory** until authenticated fixtures land
 - Needs a real browser or the Next runtime? → `tests/smoke/specs/*.spec.ts`. Use `getByRole` / `getByTestId` selectors; do NOT use brittle text-only selectors or visual waits.
 - Checks ARIA / contrast / keyboard? → `tests/smoke/specs/*.a11y.spec.ts`, tag the `describe` block with `@a11y`, use `runAxe` from `tests/smoke/fixtures/axe.ts`.
 
+## Mock policy at test time
+
+The repo has exactly two sanctioned places where mocked maintenance data can
+appear:
+
+1. **BFF unit tests** (`vitest.bff.config.ts`) — stub `fetch` per-test and
+   never hit a real backend.
+2. **Playwright fixtures** (`tests/smoke/fixtures/`) — `mock-backend.ts`
+   intercepts `/api/*` requests with deterministic JSON, and
+   `auth-fixture.ts` encodes a valid NextAuth session cookie so middleware
+   lets the request through.
+
+Production builds **must not** ship with `MAINTMODE_ENABLE_MOCK_DATA=true`.
+`src/shared/config/runtime-config.ts` throws on startup when both are set,
+and `npm run test:contracts` blocks any production module from importing
+`src/shared/testing/**` or `tests/**`. There is no silent production
+fallback.
+
 ## Out of scope (tracked follow-ups)
 
-- Authenticated end-to-end flows (blocked on `RUK-18`/`RUK-19`/`RUK-20`).
-- MSW or any in-process mock backend.
-- Visual regression.
+- Pixel-perfect visual regression. The current structural specs assert
+  landmarks, no-overflow, and axe — not screenshot equality.
+- MSW or any in-process mock backend (Playwright route interception
+  covers our needs without adding a new dependency).
+- Real-backend e2e (blocked on a backend test harness).
 - `.env.example`.
 - GitHub Actions workflow YAML.
