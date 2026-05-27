@@ -7,9 +7,6 @@ dev.log
 
 /screenshots/
 
-playwright-report/
-test-results/
-
 .tmp/
 
 .env

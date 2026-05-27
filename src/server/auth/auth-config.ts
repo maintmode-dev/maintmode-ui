@@ -11,11 +11,7 @@ import {
   fetchBackendMe,
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
-import {
-  AUTH_ERROR_CODES,
-  type AuthSessionUser,
-  type BackendTokenPair,
-} from "@/server/auth/contracts";
+import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
 
 const REFRESH_LEEWAY_MS = 60_000;
 

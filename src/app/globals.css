@@ -1,439 +1,556 @@
 @import "tailwindcss";
 
-:root {
-  --background: #f7f8fa;
-  --foreground: #1c2630;
-  --muted: #647184;
-  --muted-strong: #485567;
-  --surface: #ffffff;
-  --surface-subtle: #eef2f5;
-  --border: #d7dde5;
-  --accent: #0f766e;
-  --accent-soft: #d7f2ee;
-  --danger-soft: #fee4e2;
-  --danger-border: #f5a6a0;
-  --danger-fg: #761b16;
-  --warning-soft: #fef3c7;
-  --warning-border: #fde68a;
-  --warning-fg: #92400e;
-  --focus: #2563eb;
+/* Tell Tailwind v4 where to look for class usage. By default it scans from
+   the directory of the .css file (here `src/app/`), which would miss
+   `src/shared/ui/**`. Make the project source root explicit. */
+@source "../**/*.{ts,tsx}";
 
-  --info-soft: #e0ecff;
-  --info-border: #bfd4ff;
-  --info-fg: #1d4ed8;
+/* ============================================================================
+   MaintMode — Colors & Type
+   Source of truth: maintmode-docs/design-snapshots/calendar/project/tokens.css
 
-  --success-soft: #dcf6e4;
-  --success-border: #bce5c9;
-  --success-fg: #166534;
+   Dark-first, data-dense. Color carries semantics (status / impact / conflict /
+   destructive). Everything else is monochrome. Light mode is supported but
+   secondary.
 
-  --conflict: #d92d20;
+   Hue allocation (to keep semantics distinguishable at a glance):
+     • status-planned       → blue
+     • status-in_progress   → orange
+     • status-completed     → green
+     • status-draft         → neutral zinc        ← muted
+     • status-canceled      → neutral zinc + strike/stripe utility ← muted
+     • impact-partial       → amber  (warmer/yellower than in_progress orange)
+     • impact-full          → red
+     • conflict             → fuchsia/magenta (clearly off the red axis)
+     • destructive          → red — separate from impact-full, used on Cancel/Delete buttons only
+     • accent               → indigo (focus, selection)
+   ========================================================================== */
 
-  --status-draft-bg: #f1f2f4;
-  --status-draft-border: #d7dde5;
-  --status-draft-text: #485567;
-
-  --status-planned-bg: #e0ecff;
-  --status-planned-border: #bfd4ff;
-  --status-planned-text: #1d4ed8;
-
-  --status-in_progress-bg: #fef3c7;
-  --status-in_progress-border: #fde68a;
-  --status-in_progress-text: #92400e;
-
-  --status-completed-bg: #dcf6e4;
-  --status-completed-border: #bce5c9;
-  --status-completed-text: #166534;
-
-  --status-canceled-bg: #fee4e2;
-  --status-canceled-border: #f5a6a0;
-  --status-canceled-text: #761b16;
+/* Inter Variable — brand sans. Local files; no network fetch. */
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src:
+    url("/fonts/InterVariable.woff2") format("woff2-variations"),
+    url("/fonts/InterVariable.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter Variable";
+  font-style: italic;
+  font-weight: 100 900;
+  font-display: swap;
+  src:
+    url("/fonts/InterVariable-Italic.woff2") format("woff2-variations"),
+    url("/fonts/InterVariable-Italic.woff2") format("woff2");
 }
 
-* {
+:root {
+  /* ---------- Type — Inter Variable (brand) with system fallback ---------- */
+  --font-sans:
+    "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
+  --font-mono:
+    ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Type scale — denser than default. 13px is the body floor in product UI. */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 14px;
+  --text-xl: 16px;
+  --text-2xl: 20px;
+  --text-3xl: 28px;
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+
+  /* ---------- Spacing (4px base) ---------- */
+  --space-0: 0;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 48px;
+
+  /* ---------- Radius ---------- */
+  --radius-xs: 3px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* shadcn radius bridge — `--radius` is what shadcn templates consume */
+  --radius: 8px;
+
+  /* ---------- Elevation (single direction, low contrast) ---------- */
+  --shadow-xs: 0 1px 0 0 rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.1);
+
+  /* ============================================================================
+     DARK THEME (default)
+     ========================================================================== */
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --bg: #0a0a0b;
+  --bg-elev-1: #0e0e10;
+  --bg-elev-2: #131316;
+  --bg-elev-3: #18181c;
+  --bg-elev-4: #1f1f23;
+  --bg-overlay: rgba(0, 0, 0, 0.65);
+
+  /* Interaction surfaces — apply to clickable rows, list items, table rows. */
+  --bg-row-hover: #16161a;
+  --bg-row-selected: rgba(110, 123, 255, 0.1);
+  --bg-row-selected-strong: rgba(110, 123, 255, 0.18);
+
+  /* Borders */
+  --border-subtle: #1a1a1f;
+  --border: #25252b;
+  --border-strong: #34343c;
+
+  /* Foreground — 4-step zinc ramp. */
+  --fg: #f5f5f7;
+  --fg-strong: #ffffff;
+  --fg-muted: #a1a1aa;
+  --fg-dim: #71717a;
+  --fg-disabled: #52525b;
+
+  /* Accent — indigo. */
+  --accent: #6e7bff;
+  --accent-hover: #8189ff;
+  --accent-pressed: #5762e6;
+  --accent-soft: rgba(110, 123, 255, 0.14);
+  --accent-soft-2: rgba(110, 123, 255, 0.06);
+  --accent-fg: #c7ccff;
+
+  /* Focus ring */
+  --focus-ring: 0 0 0 2px var(--bg-elev-1), 0 0 0 4px var(--accent);
+
+  /* ---------- Status — five maintenance states ---------- */
+  --status-draft-fg: #a1a1aa;
+  --status-draft-bg: rgba(161, 161, 170, 0.1);
+  --status-draft-border: rgba(161, 161, 170, 0.3);
+
+  --status-planned-fg: #5eb9f6;
+  --status-planned-bg: rgba(94, 185, 246, 0.12);
+  --status-planned-border: rgba(94, 185, 246, 0.3);
+
+  --status-in_progress-fg: #f5a524; /* orange — kept */
+  --status-in_progress-bg: rgba(245, 165, 36, 0.13);
+  --status-in_progress-border: rgba(245, 165, 36, 0.35);
+
+  --status-completed-fg: #4ade80;
+  --status-completed-bg: rgba(74, 222, 128, 0.1);
+  --status-completed-border: rgba(74, 222, 128, 0.28);
+
+  /* Canceled — same neutral as draft, but DIFFERENTIATED VISUALLY via .is-canceled */
+  --status-canceled-fg: #71717a;
+  --status-canceled-bg: rgba(113, 113, 122, 0.06);
+  --status-canceled-border: rgba(113, 113, 122, 0.22);
+  --status-canceled-stripe: rgba(113, 113, 122, 0.22);
+
+  /* ---------- Impact — three levels, separate hues from status ----------
+     partial → AMBER so it no longer collides with in_progress orange. */
+  --impact-none-fg: #71717a;
+  --impact-none-bg: rgba(113, 113, 122, 0.08);
+  --impact-partial-fg: #facc15; /* amber/yellow */
+  --impact-partial-bg: rgba(250, 204, 21, 0.13);
+  --impact-partial-border: rgba(250, 204, 21, 0.35);
+  --impact-full-fg: #f87171; /* red */
+  --impact-full-bg: rgba(248, 113, 113, 0.14);
+  --impact-full-border: rgba(248, 113, 113, 0.35);
+
+  /* ---------- Conflict — fuchsia/magenta, off the red axis ---------- */
+  --conflict-fg: #e879f9;
+  --conflict-bg: rgba(232, 121, 249, 0.12);
+  --conflict-border: rgba(232, 121, 249, 0.4);
+  --conflict-stripe: rgba(232, 121, 249, 0.22);
+
+  /* ---------- Destructive — for Cancel / Delete buttons. Distinct from impact-full. ---------- */
+  --destructive-fg: #f87171;
+  --destructive-bg: rgba(248, 113, 113, 0.1);
+  --destructive-hover: rgba(248, 113, 113, 0.18);
+  --destructive-border: rgba(248, 113, 113, 0.4);
+  --destructive-solid: #dc2626;
+  --destructive-solid-hover: #b91c1c;
+
+  /* Selection / range / today highlight on calendar grid */
+  --range-bg: rgba(110, 123, 255, 0.08);
+  --today-line: #6e7bff;
+  --grid-line: #1a1a1f;
+  --grid-line-strong: #25252b;
+  --grid-weekend-bg: #0c0c0e;
+}
+
+/* ============================================================================
+   LIGHT THEME — apply with data-theme="light".
+   ========================================================================== */
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --bg-elev-1: #ffffff;
+  --bg-elev-2: #fafafa;
+  --bg-elev-3: #f4f4f5;
+  --bg-elev-4: #e4e4e7;
+  --bg-overlay: rgba(15, 15, 18, 0.45);
+
+  --bg-row-hover: #f4f4f5;
+  --bg-row-selected: rgba(87, 96, 229, 0.1);
+  --bg-row-selected-strong: rgba(87, 96, 229, 0.18);
+
+  --border-subtle: #f0f0f2;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+
+  --fg: #18181b;
+  --fg-strong: #09090b;
+  --fg-muted: #52525b;
+  --fg-dim: #71717a;
+  --fg-disabled: #a1a1aa;
+
+  --accent: #5760e5;
+  --accent-hover: #4047c8;
+  --accent-pressed: #353ca8;
+  --accent-soft: rgba(87, 96, 229, 0.1);
+  --accent-soft-2: rgba(87, 96, 229, 0.04);
+  --accent-fg: #3e47c2;
+
+  --status-draft-fg: #52525b;
+  --status-draft-bg: #f4f4f5;
+  --status-draft-border: #d4d4d8;
+
+  --status-planned-fg: #1e6fb5;
+  --status-planned-bg: #e7f2fb;
+  --status-planned-border: #bbddf4;
+
+  --status-in_progress-fg: #92590a;
+  --status-in_progress-bg: #fef3c7;
+  --status-in_progress-border: #fcd986;
+
+  --status-completed-fg: #166534;
+  --status-completed-bg: #dcf6e4;
+  --status-completed-border: #bce5c9;
+
+  --status-canceled-fg: #71717a;
+  --status-canceled-bg: #f4f4f5;
+  --status-canceled-border: #d4d4d8;
+  --status-canceled-stripe: rgba(113, 113, 122, 0.3);
+
+  /* impact-partial → amber, clearly distinct from in_progress orange */
+  --impact-none-fg: #71717a;
+  --impact-none-bg: #f4f4f5;
+  --impact-partial-fg: #854d0e;
+  --impact-partial-bg: #fef9c3;
+  --impact-partial-border: #fde68a;
+  --impact-full-fg: #b42318;
+  --impact-full-bg: #fee4e2;
+  --impact-full-border: #f5a6a0;
+
+  /* conflict → fuchsia */
+  --conflict-fg: #a21caf;
+  --conflict-bg: #fae8ff;
+  --conflict-border: #f0abfc;
+  --conflict-stripe: rgba(162, 28, 175, 0.2);
+
+  /* destructive — separate from impact-full */
+  --destructive-fg: #b42318;
+  --destructive-bg: #fee4e2;
+  --destructive-hover: #fecdca;
+  --destructive-border: #f5a6a0;
+  --destructive-solid: #dc2626;
+  --destructive-solid-hover: #b91c1c;
+
+  --range-bg: rgba(87, 96, 229, 0.06);
+  --today-line: #5760e5;
+  --grid-line: #f0f0f2;
+  --grid-line-strong: #e4e4e7;
+  --grid-weekend-bg: #fafafa;
+}
+
+/* ============================================================================
+   Tailwind v4 token bridge — expose tokens as Tailwind utilities.
+   Use as e.g. `bg-bg-elev-2 text-fg border-border-strong rounded-md`.
+   ========================================================================== */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elev-1: var(--bg-elev-1);
+  --color-bg-elev-2: var(--bg-elev-2);
+  --color-bg-elev-3: var(--bg-elev-3);
+  --color-bg-elev-4: var(--bg-elev-4);
+  --color-bg-overlay: var(--bg-overlay);
+  --color-bg-row-hover: var(--bg-row-hover);
+  --color-bg-row-selected: var(--bg-row-selected);
+  --color-bg-row-selected-strong: var(--bg-row-selected-strong);
+
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-strong: var(--fg-strong);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-dim: var(--fg-dim);
+  --color-fg-disabled: var(--fg-disabled);
+
+  /* Tailwind's `bg-accent` MUST resolve to a hover surface to keep shadcn
+     primitives looking right (shadcn templates use `hover:bg-accent` as a
+     low-contrast hover). Our brand indigo is exposed as `bg-brand` /
+     `bg-primary` instead. The raw `--accent` token (our brand) is still
+     consumed by tokens.css internals — only the Tailwind utility is rebased. */
+  --color-accent: var(--bg-elev-3);
+  --color-accent-foreground: var(--fg);
+
+  --color-brand: var(--accent);
+  --color-brand-hover: var(--accent-hover);
+  --color-brand-pressed: var(--accent-pressed);
+  --color-brand-soft: var(--accent-soft);
+  --color-brand-soft-2: var(--accent-soft-2);
+  --color-brand-fg: var(--accent-fg);
+
+  --color-status-draft-fg: var(--status-draft-fg);
+  --color-status-draft-bg: var(--status-draft-bg);
+  --color-status-draft-border: var(--status-draft-border);
+  --color-status-planned-fg: var(--status-planned-fg);
+  --color-status-planned-bg: var(--status-planned-bg);
+  --color-status-planned-border: var(--status-planned-border);
+  --color-status-in_progress-fg: var(--status-in_progress-fg);
+  --color-status-in_progress-bg: var(--status-in_progress-bg);
+  --color-status-in_progress-border: var(--status-in_progress-border);
+  --color-status-completed-fg: var(--status-completed-fg);
+  --color-status-completed-bg: var(--status-completed-bg);
+  --color-status-completed-border: var(--status-completed-border);
+  --color-status-canceled-fg: var(--status-canceled-fg);
+  --color-status-canceled-bg: var(--status-canceled-bg);
+  --color-status-canceled-border: var(--status-canceled-border);
+
+  --color-impact-none-fg: var(--impact-none-fg);
+  --color-impact-none-bg: var(--impact-none-bg);
+  --color-impact-partial-fg: var(--impact-partial-fg);
+  --color-impact-partial-bg: var(--impact-partial-bg);
+  --color-impact-partial-border: var(--impact-partial-border);
+  --color-impact-full-fg: var(--impact-full-fg);
+  --color-impact-full-bg: var(--impact-full-bg);
+  --color-impact-full-border: var(--impact-full-border);
+
+  --color-conflict-fg: var(--conflict-fg);
+  --color-conflict-bg: var(--conflict-bg);
+  --color-conflict-border: var(--conflict-border);
+
+  --color-destructive-fg: var(--destructive-fg);
+  --color-destructive-bg: var(--destructive-bg);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-border: var(--destructive-border);
+  --color-destructive-solid: var(--destructive-solid);
+  --color-destructive-solid-hover: var(--destructive-solid-hover);
+
+  --color-grid-line: var(--grid-line);
+  --color-grid-line-strong: var(--grid-line-strong);
+  --color-grid-weekend-bg: var(--grid-weekend-bg);
+  --color-today-line: var(--today-line);
+
+  /* shadcn bridge — expose the variables shadcn primitives reference
+     (bg-primary / bg-background / bg-card / bg-popover / bg-secondary /
+     bg-muted / text-primary-foreground / border-input / ring-ring …) to
+     Tailwind v4's utility generator. Without these, the shadcn-emitted
+     `bg-primary` etc. class strings are silently ignored at build time
+     and every primitive renders with a transparent background.
+     The mapping points at the `:root` aliases declared further below in
+     this file so `data-theme="light"` continues to flip them. */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+}
+
+/* ============================================================================
+   shadcn/ui token bridge — shadcn templates reference --primary, --background,
+   etc. Map them onto our tokens so generated components consume our palette
+   without modification. Keep this list aligned with shadcn's "new-york" theme.
+   ========================================================================== */
+:root {
+  --background: var(--bg);
+  --foreground: var(--fg);
+  --card: var(--bg-elev-2);
+  --card-foreground: var(--fg);
+  --popover: var(--bg-elev-3);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent);
+  --primary-foreground: var(--fg-strong);
+  --secondary: var(--bg-elev-2);
+  --secondary-foreground: var(--fg);
+  --muted: var(--bg-elev-2);
+  --muted-foreground: var(--fg-muted);
+  /* shadcn's `--accent` collides with our brand `--accent`. Tailwind's
+     `bg-accent` is rebased in @theme inline (above) to a hover surface
+     instead. The raw `var(--accent)` reads in tokens.css internals
+     (focus-ring, range-bg, today-line) keep the brand color, which is what
+     those internals want. */
+  --destructive: var(--destructive-solid);
+  --destructive-foreground: var(--fg-strong);
+  --input: var(--border);
+  --ring: var(--accent);
+}
+
+/* ============================================================================
+   Base reset + semantic type
+   ========================================================================== */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
-  min-height: 100%;
-  background: var(--background);
-}
-
-body {
-  min-height: 100%;
-  margin: 0;
-  color: var(--foreground);
-  background: var(--background);
-  font-family:
-    var(--font-sans), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
-
-.app-shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.app-header {
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.app-header__inner {
-  width: min(1180px, calc(100% - 32px));
-  min-height: 64px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-}
-
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-weight: 700;
-}
-
-.brand__mark {
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--accent);
-  background: var(--accent-soft);
-}
-
-.app-nav {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  color: var(--muted-strong);
-  font-size: 14px;
-}
-
-.app-nav a {
-  padding: 8px 0;
-}
-
-.app-nav a[aria-current="page"] {
-  color: var(--foreground);
-  font-weight: 650;
-}
-
-.main-region {
-  width: min(1180px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 32px 0 48px;
-}
-
-.page-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 24px;
-}
-
-.page-heading h1 {
-  margin: 0;
-  font-size: clamp(28px, 3vw, 42px);
-  line-height: 1.1;
-  letter-spacing: 0;
-}
-
-.page-heading p {
-  max-width: 680px;
-  margin: 10px 0 0;
-  color: var(--muted);
-  line-height: 1.55;
-}
-
-.toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 10px;
-}
-
-.button {
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0 14px;
-  background: var(--surface);
-  color: var(--foreground);
-  font-weight: 650;
-  cursor: pointer;
-}
-
-.button:disabled {
-  color: var(--muted);
-  background: var(--surface-subtle);
-  cursor: not-allowed;
-}
-
-.button--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-.button--primary:hover {
-  filter: brightness(1.05);
-}
-
-.auth-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: var(--background);
-}
-
-.login-card {
-  display: grid;
-  gap: 18px;
-  width: min(420px, 100%);
-  padding: 32px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-.login-card__header {
-  display: grid;
-  gap: 6px;
-}
-
-.login-card__header h1 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.login-card__header p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-.login-card__error {
-  margin: 0;
-  padding: 12px 14px;
-  background: var(--danger-soft);
-  border: 1px solid var(--danger-border);
-  border-radius: 8px;
-  color: var(--danger-fg);
-  font-size: 14px;
-}
-
-.login-card__hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.workspace-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: 20px;
-  align-items: start;
-  margin-top: 20px;
-}
-
-.panel {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-}
-
-.panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--border);
-  padding: 16px 18px;
-}
-
-.panel__header h2,
-.panel__header h3 {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.3;
-}
-
-.panel__body {
-  padding: 18px;
-}
-
-.status-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--border);
-}
-
-.status-cell {
-  min-height: 74px;
-  padding: 14px;
-  background: var(--surface);
-}
-
-.status-cell span {
-  display: block;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.status-cell strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 22px;
-}
-
-.placeholder-grid {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.placeholder-day {
-  min-height: 96px;
-  border-right: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-  padding: 10px;
-  background: var(--surface);
-}
-
-.placeholder-day:nth-child(7n) {
-  border-right: 0;
-}
-
-.placeholder-day:nth-last-child(-n + 7) {
-  border-bottom: 0;
-}
-
-.placeholder-day span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.state {
-  display: grid;
-  gap: 8px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 18px;
-  background: var(--surface);
-}
-
-.state h2,
-.state h3 {
-  margin: 0;
+  /* Keep root font-size at the browser default (16px) so `rem`-based
+     Tailwind utilities (h-10 → 2.5rem → 40px) resolve as designed. The
+     dense product body text comes from `body { font-size: var(--text-md) }`. */
   font-size: 16px;
 }
-
-.state p {
+body {
   margin: 0;
-  color: var(--muted);
-  line-height: 1.5;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+html {
+  background: var(--bg);
+  color: var(--fg);
 }
 
-.state[data-tone="danger"] {
-  border-color: var(--danger-border);
-  background: var(--danger-soft);
+/* Semantic type — match these names in components. */
+.h1 {
+  font: 600 var(--text-2xl) / var(--leading-tight) var(--font-sans);
+  letter-spacing: -0.014em;
+  color: var(--fg-strong);
+}
+.h2 {
+  font: 600 var(--text-xl) / var(--leading-tight) var(--font-sans);
+  letter-spacing: -0.01em;
+  color: var(--fg-strong);
+}
+.h3 {
+  font: 600 var(--text-lg) / var(--leading-snug) var(--font-sans);
+  letter-spacing: -0.005em;
+  color: var(--fg);
+}
+.body {
+  font: 400 var(--text-md) / var(--leading-normal) var(--font-sans);
+  color: var(--fg);
+}
+.body-sm {
+  font: 400 var(--text-sm) / var(--leading-normal) var(--font-sans);
+  color: var(--fg-muted);
+}
+.label {
+  font: 600 var(--text-xs) / 1 var(--font-sans);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+.caption {
+  font: 400 var(--text-xs) / 1.3 var(--font-sans);
+  color: var(--fg-dim);
+}
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum", "zero";
+}
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
-.state[data-tone="forbidden"] {
-  border-color: var(--warning-border);
-  background: var(--warning-soft);
+/* Focus — always visible. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
 }
 
-.state[data-tone="forbidden"] h2 {
-  color: var(--warning-fg);
+/* Selection — accent soft. */
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg-strong);
 }
 
-.detail-list {
-  display: grid;
-  gap: 12px;
-  margin: 0;
-}
+/* ============================================================================
+   Pattern utilities
+   ========================================================================== */
 
-.detail-list div {
-  display: grid;
-  grid-template-columns: 116px minmax(0, 1fr);
-  gap: 16px;
-}
-
-.detail-list dt {
-  color: var(--muted);
-}
-
-.detail-list dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 820px) {
-  .app-header__inner,
-  .main-region {
-    width: min(100% - 24px, 1180px);
+/* Skeleton shimmer — opacity-based, 1.6s ease-in-out. Used by domain
+   Skeleton component as `animate-mm-shimmer` via Tailwind's animation
+   utility (see @theme inline below) or directly. */
+@keyframes mm-shimmer {
+  0%,
+  100% {
+    opacity: 0.55;
   }
-
-  .app-header__inner,
-  .page-heading {
-    align-items: flex-start;
-    flex-direction: column;
-    justify-content: flex-start;
+  50% {
+    opacity: 0.85;
   }
+}
+.animate-mm-shimmer {
+  animation: mm-shimmer 1.6s ease-in-out infinite;
+}
 
-  .app-nav,
-  .toolbar {
-    justify-content: flex-start;
-  }
+/* Conflict stripe — for conflict cards / overlap zones. Fuchsia.
+   Note: event-bars on the calendar do NOT use this — they signal conflict
+   with a warning icon only (frozen decision). */
+.conflict-stripes {
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--conflict-stripe) 6px 7px);
+}
 
-  .workspace-grid,
-  .status-row {
-    grid-template-columns: 1fr;
-  }
-
-  .placeholder-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .placeholder-day:nth-child(7n),
-  .placeholder-day:nth-last-child(-n + 7) {
-    border-right: 1px solid var(--border);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .placeholder-day:nth-child(2n) {
-    border-right: 0;
-  }
+/* Canceled state — strikethrough + diagonal stripes overlay, so it does NOT
+   read like draft. Apply to status badge, calendar bar, list row, anywhere
+   you'd otherwise rely on the canceled token alone. */
+.is-canceled {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--status-canceled-fg);
+  color: var(--status-canceled-fg);
+  position: relative;
+}
+.is-canceled-bar,
+.is-canceled.is-canceled-bar {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0 5px,
+    var(--status-canceled-stripe) 5px 6px
+  );
 }

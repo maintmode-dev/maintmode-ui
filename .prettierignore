@@ -1,0 +1,10 @@
+# Out of our scope — these directories are owned by external skills /
+# task-tracking workflows and have their own conventions.
+.agents/
+
+# Build artefacts.
+.next/
+coverage/
+
+# Lockfiles — npm owns the formatting.
+package-lock.json

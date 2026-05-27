@@ -22,7 +22,7 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
-    ignores: [".next/**", "node_modules/**", "coverage/**", "playwright-report/**", "test-results/**"],
+    ignores: [".next/**", "node_modules/**", "coverage/**"],
   },
   {
     files: [
@@ -57,7 +57,8 @@ const eslintConfig = [
           patterns: [
             {
               group: serverBoundaryPatterns,
-              message: "Browser-owned modules must not import the server backend boundary. Use src/app/api/** BFF routes instead.",
+              message:
+                "Browser-owned modules must not import the server backend boundary. Use src/app/api/** BFF routes instead.",
             },
             {
               group: productionTestingPatterns,

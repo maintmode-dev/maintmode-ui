@@ -134,8 +134,7 @@ async function decodeSessionCookie(entry: CookieEntry): Promise<SessionPayload |
   return {
     accessToken: decoded.accessToken,
     refreshToken: decoded.refreshToken,
-    accessTokenExpiresAt:
-      typeof decoded.accessTokenExpiresAt === "number" ? decoded.accessTokenExpiresAt : 0,
+    accessTokenExpiresAt: typeof decoded.accessTokenExpiresAt === "number" ? decoded.accessTokenExpiresAt : 0,
     user: decoded.user,
   };
 }
@@ -157,9 +156,7 @@ async function refreshAndPersist(
       try {
         const refreshed = await refreshBackendToken(refreshToken);
         const expiresIn =
-          typeof refreshed.expires_in === "number" && refreshed.expires_in > 0
-            ? refreshed.expires_in
-            : 0;
+          typeof refreshed.expires_in === "number" && refreshed.expires_in > 0 ? refreshed.expires_in : 0;
         if (!expiresIn) {
           await clearActiveSession();
           return null;

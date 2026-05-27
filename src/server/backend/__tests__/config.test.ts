@@ -22,7 +22,10 @@ describe("resolveBackendUrl", () => {
   });
 
   it("preserves the query string on the path", () => {
-    const url = resolveBackendUrl("http://nginx:9000/maintmode", "/ui/v1/calendar?from=2026-05-11&to=2026-05-17");
+    const url = resolveBackendUrl(
+      "http://nginx:9000/maintmode",
+      "/ui/v1/calendar?from=2026-05-11&to=2026-05-17",
+    );
     expect(url.pathname).toBe("/maintmode/ui/v1/calendar");
     expect(url.searchParams.get("from")).toBe("2026-05-11");
     expect(url.searchParams.get("to")).toBe("2026-05-17");

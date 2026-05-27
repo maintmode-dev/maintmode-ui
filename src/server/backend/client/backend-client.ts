@@ -72,10 +72,7 @@ export async function backendRequest<TResponse>({
     try {
       return JSON.parse(body) as TResponse;
     } catch {
-      throw new BackendRequestError(
-        response.status,
-        body,
-      );
+      throw new BackendRequestError(response.status, body);
     }
   } finally {
     clearTimeout(timeout);

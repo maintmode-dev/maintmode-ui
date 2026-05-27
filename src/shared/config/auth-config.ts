@@ -81,8 +81,7 @@ export function parseMaintmodeAuthConfig(env: Record<string, string | undefined>
   // Dev-bypass is gated twice: the env flag must be set AND the runtime must
   // not be production. This makes it impossible to enable the bypass in a
   // production build even if the env var is accidentally set.
-  const devAuthBypassEnabled =
-    env.NODE_ENV !== "production" && parseBoolean(env.MAINTMODE_DEV_AUTH_BYPASS);
+  const devAuthBypassEnabled = env.NODE_ENV !== "production" && parseBoolean(env.MAINTMODE_DEV_AUTH_BYPASS);
 
   return {
     authSecret: rawSecret ?? "",

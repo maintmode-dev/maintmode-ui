@@ -1,12 +1,11 @@
-import { MaintenanceDetailsPage } from "@/features/maintenance-details/components/maintenance-details-page";
+import { AppShell } from "@/app/_components/app-shell";
+import { MaintenanceDetailsPage } from "@/features/maintenance/maintenance-details-page";
 
-type MaintenancePageProps = {
-  params: Promise<{
-    id: string;
-  }>;
-};
-
-export default async function MaintenancePage({ params }: MaintenancePageProps) {
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <MaintenanceDetailsPage id={id} />;
+  return (
+    <AppShell>
+      <MaintenanceDetailsPage id={id} />
+    </AppShell>
+  );
 }

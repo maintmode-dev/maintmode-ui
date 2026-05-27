@@ -104,7 +104,7 @@ export function normalizeRouteError(error: unknown): NormalizedRouteError {
     return {
       error: "Invalid maintmode backend configuration",
       code: "CONFIG_ERROR",
-      hint: "Check MAINTMODE_API_BASE_URL, MAINTMODE_API_TIMEOUT_MS, and MAINTMODE_ENABLE_MOCK_DATA.",
+      hint: "Check MAINTMODE_API_BASE_URL, MAINTMODE_AUTH_API_BASE_URL, and MAINTMODE_API_TIMEOUT_MS.",
       fieldErrors: error.issues.map((issue) => ({
         field: issue.field,
         message: issue.message,

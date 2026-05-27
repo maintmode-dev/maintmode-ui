@@ -1,11 +1,7 @@
 import "server-only";
 
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
-import {
-  BackendAuthError,
-  type BackendMeResponse,
-  type BackendTokenPair,
-} from "@/server/auth/contracts";
+import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from "@/server/auth/contracts";
 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
 const REFRESH_PATH = "/api/v1/refresh";

@@ -49,15 +49,15 @@ describe("auth-config", () => {
   });
 
   it("rejects short secrets", () => {
-    expect(() =>
-      parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_AUTH_SECRET: "short" }),
-    ).toThrow(AuthConfigValidationError);
+    expect(() => parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_AUTH_SECRET: "short" })).toThrow(
+      AuthConfigValidationError,
+    );
   });
 
   it("rejects non-http base URLs", () => {
-    expect(() =>
-      parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_APP_BASE_URL: "ftp://app.test" }),
-    ).toThrow(AuthConfigValidationError);
+    expect(() => parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_APP_BASE_URL: "ftp://app.test" })).toThrow(
+      AuthConfigValidationError,
+    );
   });
 
   it("requires google client id and secret", () => {

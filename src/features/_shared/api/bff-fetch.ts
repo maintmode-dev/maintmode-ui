@@ -1,92 +1,86 @@
-import { BffError, type BffErrorPayload } from "@/features/_shared/api/bff-error";
+/**
+ * Browser-side fetcher for the BFF layer (`/api/**`). Normalizes errors,
+ * handles the `{ code: "AUTH_REQUIRED" }` 401 contract by redirecting to
+ * `/login?next=<current path>`, and surfaces the body so React Query
+ * `isError` branches can render the right state component.
+ *
+ * Server-side code calls the backend directly via
+ * `src/server/backend/client/*` — that path is NOT shared with this fetcher.
+ */
 
-export type BffFetchInit = Omit<RequestInit, "body"> & {
-  body?: unknown;
+export class BffError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly body?: unknown;
+
+  constructor(status: number, message: string, code?: string, body?: unknown) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.body = body;
+  }
+}
+
+export interface BffFetchOptions extends RequestInit {
+  /** Skip the `/login` redirect on 401 — useful for the login-status probe. */
+  skipAuthRedirect?: boolean;
+}
+
+const JSON_HEADERS: HeadersInit = {
+  "Content-Type": "application/json",
+  Accept: "application/json",
 };
 
-/**
- * Thin browser-side fetch wrapper for BFF route handlers under `/api/**`.
- *
- * Responsibilities:
- *  - Always targets the same origin; access tokens stay server-side.
- *  - Serializes `init.body` as JSON unless it is already a `BodyInit` value.
- *  - Parses BFF error envelopes into a typed `BffError` so feature code can
- *    branch on `code` / `fieldErrors` without sniffing HTTP.
- *  - When the BFF replies with `401`, performs a hard redirect to
- *    `/login?next=<current path>` so the user re-authenticates. The original
- *    `BffError` is still thrown so React Query reports the failure cleanly.
- */
-export async function bffFetch<TResponse>(path: string, init: BffFetchInit = {}): Promise<TResponse> {
-  const headers = new Headers(init.headers);
-  let body: BodyInit | undefined;
-
-  if (init.body !== undefined && init.body !== null) {
-    if (isBodyInit(init.body)) {
-      body = init.body;
-    } else {
-      if (!headers.has("content-type")) {
-        headers.set("content-type", "application/json");
-      }
-      body = JSON.stringify(init.body);
-    }
-  }
-
-  if (!headers.has("accept")) {
-    headers.set("accept", "application/json");
-  }
+export async function bffFetch<T>(path: string, init: BffFetchOptions = {}): Promise<T> {
+  const { skipAuthRedirect, headers, ...rest } = init;
 
   const response = await fetch(path, {
-    ...init,
-    headers,
-    body,
+    ...rest,
     credentials: "same-origin",
+    headers: {
+      ...JSON_HEADERS,
+      ...headers,
+    },
   });
 
   if (response.status === 204) {
-    return undefined as TResponse;
+    return undefined as T;
   }
 
-  const text = await response.text();
-  const parsed = text ? safeJsonParse(text) : undefined;
+  let body: unknown = undefined;
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("application/json")) {
+    body = await response.json().catch(() => undefined);
+  } else {
+    body = await response.text().catch(() => undefined);
+  }
 
-  if (!response.ok) {
-    const payload = isBffErrorPayload(parsed)
-      ? parsed
-      : { error: response.statusText || "Request failed", code: `HTTP_${response.status}` };
-    const error = new BffError(response.status, payload);
-    if (error.isAuthRequired && typeof window !== "undefined") {
-      const next = `${window.location.pathname}${window.location.search}`;
-      window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+  if (response.ok) {
+    return body as T;
+  }
+
+  const codeFromBody =
+    typeof body === "object" && body !== null && "code" in body
+      ? String((body as { code?: unknown }).code)
+      : undefined;
+
+  if (response.status === 401 && codeFromBody === "AUTH_REQUIRED" && !skipAuthRedirect) {
+    if (typeof window !== "undefined") {
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.replace(`/login?next=${next}`);
+      // Return a never-resolving promise so React Query never reaches its
+      // isError branch and the UI does not flash a stale state component
+      // before the browser actually navigates away.
+      return new Promise<T>(() => {});
     }
-    throw error;
   }
 
-  return (parsed ?? undefined) as TResponse;
-}
-
-function isBodyInit(value: unknown): value is BodyInit {
-  return (
-    typeof value === "string" ||
-    value instanceof ArrayBuffer ||
-    value instanceof Blob ||
-    value instanceof FormData ||
-    value instanceof URLSearchParams ||
-    value instanceof ReadableStream
+  throw new BffError(
+    response.status,
+    typeof body === "object" && body !== null && "error" in body
+      ? String((body as { error?: unknown }).error)
+      : `BFF ${response.status} ${response.statusText}`,
+    codeFromBody,
+    body,
   );
-}
-
-function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-function isBffErrorPayload(value: unknown): value is BffErrorPayload {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return typeof record.error === "string" && typeof record.code === "string";
 }

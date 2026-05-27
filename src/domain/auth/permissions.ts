@@ -1,4 +1,4 @@
-import type { Role } from "@/domain/admin/models/role";
+export type Role = "admin" | "operator" | "viewer";
 
 export function hasRole(roles: readonly string[] | undefined, role: Role): boolean {
   if (!roles || roles.length === 0) {

@@ -1,0 +1,111 @@
+import type { AuditEvent } from "@/domain/audit/audit-log";
+
+const iso = (offsetMin: number) => new Date(Date.now() - offsetMin * 60_000).toISOString();
+
+export const MOCK_MAINTENANCE_AUDIT: Record<string, AuditEvent[]> = {
+  "m-1001": [
+    {
+      id: "a-1",
+      created_at: iso(120),
+      actor: "Alice Operator",
+      action: "maintenance.created",
+      target_type: "maintenance",
+      target_id: "m-1001",
+      summary: "Created maintenance “Patch postgres primary”",
+    },
+    {
+      id: "a-2",
+      created_at: iso(90),
+      actor: "Ruslan Kosykh",
+      action: "maintenance.approved",
+      target_type: "maintenance",
+      target_id: "m-1001",
+      summary: "Approved maintenance",
+      details: { approver: "Ruslan Kosykh", snapshot_id: "snap-m-1001" },
+    },
+    {
+      id: "a-3",
+      created_at: iso(40),
+      actor: "Alice Operator",
+      action: "maintenance.started",
+      target_type: "maintenance",
+      target_id: "m-1001",
+      summary: "Started maintenance",
+    },
+    {
+      id: "a-4",
+      created_at: iso(35),
+      actor: "Alice Operator",
+      action: "step.completed",
+      target_type: "step",
+      target_id: "s-1",
+      summary: "Completed step “Notify on-call”",
+    },
+    {
+      id: "a-5",
+      created_at: iso(25),
+      actor: "Alice Operator",
+      action: "step.completed",
+      target_type: "step",
+      target_id: "s-2",
+      summary: "Completed step “Drain pool”",
+    },
+    {
+      id: "a-6",
+      created_at: iso(15),
+      actor: "Alice Operator",
+      action: "step.started",
+      target_type: "step",
+      target_id: "s-3",
+      summary: "Started step “Apply patch”",
+    },
+  ],
+};
+
+export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
+  {
+    id: "g-1",
+    created_at: iso(5),
+    actor: "Ruslan Kosykh",
+    action: "auth.login",
+    target_type: "user",
+    target_id: "u-1",
+    summary: "Logged in with Google",
+  },
+  {
+    id: "g-2",
+    created_at: iso(30),
+    actor: "Ruslan Kosykh",
+    action: "user.invited",
+    target_type: "invitation",
+    target_id: "i-2",
+    summary: "Invited eve@external.org as viewer",
+  },
+  {
+    id: "g-3",
+    created_at: iso(60),
+    actor: "Ops Lead",
+    action: "user.blocked",
+    target_type: "user",
+    target_id: "u-5",
+    summary: "Blocked carol@maintmode",
+  },
+  {
+    id: "g-4",
+    created_at: iso(120),
+    actor: "Ruslan Kosykh",
+    action: "user.role_assigned",
+    target_type: "user",
+    target_id: "u-3",
+    summary: "Granted operator role to alice@maintmode",
+  },
+  {
+    id: "g-5",
+    created_at: iso(180),
+    actor: "Alice Operator",
+    action: "resource.created",
+    target_type: "resource",
+    target_id: "r-3",
+    summary: "Created resource “api-gateway”",
+  },
+];

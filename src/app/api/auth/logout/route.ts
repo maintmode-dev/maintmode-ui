@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { signOut } from "@/server/auth/auth-config";
 import { revokeBackendSession } from "@/server/auth/backend-token-exchange";
 import { clearActiveSession, readActiveSession } from "@/server/auth/session-token";
+import { isSameOriginRequest } from "@/server/backend/security/csrf";
 import { isSafeOriginalUri } from "@/shared/config/auth-config";
 
 /**
@@ -42,24 +43,4 @@ export async function POST(request: Request) {
   const nextParam = requestUrl.searchParams.get("next");
   const target = isSafeOriginalUri(nextParam) ? nextParam : "/login";
   return NextResponse.redirect(new URL(target, requestUrl), { status: 302 });
-}
-
-function isSameOriginRequest(request: Request): boolean {
-  const requestUrl = new URL(request.url);
-  const expectedOrigin = requestUrl.origin;
-  const headerOrigin = request.headers.get("origin");
-  if (headerOrigin) {
-    return headerOrigin === expectedOrigin;
-  }
-  // Origin is missing on some same-origin POSTs (older browsers); fall back
-  // to Referer when present and reject when both are absent.
-  const referer = request.headers.get("referer");
-  if (referer) {
-    try {
-      return new URL(referer).origin === expectedOrigin;
-    } catch {
-      return false;
-    }
-  }
-  return false;
 }
