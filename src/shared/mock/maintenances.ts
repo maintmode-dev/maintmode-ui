@@ -23,7 +23,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     description: "Apply security patch, restart primary, verify replication.",
     status: "in_progress",
     impact: "partial_outage",
-    scope: "internal",
+    scope: "resource",
     planned_period: { start: todayAt(14, 0), end: todayAt(16, 0) },
     actual_period: { start: todayAt(14, 5), end: todayAt(16, 0) },
     resources: [
@@ -47,7 +47,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     description: "Rolling upgrade across 4 nodes.",
     status: "planned",
     impact: "none",
-    scope: "internal",
+    scope: "resource",
     planned_period: { start: todayAt(18, 0, 1), end: todayAt(19, 0, 1) },
     resources: [{ id: "r-3", name: "api-gateway", type: "service" }],
     steps: [
@@ -65,7 +65,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     description: "Planned DR drill — EU-west → EU-central.",
     status: "planned",
     impact: "full_outage",
-    scope: "external",
+    scope: "global",
     planned_period: { start: todayAt(9, 0, 2), end: todayAt(11, 0, 2) },
     resources: [
       { id: "r-4", name: "edge-eu", type: "cluster" },
@@ -81,7 +81,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     title: "Cache flush",
     status: "completed",
     impact: "none",
-    scope: "internal",
+    scope: "resource",
     planned_period: { start: todayAt(2, 0, -1), end: todayAt(2, 30, -1) },
     actual_period: { start: todayAt(2, 0, -1), end: todayAt(2, 25, -1) },
     resources: [{ id: "r-6", name: "redis-cache", type: "cache" }],
@@ -98,7 +98,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     title: "Decommission legacy worker",
     status: "canceled",
     impact: "none",
-    scope: "internal",
+    scope: "resource",
     planned_period: { start: todayAt(15, 0, -2), end: todayAt(16, 0, -2) },
     resources: [{ id: "r-7", name: "worker-legacy", type: "service" }],
     steps: [],
@@ -113,7 +113,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     title: "Draft: storage rebalance",
     status: "draft",
     impact: "partial_outage",
-    scope: "internal",
+    scope: "resource",
     planned_period: { start: todayAt(10, 0, 5), end: todayAt(12, 0, 5) },
     resources: [{ id: "r-8", name: "object-storage", type: "service" }],
     steps: [],
@@ -127,6 +127,8 @@ export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefi
   if (!base) return undefined;
   return {
     ...base,
+    created_by: "Alice Operator",
+    approver: base.status === "draft" ? undefined : "Ruslan Kosykh",
     actions: {
       can_edit: base.status === "draft" || base.status === "planned",
       can_cancel: base.status !== "completed" && base.status !== "canceled",
@@ -146,6 +148,6 @@ export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefi
             },
           ]
         : [],
-    snapshot_id: "snap-" + base.id,
+    revision: 1,
   };
 }

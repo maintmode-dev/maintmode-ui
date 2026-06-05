@@ -13,6 +13,11 @@ import { cn } from "@/shared/ui/lib/cn";
 import { useMaintenanceAuditQuery } from "./queries/use-audit-queries";
 import { useMaintenanceDetailQuery } from "@/features/maintenance/queries/use-maintenance-detail-query";
 
+// FIXME(RUK-162): these groups and the `action.startsWith(`${group}.`)` filter
+// below assume the old dotted AuditAction scheme. After RUK-157 flattened
+// AuditAction (login_success | assigned | …) the "Maintenance"/"Steps" chips
+// match nothing — and there is no `step.*` action at all. Rework or drop when
+// the per-maintenance audit tab is wired to the live feed.
 const ACTION_GROUPS = [
   { id: "all", label: "All events" },
   { id: "maintenance", label: "Maintenance" },
@@ -137,7 +142,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
                       <tr className="border-b border-border-subtle bg-bg-elev-2/40">
                         <td colSpan={5} className="px-6 py-3">
                           <pre className="text-xs font-mono text-fg-muted whitespace-pre-wrap">
-                            {JSON.stringify(e.details, null, 2)}
+                            {e.details}
                           </pre>
                         </td>
                       </tr>

@@ -6,6 +6,11 @@ import { isSameOriginRequest } from "@/server/backend/security/csrf";
 
 const ALLOWED = new Set(["approve", "start", "complete", "cancel"]);
 
+// Action payloads (approve revision + conflict snapshot, cancel reason) are
+// tiny; cap the forwarded body so a crafted request can't buffer an arbitrary
+// amount of memory on the BFF before relaying it to the backend.
+const MAX_BODY_BYTES = 16 * 1024;
+
 /**
  * POST /api/maintenance/{id}/actions/{action} — proxies one of the four
  * state-transition endpoints on the backend:
@@ -15,11 +20,12 @@ const ALLOWED = new Set(["approve", "start", "complete", "cancel"]);
  *   cancel   → POST /api/v1/maintenances/{id}/cancel
  *
  * Security: same-origin CSRF check (defense-in-depth on top of the
- * SameSite=Lax NextAuth cookie). The body (e.g. cancel reason,
- * snapshot_id for approve) is forwarded as-is. Backend returns 409 on
- * snapshot divergence and 400 on validation — those propagate to the
- * browser through routeErrorResponse and surface as toast notifications
- * in the mutation hooks.
+ * SameSite=Lax NextAuth cookie). The body is forwarded as-is — the caller
+ * sends the backend-shaped payload directly: `approve` →
+ * `{ observed_maint_revision, conflicts_snapshot }` (`apimodels.ApproveDraftMaintRequest`),
+ * `cancel` → `{ reason, comment }`. Backend returns 409 on a stale revision
+ * and 400 on validation — those propagate to the browser through
+ * routeErrorResponse and surface as toast notifications in the mutation hooks.
  */
 export async function POST(
   request: Request,
@@ -37,7 +43,16 @@ export async function POST(
     if (!ALLOWED.has(action)) {
       return NextResponse.json({ error: "Unknown action", code: "BAD_ACTION" }, { status: 400 });
     }
+
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Request body too large", code: "BODY_TOO_LARGE" }, { status: 413 });
+    }
     const body = await request.text();
+    if (body.length > MAX_BODY_BYTES) {
+      return NextResponse.json({ error: "Request body too large", code: "BODY_TOO_LARGE" }, { status: 413 });
+    }
+
     const data = await authenticatedBackendRequest<unknown>({
       path: `/api/v1/maintenances/${encodeURIComponent(id)}/${action}`,
       method: "POST",

@@ -94,9 +94,8 @@ export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProp
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="internal">Internal</SelectItem>
-              <SelectItem value="external">External</SelectItem>
-              <SelectItem value="public">Public</SelectItem>
+              <SelectItem value="global">Global</SelectItem>
+              <SelectItem value="resource">Resource</SelectItem>
             </SelectContent>
           </Select>
         </Field>

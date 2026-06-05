@@ -5,7 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { bffFetch } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
 import { MOCK_RESOURCES } from "@/shared/mock/resources";
-import type { Resource } from "@/domain/resource/resource";
+// Mock-backed until RUK-158 wires resources to the BFF (and the domain shape).
+import type { MockResource as Resource } from "@/shared/mock/mock-resource";
 
 export function resourcesKey() {
   return ["resources"] as const;

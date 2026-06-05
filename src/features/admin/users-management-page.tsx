@@ -297,7 +297,7 @@ function UserSheet({
 
 function InviteUserSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>("operator");
+  const [role, setRole] = useState<Role>("editor");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -332,8 +332,9 @@ function InviteUserSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="viewer">Viewer</SelectItem>
-                <SelectItem value="operator">Operator</SelectItem>
+                <SelectItem value="guest">Guest</SelectItem>
+                <SelectItem value="editor">Editor</SelectItem>
+                <SelectItem value="reviewer">Reviewer</SelectItem>
                 <SelectItem value="admin">Admin</SelectItem>
               </SelectContent>
             </Select>

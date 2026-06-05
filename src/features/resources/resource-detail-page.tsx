@@ -25,7 +25,7 @@ import { formatDateTime } from "@/shared/ui/lib/format";
 
 import { useResourceDetailQuery } from "./queries/use-resources-query";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
-import type { ResourceType } from "@/domain/resource/resource";
+import type { ResourceType } from "@/shared/mock/mock-resource";
 
 export function ResourceDetailPage({ id }: { id: string }) {
   const query = useResourceDetailQuery(id);

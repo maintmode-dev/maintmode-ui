@@ -8,8 +8,10 @@ import { MOCK_MAINTENANCES } from "@/shared/mock/maintenances";
 import type { Maintenance } from "@/domain/maintenance/maintenance";
 
 export interface CalendarQueryParams {
-  weekStart: string; // ISO date
-  weekEnd: string; // ISO date
+  /** Inclusive window start as `YYYY-MM-DD` (backend `from`). */
+  from: string;
+  /** Inclusive window end as `YYYY-MM-DD` (backend `to`, expanded to end-of-day). */
+  to: string;
 }
 
 interface CalendarResponse {
@@ -17,7 +19,7 @@ interface CalendarResponse {
 }
 
 export function calendarKey(p: CalendarQueryParams) {
-  return ["calendar", p.weekStart, p.weekEnd] as const;
+  return ["calendar", p.from, p.to] as const;
 }
 
 export function useCalendarQuery(params: CalendarQueryParams) {
@@ -27,7 +29,7 @@ export function useCalendarQuery(params: CalendarQueryParams) {
       if (DATA_SOURCE.calendar === "mock") {
         return MOCK_MAINTENANCES;
       }
-      const url = `/api/calendar?week_start=${encodeURIComponent(params.weekStart)}&week_end=${encodeURIComponent(params.weekEnd)}`;
+      const url = `/api/calendar?from=${encodeURIComponent(params.from)}&to=${encodeURIComponent(params.to)}`;
       const data = await bffFetch<CalendarResponse>(url);
       return data.items;
     },

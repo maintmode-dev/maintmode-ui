@@ -23,23 +23,27 @@ function startOfWeek(d: Date): Date {
   return out;
 }
 
+/**
+ * Local calendar date as `YYYY-MM-DD` (the format the backend's `from`/`to`
+ * params require). Uses local Y/M/D components rather than `toISOString()`,
+ * which would shift the date across the UTC boundary in non-UTC timezones.
+ */
+function toDateParam(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function CalendarPage() {
   const [view, setView] = useState<View>("week");
   const [anchor, setAnchor] = useState(() => startOfWeek(new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Exclusive upper bound: anchor + 7 days at 00:00. The backend treats
-  // this as a half-open interval [weekStart, weekEnd) — events that start
-  // before weekEnd are in the window, events that start at exactly
-  // weekEnd belong to the following week.
-  const weekEnd = useMemo(() => {
-    const d = new Date(anchor);
-    d.setDate(d.getDate() + 7);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, [anchor]);
-
-  // Label-only date for the header (last day of the visible week).
+  // Last visible day of the week (anchor + 6). Used both for the header label
+  // and as the calendar `to` bound — the backend treats `from`/`to` as an
+  // inclusive day range (`to` is expanded to end-of-day), so the upper bound
+  // is the last visible Sunday, not the following Monday.
   const weekLastDay = useMemo(() => {
     const d = new Date(anchor);
     d.setDate(d.getDate() + 6);
@@ -47,8 +51,8 @@ export function CalendarPage() {
   }, [anchor]);
 
   const query = useCalendarQuery({
-    weekStart: anchor.toISOString(),
-    weekEnd: weekEnd.toISOString(),
+    from: toDateParam(anchor),
+    to: toDateParam(weekLastDay),
   });
 
   const items = query.data ?? [];

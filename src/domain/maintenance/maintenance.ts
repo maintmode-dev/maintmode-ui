@@ -4,16 +4,17 @@
  * are deliberately simplified — fields the UI doesn't read are dropped;
  * enum unions live in TypeScript instead of strings-for-strings-sake.
  *
- * When phase 5 wires real BFF data, the corresponding contract types in
- * `src/server/backend/contracts/` will map onto these via adapters; the
- * UI doesn't have to know about the underlying swagger spelling.
+ * The corresponding contract (swagger) types live in
+ * `src/server/backend/contracts/`; mappers there translate the backend
+ * spelling onto these domain shapes so the UI never sees the wire format.
  */
 
 export type MaintenanceStatus = "draft" | "planned" | "in_progress" | "completed" | "canceled";
 
 export type MaintenanceImpact = "none" | "partial_outage" | "full_outage";
 
-export type MaintenanceScope = "internal" | "external" | "public";
+/** Wire values per swagger `apimodels.MaintenanceScope`. */
+export type MaintenanceScope = "global" | "resource";
 
 export type CancelReason = "conflict" | "incident" | "business_decision" | "rescheduled" | "mistake";
 
@@ -33,10 +34,15 @@ export type StepStatus = "pending" | "in_progress" | "done" | "skipped";
 
 export interface MaintenanceStep {
   id: string;
+  /** Display label. Mapped from backend `description` (swagger has no `title`). */
   title: string;
   description?: string;
+  /** 1-based position from backend `order`, when present. */
+  order?: number;
   /** ISO duration string (e.g. "PT5M") OR human "5m" — UI normalizes for display. */
   duration?: string;
+  /** Backend rollback plan for the step, when present. */
+  rollback_description?: string;
   status: StepStatus;
   started_at?: string;
   completed_at?: string;
@@ -82,6 +88,10 @@ export interface Maintenance {
   /** Set when status=canceled. */
   cancel_reason?: CancelReason;
   cancel_reason_comment?: string;
+  /** Author display name (backend `created_by.display_name`, may be "Unknown user"). */
+  created_by?: string;
+  /** Approver display name (backend `approver.display_name`), set once approved. */
+  approver?: string;
   created_at: string;
   updated_at: string;
 }
@@ -89,6 +99,9 @@ export interface Maintenance {
 export interface MaintenanceDetail extends Maintenance {
   actions: MaintenanceActions;
   conflicts: Conflict[];
-  /** Snapshot fingerprint for optimistic-concurrency on approve/edit. */
-  snapshot_id?: string;
+  /**
+   * Integer optimistic-concurrency revision (backend `revision`). Sent back
+   * as `observed_maint_revision` on approve.
+   */
+  revision?: number;
 }

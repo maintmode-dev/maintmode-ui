@@ -1,8 +1,10 @@
-import type { Resource } from "@/domain/resource/resource";
+import type { MockResource } from "@/shared/mock/mock-resource";
 
 const iso = (offsetDays: number) => new Date(Date.now() - offsetDays * 86_400_000).toISOString();
 
-export const MOCK_RESOURCES: Resource[] = [
+// Mock fixtures for the not-yet-wired resource screens (RUK-158). These use
+// the legacy `MockResource` shape, not the backend `Resource` domain type.
+export const MOCK_RESOURCES: MockResource[] = [
   {
     id: "r-1",
     name: "orders-db",

@@ -12,6 +12,12 @@ import { formatDateTime, formatRelative } from "@/shared/ui/lib/format";
 
 import { useGlobalAuditQuery } from "./queries/use-audit-queries";
 
+// FIXME(RUK-162): these group ids and the `action.startsWith(`${group}.`)`
+// filter below assume the old dotted AuditAction scheme (maintenance.* / user.*
+// / …). After RUK-157 reconciled AuditAction to the flat auth-service vocabulary
+// (login_success | assigned | blocked | …) every chip except "All" matches
+// nothing. Rework grouping (action→category map) or drop the chips when this
+// screen is wired to the live audit feed.
 const GROUPS = [
   { id: "all", label: "All" },
   { id: "auth", label: "Auth" },

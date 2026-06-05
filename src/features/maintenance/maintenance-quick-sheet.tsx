@@ -75,7 +75,7 @@ export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: Mai
                     {detail.steps.slice(0, 5).map((s, i) => (
                       <StepRow
                         key={s.id}
-                        number={i + 1}
+                        number={s.order ?? i + 1}
                         title={s.title}
                         duration={s.duration}
                         state={s.status}
@@ -91,7 +91,7 @@ export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: Mai
                       <ConflictRow
                         key={c.maintenance_id}
                         title={c.title}
-                        meta={`${c.reference} · ${formatRange(c.overlap_start, c.overlap_end)}`}
+                        meta={formatRange(c.overlap_start, c.overlap_end)}
                         resolved={c.resolved}
                       />
                     ))}

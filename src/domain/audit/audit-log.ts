@@ -1,35 +1,31 @@
+/**
+ * Audit actions per the auth service swagger. Flat snake_case wire values —
+ * the previous dotted `maintenance.*`/`resource.*`/`user.*` scheme was an
+ * invented FE shape and is gone.
+ */
 export type AuditAction =
-  | "maintenance.created"
-  | "maintenance.edited"
-  | "maintenance.approved"
-  | "maintenance.started"
-  | "maintenance.completed"
-  | "maintenance.canceled"
-  | "step.started"
-  | "step.completed"
-  | "step.skipped"
-  | "resource.created"
-  | "resource.archived"
-  | "resource.edited"
-  | "user.invited"
-  | "user.invite_revoked"
-  | "user.invite_accepted"
-  | "user.blocked"
-  | "user.unblocked"
-  | "user.role_assigned"
-  | "user.role_revoked"
-  | "auth.login"
-  | "auth.logout";
+  | "login_success"
+  | "login_failed"
+  | "logout_success"
+  | "assigned"
+  | "revoked"
+  | "replaced"
+  | "blocked"
+  | "unblocked";
 
 export interface AuditEvent {
   id: string;
   created_at: string;
-  actor: string;
+  /** Display name of the acting user (backend `actor`), when present. */
+  actor?: string;
   action: AuditAction;
-  target_type: string;
+  /** Entity the action targeted, e.g. "user" (backend `entity_type`/`target_type`). */
+  entity_type?: string;
+  entity_id?: string;
+  target_type?: string;
   target_id?: string;
-  /** Human-readable summary for the table cell. */
+  /** Human-readable summary for the table cell, when the backend supplies one. */
   summary?: string;
-  /** Expandable JSON diff payload. */
-  details?: Record<string, unknown>;
+  /** Free-text detail string (backend `details` is a string, not an object). */
+  details?: string;
 }

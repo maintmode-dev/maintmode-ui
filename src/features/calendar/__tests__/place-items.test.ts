@@ -18,7 +18,7 @@ function mk(id: string, startIso: string, endIso: string): Maintenance {
     title: id,
     status: "planned",
     impact: "none",
-    scope: "internal",
+    scope: "global",
     planned_period: { start: startIso, end: endIso },
     resources: [],
     steps: [],

@@ -15,7 +15,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
-import type { ResourceType } from "@/domain/resource/resource";
+import type { ResourceType } from "@/shared/mock/mock-resource";
 
 export interface ResourceCreateModalProps {
   open: boolean;

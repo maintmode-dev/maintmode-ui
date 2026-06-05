@@ -115,6 +115,21 @@ export function MaintenanceDetailsPage({ id }: MaintenanceDetailsPageProps) {
               <ImpactBadge impact={detail.impact} />
             </Section>
 
+            <Section label="People">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
+                <span className="flex items-center gap-2">
+                  <span className="text-fg-dim">Author</span>
+                  <span>{detail.created_by ?? "Unknown user"}</span>
+                </span>
+                {detail.approver ? (
+                  <span className="flex items-center gap-2">
+                    <span className="text-fg-dim">Approver</span>
+                    <span>{detail.approver}</span>
+                  </span>
+                ) : null}
+              </div>
+            </Section>
+
             <Section label="Resources">
               <div className="flex flex-wrap gap-1.5">
                 {detail.resources.map((r) => (
@@ -137,7 +152,7 @@ export function MaintenanceDetailsPage({ id }: MaintenanceDetailsPageProps) {
                   detail.steps.map((s, i) => (
                     <StepRow
                       key={s.id}
-                      number={i + 1}
+                      number={s.order ?? i + 1}
                       title={s.title}
                       duration={s.duration}
                       state={s.status}
@@ -155,7 +170,12 @@ export function MaintenanceDetailsPage({ id }: MaintenanceDetailsPageProps) {
             onCancel={() => setCancelOpen(true)}
             onEdit={() => setMode("edit")}
             onApprove={() =>
-              actionMutation.mutate({ id: detail.id, action: "approve", snapshotId: detail.snapshot_id })
+              actionMutation.mutate({
+                id: detail.id,
+                action: "approve",
+                revision: detail.revision,
+                conflicts: detail.conflicts,
+              })
             }
             onStart={() => actionMutation.mutate({ id: detail.id, action: "start" })}
             onComplete={() => actionMutation.mutate({ id: detail.id, action: "complete" })}
@@ -188,10 +208,10 @@ export function MaintenanceDetailsPage({ id }: MaintenanceDetailsPageProps) {
               <ConflictCard
                 key={c.maintenance_id}
                 title={c.title}
-                meta={`${c.reference} · ${formatRange(c.overlap_start, c.overlap_end)}`}
+                meta={formatRange(c.overlap_start, c.overlap_end)}
                 details={
                   <>
-                    <ConflictGridItem label="Reference" value={c.reference ?? "—"} mono />
+                    <ConflictGridItem label="Maintenance" value={c.maintenance_id} mono />
                     <ConflictGridItem
                       label="Overlap"
                       value={formatRange(c.overlap_start, c.overlap_end)}
