@@ -4,9 +4,12 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { toast } from "sonner";
 
 import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
-import { DATA_SOURCE } from "@/features/_shared/api/data-source";
-import { MOCK_INVITATIONS } from "@/shared/mock/users";
-import type { Invitation, ListUsersPage } from "@/domain/admin/user";
+import type {
+  CreateInvitationRequest,
+  CreateInvitationResponse,
+  Invitation,
+  ListUsersPage,
+} from "@/domain/admin/user";
 import type { Role } from "@/domain/auth/permissions";
 
 /** Query parameters for the paginated users list (mirrors the BFF route). */
@@ -73,15 +76,107 @@ export function useRolesQuery() {
   });
 }
 
+/**
+ * Admin invitations list. Wired to the auth BFF (RUK-160): the route proxies
+ * `GET /api/v1/users/invitations` and returns the BE-shaped
+ * `{ invitations: Invitation[] }` directly.
+ */
 export function useInvitationsQuery() {
   return useQuery({
     queryKey: invitationsKey(),
     queryFn: async (): Promise<Invitation[]> => {
-      if (DATA_SOURCE.invitations === "mock") {
-        return MOCK_INVITATIONS;
-      }
       const data = await bffFetch<{ invitations: Invitation[] }>("/api/admin/invitations");
-      return data.invitations;
+      return data.invitations ?? [];
+    },
+  });
+}
+
+/**
+ * Create an invitation. Posts `{ email, roles[] }` to the BFF, which relays to
+ * `POST /api/v1/users/invite`. A 409 (user already exists / active-invite
+ * conflict) surfaces as a specific toast; the list is refetched on success so
+ * the new pending invite appears.
+ */
+export function useInviteUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: CreateInvitationRequest): Promise<CreateInvitationResponse> => {
+      return bffFetch<CreateInvitationResponse>("/api/admin/invitations", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: (_, { email }) => {
+      toast.success(`Invitation sent to ${email}`);
+      queryClient.invalidateQueries({ queryKey: invitationsKey() });
+    },
+    onError: (error: unknown) => {
+      if (error instanceof BffError) {
+        if (error.status === 409) {
+          toast.error("That email already has an account or an active invitation.");
+          return;
+        }
+        if (error.status === 400) {
+          toast.error(`Couldn't send invitation: ${error.message}`);
+          return;
+        }
+      }
+      toast.error("Couldn't send invitation. Try again.");
+    },
+  });
+}
+
+/**
+ * Resend a pending invitation. Backend rotates the token, extends expiry, and
+ * re-sends the email; returns 204. A 409 means the invitation is no longer
+ * pending (expired/accepted/revoked) — refetch so the row reflects reality.
+ */
+export function useResendInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      await bffFetch<void>(`/api/admin/invitations/${encodeURIComponent(id)}/resend`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      toast.success("Invitation resent");
+      queryClient.invalidateQueries({ queryKey: invitationsKey() });
+    },
+    onError: (error: unknown) => {
+      if (error instanceof BffError && error.status === 409) {
+        toast.error("This invitation is no longer pending. Refreshing the list.");
+        queryClient.invalidateQueries({ queryKey: invitationsKey() });
+        return;
+      }
+      toast.error("Couldn't resend the invitation. Try again.");
+    },
+  });
+}
+
+/**
+ * Revoke a pending invitation (idempotent for already-revoked). Backend
+ * returns 204; a 409 means it was already accepted. Either way we refetch.
+ */
+export function useRevokeInvitation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      await bffFetch<void>(`/api/admin/invitations/${encodeURIComponent(id)}/revoke`, {
+        method: "POST",
+      });
+    },
+    onSuccess: () => {
+      toast.success("Invitation revoked");
+      queryClient.invalidateQueries({ queryKey: invitationsKey() });
+    },
+    onError: (error: unknown) => {
+      if (error instanceof BffError && error.status === 409) {
+        toast.error("This invitation was already accepted. Refreshing the list.");
+        queryClient.invalidateQueries({ queryKey: invitationsKey() });
+        return;
+      }
+      toast.error("Couldn't revoke the invitation. Try again.");
     },
   });
 }

@@ -26,6 +26,9 @@ import {
   useAssignRole,
   useBlockUser,
   useInvitationsQuery,
+  useInviteUser,
+  useResendInvitation,
+  useRevokeInvitation,
   useRevokeRole,
   useRolesQuery,
   useUnblockUser,
@@ -277,6 +280,12 @@ function RoleBadge({ role }: { role: Role }) {
 }
 
 function InvitationsTable({ invitations }: { invitations: Invitation[] }) {
+  const resend = useResendInvitation();
+  const revoke = useRevokeInvitation();
+  // Disable both row actions while either is in flight for that row, so a
+  // double-click can't fire resend+revoke (or two revokes) against one invite.
+  const pendingId = resend.isPending ? resend.variables : revoke.isPending ? revoke.variables : undefined;
+
   return (
     <div className="bg-bg-elev-1 border border-border-subtle rounded-md overflow-hidden">
       <table className="w-full text-left text-sm">
@@ -314,17 +323,28 @@ function InvitationsTable({ invitations }: { invitations: Invitation[] }) {
                   dot={false}
                 />
               </td>
-              <td className="px-3 py-2.5 text-fg-muted">{formatRelative(i.invited_at)}</td>
+              <td className="px-3 py-2.5 text-fg-muted">{formatRelative(i.sent_at)}</td>
               <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-fg-muted">
                 {formatRelative(i.expires_at)}
               </td>
               <td className="px-3 py-2.5 w-32 text-right">
                 {i.status === "pending" ? (
                   <div className="flex gap-1 justify-end">
-                    <Button size="xs" variant="outline">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      disabled={pendingId === i.id}
+                      onClick={() => resend.mutate(i.id)}
+                    >
                       Resend
                     </Button>
-                    <Button size="xs" variant="ghost" className="text-[var(--destructive-fg)]">
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="text-[var(--destructive-fg)]"
+                      disabled={pendingId === i.id}
+                      onClick={() => revoke.mutate(i.id)}
+                    >
                       Revoke
                     </Button>
                   </div>
@@ -455,9 +475,21 @@ function RolesEditor({ user }: { user: User }) {
 function InviteUserSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("editor");
+  const invite = useInviteUser();
+
+  const reset = () => {
+    setEmail("");
+    setRole("editor");
+  };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) reset();
+        onOpenChange(o);
+      }}
+    >
       <SheetContent className="sm:max-w-[420px]">
         <SheetHeader>
           <SheetTitle>Invite user</SheetTitle>
@@ -469,7 +501,17 @@ function InviteUserSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
           className="px-6 py-4 space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            onOpenChange(false);
+            const trimmed = email.trim();
+            if (!trimmed) return;
+            invite.mutate(
+              { email: trimmed, roles: [role] },
+              {
+                onSuccess: () => {
+                  reset();
+                  onOpenChange(false);
+                },
+              },
+            );
           }}
         >
           <Field label="Email" htmlFor="invite-email">
@@ -496,8 +538,8 @@ function InviteUserSheet({ open, onOpenChange }: { open: boolean; onOpenChange: 
               </SelectContent>
             </Select>
           </Field>
-          <Button type="submit" className="w-full">
-            Send invitation
+          <Button type="submit" className="w-full" disabled={invite.isPending}>
+            {invite.isPending ? "Sending…" : "Send invitation"}
           </Button>
         </form>
       </SheetContent>

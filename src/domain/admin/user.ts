@@ -35,15 +35,41 @@ export interface ListUsersPage {
   total: number;
 }
 
-export type InvitationStatus = "pending" | "accepted" | "revoked" | "expired";
+export type InvitationStatus = "pending" | "expired" | "accepted" | "revoked";
 
+/**
+ * Mirrors the auth-service `Invitation` (swagger `auth`,
+ * `GET /api/v1/users/invitations`). `invited_by` is a compact actor summary
+ * `{ id, handle }`; `sent_at` is when the invite was issued and
+ * `accepted_at` is present only once a recipient claims it.
+ */
 export interface Invitation {
   id: string;
   email: string;
   roles: Role[];
   status: InvitationStatus;
-  suggested_provider?: SignInProvider;
-  invited_by: string;
-  invited_at: string;
+  sent_at: string;
+  accepted_at?: string;
+  expires_at: string;
+  invited_by: InvitationActor;
+}
+
+export interface InvitationActor {
+  id: string;
+  handle: string;
+}
+
+/** Body for `POST /api/v1/users/invite` (`CreateInvitationRequest`). */
+export interface CreateInvitationRequest {
+  email: string;
+  roles: Role[];
+}
+
+/** `201 CreateInvitationResponse` from `POST /api/v1/users/invite`. */
+export interface CreateInvitationResponse {
+  invitation_id: string;
+  email: string;
+  roles: Role[];
+  status: InvitationStatus;
   expires_at: string;
 }

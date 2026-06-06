@@ -7,10 +7,12 @@ import type { JWT } from "next-auth/jwt";
 
 import { parseMaintmodeAuthConfig, type MaintmodeAuthConfig } from "@/shared/config/auth-config";
 import {
+  acceptInvitation,
   exchangeGoogleIdToken,
   fetchBackendMe,
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
+import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
 import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
 
 const REFRESH_LEEWAY_MS = 60_000;
@@ -88,6 +90,15 @@ export const config = {
         const idToken = typeof account.id_token === "string" ? account.id_token : undefined;
         if (!idToken) {
           throw new BackendExchangeError(AUTH_ERROR_CODES.invalidIdToken);
+        }
+        // Public accept-invite flow (RUK-160): when an invitation token is
+        // pending in the httpOnly cookie, this sign-in is claiming an invite,
+        // not a normal login. Consume the cookie (single-use) and exchange via
+        // the backend accept endpoint instead of the plain login exchange.
+        const invitationToken = await readInvitationToken();
+        if (invitationToken) {
+          await clearInvitationToken();
+          return runInvitationAccept(account, invitationToken, idToken);
         }
         return runBackendExchange(account, idToken);
       }
@@ -187,6 +198,42 @@ async function runBackendExchange(
 ): Promise<true> {
   try {
     const tokens = await exchangeGoogleIdToken(idToken);
+    const me = await fetchBackendMe(tokens.access_token);
+    account.maintmodeTokens = tokens;
+    account.maintmodeUser = {
+      id: me.id,
+      email: me.email,
+      displayName: me.display_name,
+      roles: me.roles,
+    };
+    return true;
+  } catch (error) {
+    const code = isIdentityLookupError(error)
+      ? AUTH_ERROR_CODES.identityLookupFailed
+      : AUTH_ERROR_CODES.oauthHandoffFailed;
+    throw new BackendExchangeError(code);
+  }
+}
+
+/**
+ * Accept-invite counterpart of `runBackendExchange` (RUK-160). Trades the
+ * invitation token + provider `id_token` for a backend token pair via the
+ * public accept endpoint, then loads the freshly-created user's profile. The
+ * resulting tokens are attached to the NextAuth account exactly like a normal
+ * login, so the rest of the session machinery is unchanged — and the tokens
+ * stay server-side.
+ *
+ * Every failure (invalid/expired/revoked invitation, email mismatch, OAuth
+ * verify failure) collapses to a single sign-in error code; the backend
+ * already strips detail, so nothing about the invitation leaks to `/login`.
+ */
+async function runInvitationAccept(
+  account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
+  invitationToken: string,
+  idToken: string,
+): Promise<true> {
+  try {
+    const tokens = await acceptInvitation({ invitationToken, provider: "google", idToken });
     const me = await fetchBackendMe(tokens.access_token);
     account.maintmodeTokens = tokens;
     account.maintmodeUser = {

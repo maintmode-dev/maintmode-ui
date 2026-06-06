@@ -1,4 +1,4 @@
-import type { Invitation, User } from "@/domain/admin/user";
+import type { User } from "@/domain/admin/user";
 
 const iso = (offsetDays: number) => new Date(Date.now() - offsetDays * 86_400_000).toISOString();
 
@@ -63,37 +63,5 @@ export const MOCK_USERS: User[] = [
     created_at: iso(200),
     last_seen_at: iso(10),
     blocked_at: iso(8),
-  },
-];
-
-export const MOCK_INVITATIONS: Invitation[] = [
-  {
-    id: "i-1",
-    email: "dave@maintmode",
-    roles: ["editor"],
-    status: "pending",
-    suggested_provider: "google",
-    invited_by: "Ruslan Kosykh",
-    invited_at: iso(2),
-    expires_at: iso(-12),
-  },
-  {
-    id: "i-2",
-    email: "eve@external.org",
-    roles: ["guest"],
-    status: "pending",
-    suggested_provider: "google",
-    invited_by: "Ruslan Kosykh",
-    invited_at: iso(0),
-    expires_at: iso(-14),
-  },
-  {
-    id: "i-3",
-    email: "old@maintmode",
-    roles: ["editor"],
-    status: "expired",
-    invited_by: "Ops Lead",
-    invited_at: iso(30),
-    expires_at: iso(16),
   },
 ];

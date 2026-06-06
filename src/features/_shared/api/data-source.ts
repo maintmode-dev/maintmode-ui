@@ -12,13 +12,13 @@
  * | maintenance create/edit/actions   | bff     | shipped  |
  * | maintenance audit (per-id)        | mock    | RUK-42   |
  * | users list / block / roles        | bff     | RUK-159  |
- * | invitations                       | mock    | RUK-94   |
  * | global audit log                  | bff     | shipped  |
  *
  * When a BE ticket lands, flip the flag here and remove the mock branch
  * in the corresponding query hook. Once a hook is fully BFF-only with no
- * mock branch left (e.g. resources/resource detail after RUK-158), its flag
- * is dropped from this object rather than left as dead config.
+ * mock branch left (e.g. resources/resource detail after RUK-158, or
+ * invitations after RUK-160), its flag is dropped from this object rather
+ * than left as dead config.
  *
  * NOT included (and intentionally so):
  *  - Cancel reasons (RUK-62) — UI uses a hardcoded enum that matches the
@@ -37,8 +37,8 @@ export const DATA_SOURCE = {
   maintenanceDetail: "bff" as DataMode,
   maintenanceWrites: "bff" as DataMode,
   // resources / resourceDetail: BFF-only since RUK-158 — no flag, no mock branch.
+  // invitations: BFF-only since RUK-160 — no flag, no mock branch.
   maintenanceAudit: "mock" as DataMode, // RUK-42
   users: "bff" as DataMode, // RUK-159 (users list + block/unblock + roles)
-  invitations: "mock" as DataMode, // RUK-94
   globalAudit: "bff" as DataMode,
 } as const;

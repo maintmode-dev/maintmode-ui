@@ -4,6 +4,7 @@ import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/
 import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from "@/server/auth/contracts";
 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
+const ACCEPT_INVITATION_PATH = "/api/v1/users/invitations/accept";
 const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
 const ME_PATH = "/api/v1/me";
@@ -29,6 +30,40 @@ const ME_PATH = "/api/v1/me";
 export async function exchangeGoogleIdToken(idToken: string): Promise<BackendTokenPair> {
   return postBackendJson<BackendTokenPair>(EXCHANGE_GOOGLE_PATH, { id_token: idToken }, (parsed) =>
     Boolean(parsed?.access_token && parsed?.refresh_token),
+  );
+}
+
+/**
+ * Public invitation accept (RUK-160).
+ *
+ * Completes an invitation by handing the backend the raw invitation token plus
+ * the OAuth payload (provider + signed `id_token`). The backend verifies the
+ * token, checks the OAuth email matches the invited email, creates the user
+ * with the invitation's pre-assigned roles, and returns its own
+ * `TokenPairResponse` — exactly like a normal login.
+ *
+ * Security: this runs server-side only (inside the NextAuth `signIn`
+ * callback). The returned `access_token`/`refresh_token` are persisted in the
+ * server-only JWT cookie and never reach the browser. The endpoint is public
+ * (no Bearer), so we call the unauthenticated `backendRequest` directly.
+ *
+ * The backend collapses every accept failure into a bare `400` with code
+ * `invalid` | `email_mismatch` and no message (anti-enumeration). On any
+ * non-2xx this throws `BackendAuthError`, which the `signIn` callback maps to
+ * a generic sign-in failure code — no invitation detail leaks to the UI.
+ */
+export async function acceptInvitation(args: {
+  invitationToken: string;
+  provider: string;
+  idToken: string;
+}): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    ACCEPT_INVITATION_PATH,
+    {
+      invitation_token: args.invitationToken,
+      oauth_payload: { provider: args.provider, id_token: args.idToken },
+    },
+    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 
