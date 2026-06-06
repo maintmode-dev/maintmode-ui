@@ -5,7 +5,6 @@ import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
-import { Chip } from "@/shared/ui/domain/chip";
 import { AuditEmpty, AuditError, AuditLoading } from "@/shared/ui/states";
 import { formatDateTime, formatRelative } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
@@ -13,38 +12,20 @@ import { cn } from "@/shared/ui/lib/cn";
 import { useMaintenanceAuditQuery } from "./queries/use-audit-queries";
 import { useMaintenanceDetailQuery } from "@/features/maintenance/queries/use-maintenance-detail-query";
 
-// FIXME(RUK-162): these groups and the `action.startsWith(`${group}.`)` filter
-// below assume the old dotted AuditAction scheme. After RUK-157 flattened
-// AuditAction (login_success | assigned | …) the "Maintenance"/"Steps" chips
-// match nothing — and there is no `step.*` action at all. Rework or drop when
-// the per-maintenance audit tab is wired to the live feed.
-const ACTION_GROUPS = [
-  { id: "all", label: "All events" },
-  { id: "maintenance", label: "Maintenance" },
-  { id: "step", label: "Steps" },
-] as const;
-type GroupId = (typeof ACTION_GROUPS)[number]["id"];
-
 export function MaintenanceAuditPage({ id }: { id: string }) {
   const detailQuery = useMaintenanceDetailQuery(id);
   const detail = detailQuery.data;
   const auditQuery = useMaintenanceAuditQuery(id);
-  const all = useMemo(() => auditQuery.data ?? [], [auditQuery.data]);
+  const events = useMemo(() => auditQuery.data ?? [], [auditQuery.data]);
   const status: "loading" | "error" | "empty" | "ready" = auditQuery.isPending
     ? "loading"
     : auditQuery.isError
       ? "error"
-      : all.length === 0
+      : events.length === 0
         ? "empty"
         : "ready";
 
-  const [group, setGroup] = useState<GroupId>("all");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-
-  const events = useMemo(() => {
-    if (group === "all") return all;
-    return all.filter((e) => e.action.startsWith(`${group}.`));
-  }, [all, group]);
 
   return (
     <div className="mx-auto max-w-[1200px] p-6 space-y-4">
@@ -56,16 +37,8 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
           <ArrowLeft className="size-3" aria-hidden="true" /> Back to maintenance
         </Link>
         <h1 className="h1">Audit · {detail?.title ?? id}</h1>
-        <p className="body-sm">Every state change and step transition for this maintenance.</p>
+        <p className="body-sm">Audit events recorded against this maintenance.</p>
       </header>
-
-      <div className="flex flex-wrap gap-2">
-        {ACTION_GROUPS.map((g) => (
-          <button key={g.id} type="button" onClick={() => setGroup(g.id)} className="appearance-none">
-            <Chip selected={group === g.id}>{g.label}</Chip>
-          </button>
-        ))}
-      </div>
 
       {status === "loading" ? (
         <AuditLoading />
@@ -113,7 +86,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
                       </td>
                       <td className="px-3 py-2">{e.actor}</td>
                       <td className="px-3 py-2 font-mono text-xs text-fg-muted">{e.action}</td>
-                      <td className="px-3 py-2">{e.summary ?? "—"}</td>
+                      <td className="px-3 py-2 text-fg-muted">{e.target_type ?? "—"}</td>
                       <td className="px-3 py-2 w-8">
                         {e.details ? (
                           <button

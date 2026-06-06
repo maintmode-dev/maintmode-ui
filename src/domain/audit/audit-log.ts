@@ -24,8 +24,6 @@ export interface AuditEvent {
   entity_id?: string;
   target_type?: string;
   target_id?: string;
-  /** Human-readable summary for the table cell, when the backend supplies one. */
-  summary?: string;
   /** Free-text detail string (backend `details` is a string, not an object). */
   details?: string;
 }

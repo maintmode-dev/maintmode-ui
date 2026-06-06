@@ -4,40 +4,8 @@ const iso = (offsetMin: number) => new Date(Date.now() - offsetMin * 60_000).toI
 
 // Mock fixtures kept for tests / mock-backed screens. Actions use the
 // reconciled backend `AuditAction` values (flat snake_case) and `details` is a
-// free-text string. Per-maintenance audit wiring is RUK-162.
-export const MOCK_MAINTENANCE_AUDIT: Record<string, AuditEvent[]> = {
-  "m-1001": [
-    {
-      id: "a-1",
-      created_at: iso(120),
-      actor: "Alice Operator",
-      action: "assigned",
-      target_type: "maintenance",
-      target_id: "m-1001",
-      summary: "Created maintenance “Patch postgres primary”",
-    },
-    {
-      id: "a-2",
-      created_at: iso(90),
-      actor: "Ruslan Kosykh",
-      action: "assigned",
-      target_type: "maintenance",
-      target_id: "m-1001",
-      summary: "Approved maintenance",
-      details: "approver=Ruslan Kosykh; revision=1",
-    },
-    {
-      id: "a-3",
-      created_at: iso(40),
-      actor: "Alice Operator",
-      action: "assigned",
-      target_type: "maintenance",
-      target_id: "m-1001",
-      summary: "Started maintenance",
-    },
-  ],
-};
-
+// free-text string. Per-maintenance audit is on bff (RUK-162); only the global
+// audit fixture survives, for the still-mock-capable `globalAudit` flag.
 export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
   {
     id: "g-1",
@@ -46,7 +14,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
     action: "login_success",
     target_type: "user",
     target_id: "u-1",
-    summary: "Logged in with Google",
+    details: "Logged in with Google",
   },
   {
     id: "g-2",
@@ -55,7 +23,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
     action: "assigned",
     target_type: "invitation",
     target_id: "i-2",
-    summary: "Invited eve@external.org as guest",
+    details: "Invited eve@external.org as guest",
   },
   {
     id: "g-3",
@@ -64,7 +32,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
     action: "blocked",
     target_type: "user",
     target_id: "u-5",
-    summary: "Blocked carol@maintmode",
+    details: "Blocked carol@maintmode",
   },
   {
     id: "g-4",
@@ -73,7 +41,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
     action: "assigned",
     target_type: "user",
     target_id: "u-3",
-    summary: "Granted editor role to alice@maintmode",
+    details: "Granted editor role to alice@maintmode",
   },
   {
     id: "g-5",
@@ -82,6 +50,6 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
     action: "unblocked",
     target_type: "user",
     target_id: "u-5",
-    summary: "Unblocked carol@maintmode",
+    details: "Unblocked carol@maintmode",
   },
 ];

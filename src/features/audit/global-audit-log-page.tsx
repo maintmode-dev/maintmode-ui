@@ -10,20 +10,29 @@ import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { AuditError } from "@/shared/ui/states";
 import { formatDateTime, formatRelative } from "@/shared/ui/lib/format";
 
+import type { AuditAction } from "@/domain/audit/audit-log";
+
 import { useGlobalAuditQuery } from "./queries/use-audit-queries";
 
-// FIXME(RUK-162): these group ids and the `action.startsWith(`${group}.`)`
-// filter below assume the old dotted AuditAction scheme (maintenance.* / user.*
-// / …). After RUK-157 reconciled AuditAction to the flat auth-service vocabulary
-// (login_success | assigned | blocked | …) every chip except "All" matches
-// nothing. Rework grouping (action→category map) or drop the chips when this
-// screen is wired to the live audit feed.
+// Category chips over the flat auth-service AuditAction vocabulary
+// (login_success | assigned | blocked | …). The enum carries no
+// maintenance/resource actions, so grouping is an action→category map rather
+// than the old dotted-prefix match.
+const ACTION_CATEGORY: Record<AuditAction, "auth" | "access"> = {
+  login_success: "auth",
+  login_failed: "auth",
+  logout_success: "auth",
+  assigned: "access",
+  revoked: "access",
+  replaced: "access",
+  blocked: "access",
+  unblocked: "access",
+};
+
 const GROUPS = [
   { id: "all", label: "All" },
   { id: "auth", label: "Auth" },
-  { id: "user", label: "Users" },
-  { id: "maintenance", label: "Maintenance" },
-  { id: "resource", label: "Resources" },
+  { id: "access", label: "Access & roles" },
 ] as const;
 type GroupId = (typeof GROUPS)[number]["id"];
 
@@ -36,12 +45,12 @@ export function GlobalAuditLogPage() {
 
   const events = useMemo(() => {
     return all.filter((e) => {
-      if (group !== "all" && !e.action.startsWith(`${group}.`)) return false;
+      if (group !== "all" && ACTION_CATEGORY[e.action] !== group) return false;
       if (
         query &&
         !(
           (e.actor ?? "").toLowerCase().includes(query.toLowerCase()) ||
-          (e.summary ?? "").toLowerCase().includes(query.toLowerCase()) ||
+          (e.details ?? "").toLowerCase().includes(query.toLowerCase()) ||
           e.action.toLowerCase().includes(query.toLowerCase())
         )
       )
@@ -66,7 +75,7 @@ export function GlobalAuditLogPage() {
             aria-hidden="true"
           />
           <Input
-            placeholder="Search actor, action, or summary"
+            placeholder="Search actor, action, or detail"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-8"
@@ -121,8 +130,8 @@ export function GlobalAuditLogPage() {
                   </td>
                   <td className="px-3 py-2.5">{e.actor}</td>
                   <td className="px-3 py-2.5 font-mono text-xs text-fg-muted">{e.action}</td>
-                  <td className="px-3 py-2.5 text-fg-muted">{e.target_type}</td>
-                  <td className="px-3 py-2.5">{e.summary ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-fg-muted">{e.target_type ?? "—"}</td>
+                  <td className="px-3 py-2.5 whitespace-pre-wrap">{e.details ?? "—"}</td>
                 </tr>
               ))}
             </tbody>

@@ -12,7 +12,7 @@
  * | maintenance create/edit/actions   | bff     | shipped  |
  * | cancel reasons                    | bff     | RUK-62   |
  * | assignable users (approver)       | bff     | RUK-161  |
- * | maintenance audit (per-id)        | mock    | RUK-42   |
+ * | maintenance audit (per-id)        | bff     | RUK-162  |
  * | users list / block / roles        | bff     | RUK-159  |
  * | global audit log                  | bff     | shipped  |
  *
@@ -39,7 +39,7 @@ export const DATA_SOURCE = {
   assignableUsers: "bff" as DataMode, // RUK-161
   // resources / resourceDetail: BFF-only since RUK-158 — no flag, no mock branch.
   // invitations: BFF-only since RUK-160 — no flag, no mock branch.
-  maintenanceAudit: "mock" as DataMode, // RUK-42
+  maintenanceAudit: "bff" as DataMode, // RUK-162
   users: "bff" as DataMode, // RUK-159 (users list + block/unblock + roles)
   globalAudit: "bff" as DataMode,
 } as const;

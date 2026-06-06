@@ -225,3 +225,25 @@ export interface MaintenanceCancelReasonDto {
   title?: string;
   description?: string;
 }
+
+/**
+ * `apiauthmodels.AuditLog` (auth service swagger). `action` is the flat
+ * `entity.AuditAction` enum; `details` is a free-text string (NOT a JSON
+ * object). Per-maintenance scoping rides on `entity_id`/`target_id`.
+ */
+export interface AuditLogDto {
+  id?: string;
+  action?: string;
+  actor?: string;
+  created_at?: string;
+  details?: string;
+  entity_type?: string;
+  entity_id?: string;
+  target_type?: string;
+  target_id?: string;
+}
+
+/** `apiauthmodels.AuditLogResponse` envelope — `{ logs: AuditLog[] }`. */
+export interface AuditLogResponseDto {
+  logs?: AuditLogDto[];
+}
