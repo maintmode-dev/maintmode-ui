@@ -11,7 +11,7 @@
  * | maintenance detail (/ui/v1/{id})  | bff     | shipped  |
  * | maintenance create/edit/actions   | bff     | shipped  |
  * | maintenance audit (per-id)        | mock    | RUK-42   |
- * | users list / block                | mock    | RUK-93   |
+ * | users list / block / roles        | bff     | RUK-159  |
  * | invitations                       | mock    | RUK-94   |
  * | global audit log                  | bff     | shipped  |
  *
@@ -38,7 +38,7 @@ export const DATA_SOURCE = {
   maintenanceWrites: "bff" as DataMode,
   // resources / resourceDetail: BFF-only since RUK-158 — no flag, no mock branch.
   maintenanceAudit: "mock" as DataMode, // RUK-42
-  users: "mock" as DataMode, // RUK-93
+  users: "bff" as DataMode, // RUK-159 (users list + block/unblock + roles)
   invitations: "mock" as DataMode, // RUK-94
   globalAudit: "bff" as DataMode,
 } as const;
