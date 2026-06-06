@@ -105,3 +105,59 @@ export interface MaintenanceDetail extends Maintenance {
    */
   revision?: number;
 }
+
+/**
+ * A single step as the create/edit form submits it. Distinct from the read
+ * `MaintenanceStep`: no `id`/`status` (assigned by the backend), and
+ * `duration` is the human Go-duration string (e.g. "1h30m") the write
+ * contract expects.
+ */
+export interface MaintenanceStepInput {
+  /** 1-based position. */
+  order: number;
+  description: string;
+  /** Go-duration string, e.g. "1h30m". Empty/undefined when unset. */
+  duration?: string;
+  rollback_description?: string;
+}
+
+/**
+ * Form payload for creating a draft and editing an existing one (both hit the
+ * same backend shape — `CreateDraftMaintRequest` / `UpdateDraftMaintRequest`).
+ * The BFF mapper translates this onto the wire contract.
+ */
+export interface MaintenanceDraftInput {
+  title: string;
+  description?: string;
+  /** ISO-8601 datetime of the planned start. */
+  planned_start: string;
+  scope: MaintenanceScope;
+  impact: MaintenanceImpact;
+  /** Resource ids in scope (empty for `global`). */
+  resource_ids: string[];
+  steps: MaintenanceStepInput[];
+  /** Chosen approver (backend `approver_user_id`), when picked. */
+  approver_user_id?: string;
+}
+
+/**
+ * A user eligible to be picked as approver. Backend
+ * `uimodels.AssignableUser` (`GET /api/v1/users/assignable`).
+ */
+export interface AssignableUser {
+  id: string;
+  display_name: string;
+  email: string;
+  roles: string[];
+}
+
+/**
+ * A cancel reason as the backend exposes it (`GET
+ * /api/v1/maintenances/cancel-reasons`): the enum `value` plus display text.
+ * The hardcoded fallback in the cancel dialog mirrors this shape.
+ */
+export interface MaintenanceCancelReason {
+  value: CancelReason;
+  title: string;
+  description?: string;
+}

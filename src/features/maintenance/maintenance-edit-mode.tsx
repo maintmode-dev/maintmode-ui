@@ -7,12 +7,19 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
+import { Combobox } from "@/shared/ui/domain/combobox";
 import { ResourceChip } from "@/shared/ui/domain/resource-chip";
+import { formatDateTime } from "@/shared/ui/lib/format";
 import type {
   MaintenanceDetail,
+  MaintenanceDraftInput,
   MaintenanceImpact,
   MaintenanceScope,
+  MaintenanceStepInput,
 } from "@/domain/maintenance/maintenance";
+
+import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
+import { useUpdateMaintenance } from "./queries/use-maintenance-draft";
 
 export interface MaintenanceEditModeProps {
   detail: MaintenanceDetail;
@@ -26,32 +33,58 @@ function isoDateTimeLocal(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** "YYYY-MM-DDTHH:MM" (local) → ISO-8601 with offset for the wire. */
+function localToIso(local: string): string {
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? local : d.toISOString();
+}
+
+/** Carry the existing steps through edit unchanged (the step editor is RUK-42). */
+function stepsToInput(detail: MaintenanceDetail): MaintenanceStepInput[] {
+  return detail.steps.map((s, i) => ({
+    order: s.order ?? i + 1,
+    description: s.description ?? s.title,
+    duration: s.duration,
+    rollback_description: s.rollback_description,
+  }));
+}
+
 export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProps) {
   const [title, setTitle] = useState(detail.title);
   const [description, setDescription] = useState(detail.description ?? "");
   const [impact, setImpact] = useState<MaintenanceImpact>(detail.impact);
   const [scope, setScope] = useState<MaintenanceScope>(detail.scope);
   const [start, setStart] = useState(isoDateTimeLocal(detail.planned_period.start));
-  const [end, setEnd] = useState(isoDateTimeLocal(detail.planned_period.end));
+  const [approverId, setApproverId] = useState<string | undefined>(undefined);
+
+  const update = useUpdateMaintenance();
+  const assignable = useAssignableUsersQuery();
+  const approverOptions = (assignable.data ?? []).map((u) => ({
+    value: u.id,
+    label: u.display_name,
+    description: u.email,
+  }));
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const input: MaintenanceDraftInput = {
+      title,
+      description: description || undefined,
+      planned_start: localToIso(start),
+      scope,
+      impact,
+      resource_ids: detail.resources.map((r) => r.id),
+      steps: stepsToInput(detail),
+      // Only set when the operator picks someone; left undefined (and dropped
+      // by the mapper) to keep the existing approver — the detail view exposes
+      // the approver's display name, not its id, so we can't preselect it.
+      approver_user_id: approverId,
+    };
+    update.mutate({ id: detail.id, input }, { onSuccess: () => onClose() });
+  }
 
   return (
-    <form
-      className="space-y-5"
-      onSubmit={(e) => {
-        e.preventDefault();
-        // TODO: wire `PATCH /api/maintenance/{id}` mutation. The endpoint
-        // exists on the backend (apimodels.UpdateMaintenanceRequest); the
-        // BFF proxy + useMaintenanceUpdate hook land alongside RUK-42
-        // edit polish. Until then this form closes without persisting.
-        onClose();
-      }}
-    >
-      <div
-        role="note"
-        className="rounded-sm border border-[var(--impact-partial-border)] bg-[var(--impact-partial-bg)] px-3 py-2 text-xs text-[var(--impact-partial-fg)]"
-      >
-        Edit mode is interactive but does not persist yet. Save changes will land with the follow-up ticket.
-      </div>
+    <form className="space-y-5" onSubmit={handleSubmit}>
       <Field label="Title" htmlFor="m-title">
         <Input id="m-title" value={title} onChange={(e) => setTitle(e.target.value)} required />
       </Field>
@@ -65,14 +98,11 @@ export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProp
             required
           />
         </Field>
-        <Field label="Planned end" htmlFor="m-end">
-          <Input
-            id="m-end"
-            type="datetime-local"
-            value={end}
-            onChange={(e) => setEnd(e.target.value)}
-            required
-          />
+        <Field label="Planned end">
+          {/* Derived server-side from the start + step durations; read-only here. */}
+          <div className="flex h-9 items-center rounded-sm border border-border-subtle bg-bg-elev-2 px-3 text-sm text-fg-dim tabular-nums">
+            {formatDateTime(detail.planned_period.end)}
+          </div>
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -100,6 +130,17 @@ export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProp
           </Select>
         </Field>
       </div>
+      <Field label="Approver">
+        <Combobox
+          options={approverOptions}
+          value={approverId}
+          onChange={setApproverId}
+          placeholder={detail.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
+          searchPlaceholder="Search people…"
+          emptyText={assignable.isPending ? "Loading…" : "No people found."}
+          ariaLabel="Approver"
+        />
+      </Field>
       <Field label="Description" htmlFor="m-desc">
         <Textarea id="m-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
       </Field>
@@ -114,11 +155,11 @@ export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProp
         </div>
       </Field>
       <footer className="flex items-center gap-2 pt-2 border-t border-border-subtle">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={update.isPending}>
           Discard
         </Button>
-        <Button type="submit" size="sm" className="ml-auto">
-          Save changes
+        <Button type="submit" size="sm" className="ml-auto" disabled={update.isPending}>
+          {update.isPending ? "Saving…" : "Save changes"}
         </Button>
       </footer>
     </form>

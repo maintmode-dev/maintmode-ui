@@ -15,10 +15,13 @@
  */
 
 import type {
+  AssignableUser,
   CancelReason,
   Conflict,
   Maintenance,
+  MaintenanceCancelReason,
   MaintenanceDetail,
+  MaintenanceDraftInput,
   MaintenanceImpact,
   MaintenanceResource,
   MaintenanceScope,
@@ -29,8 +32,11 @@ import type {
 } from "@/domain/maintenance/maintenance";
 
 import type {
+  AssignableUserDto,
   CalendarViewResponseDto,
   ConflictViewDto,
+  CreateDraftMaintRequestDto,
+  MaintenanceCancelReasonDto,
   MaintenanceViewDto,
   MaintenanceViewResourceDto,
   MaintenanceViewResponseDto,
@@ -196,5 +202,60 @@ export function mapMaintenanceView(dto: MaintenanceViewResponseDto): Maintenance
     },
     conflicts: (dto.conflicts ?? []).map(mapConflict),
     revision: m.revision,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Write direction: domain form input → backend request DTO.
+// ---------------------------------------------------------------------------
+
+/**
+ * Domain `MaintenanceDraftInput` → `CreateDraftMaintRequest` /
+ * `UpdateDraftMaintRequest` (same wire shape). Steps keep their human
+ * `duration` string ("1h30m") — the write contract takes a Go-duration
+ * string, NOT integer seconds. Resources become `{ id }` refs; `global`
+ * scope carries no resources.
+ */
+export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDraftMaintRequestDto {
+  const resourceIds = input.scope === "resource" ? input.resource_ids : [];
+  return {
+    approver_user_id: input.approver_user_id || undefined,
+    title: input.title,
+    description: input.description || undefined,
+    planned_start: input.planned_start,
+    scope: input.scope,
+    impact: input.impact,
+    resources: resourceIds.map((id) => ({ id })),
+    steps: input.steps.map((step, index) => ({
+      order: step.order || index + 1,
+      description: step.description,
+      duration: step.duration || undefined,
+      rollback_description: step.rollback_description || undefined,
+    })),
+  };
+}
+
+/** `uimodels.AssignableUser` → domain `AssignableUser` (approver picker). */
+export function mapAssignableUser(dto: AssignableUserDto): AssignableUser {
+  const name = dto.display_name?.trim();
+  return {
+    id: dto.id,
+    display_name: name && name.length > 0 ? name : (dto.email ?? UNKNOWN_USER),
+    email: dto.email ?? "",
+    roles: dto.roles ?? [],
+  };
+}
+
+/**
+ * `uimodels.MaintenanceCancelReason` → domain `MaintenanceCancelReason`.
+ * Drops reasons whose `value` is outside the known enum so the UI never
+ * renders a value it can't submit. Returns null for those (filter at call site).
+ */
+export function mapCancelReasonView(dto: MaintenanceCancelReasonDto): MaintenanceCancelReason | null {
+  if (!CANCEL_REASONS.has(dto.value as CancelReason)) return null;
+  return {
+    value: dto.value as CancelReason,
+    title: dto.title?.trim() ? dto.title : dto.value,
+    description: dto.description?.trim() ? dto.description : undefined,
   };
 }

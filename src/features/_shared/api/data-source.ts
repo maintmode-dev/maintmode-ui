@@ -10,6 +10,8 @@
  * | calendar (maintenance list)       | bff     | shipped  |
  * | maintenance detail (/ui/v1/{id})  | bff     | shipped  |
  * | maintenance create/edit/actions   | bff     | shipped  |
+ * | cancel reasons                    | bff     | RUK-62   |
+ * | assignable users (approver)       | bff     | RUK-161  |
  * | maintenance audit (per-id)        | mock    | RUK-42   |
  * | users list / block / roles        | bff     | RUK-159  |
  * | global audit log                  | bff     | shipped  |
@@ -21,9 +23,6 @@
  * than left as dead config.
  *
  * NOT included (and intentionally so):
- *  - Cancel reasons (RUK-62) — UI uses a hardcoded enum that matches the
- *    swagger contract; the endpoint just exposes title/desc text. When
- *    RUK-62 lands a query hook + flag will be added.
  *  - Request-changes button (RUK-41) — the button itself isn't on the
  *    page yet; will land as a new flag at the same time as the UI.
  *  - Sign-in provider connect/disconnect (RUK-92) — the cards are
@@ -36,6 +35,8 @@ export const DATA_SOURCE = {
   calendar: "bff" as DataMode,
   maintenanceDetail: "bff" as DataMode,
   maintenanceWrites: "bff" as DataMode,
+  cancelReasons: "bff" as DataMode, // RUK-62
+  assignableUsers: "bff" as DataMode, // RUK-161
   // resources / resourceDetail: BFF-only since RUK-158 — no flag, no mock branch.
   // invitations: BFF-only since RUK-160 — no flag, no mock branch.
   maintenanceAudit: "mock" as DataMode, // RUK-42

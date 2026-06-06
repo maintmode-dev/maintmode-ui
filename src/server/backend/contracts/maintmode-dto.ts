@@ -154,3 +154,74 @@ export interface UpdateResourceRequestDto {
   description?: string;
   external_id?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Write contracts (`apimodels.*`) — create / edit draft maintenance.
+// ---------------------------------------------------------------------------
+
+/** `apimodels.ResourceRef` — a resource referenced by id on write. */
+export interface ResourceRefDto {
+  id: string;
+}
+
+/**
+ * `apimodels.MaintenanceStepInput` — the WRITE shape. Note `duration` is a
+ * Go-duration string ("1h30m") here, distinct from `apimodels.MaintenanceStep.duration`
+ * (integer seconds); `order` is 1-based. No `id`/`status` (backend assigns).
+ */
+export interface MaintenanceStepInputDto {
+  order: number;
+  description: string;
+  /** Go-duration string, e.g. "1h30m". */
+  duration?: string;
+  rollback_description?: string;
+}
+
+/**
+ * `apimodels.CreateDraftMaintRequest` — body for
+ * `POST /api/v1/maintenances/create`. `UpdateDraftMaintRequest`
+ * (`POST /api/v1/maintenances/{id}/edit`) shares the same shape.
+ */
+export interface CreateDraftMaintRequestDto {
+  approver_user_id?: string;
+  title: string;
+  description?: string;
+  /** ISO-8601 datetime. */
+  planned_start: string;
+  scope: string;
+  impact: string;
+  resources: ResourceRefDto[];
+  steps: MaintenanceStepInputDto[];
+  notify_targets?: string[];
+  deferred_notifications?: string[];
+}
+
+/** `apimodels.UpdateDraftMaintRequest` — same wire shape as create. */
+export type UpdateDraftMaintRequestDto = CreateDraftMaintRequestDto;
+
+/** `uimodels.AssignableUser` — `GET /api/v1/users/assignable`. */
+export interface AssignableUserDto {
+  id: string;
+  display_name?: string;
+  email?: string;
+  roles?: string[];
+}
+
+/** `uimodels.ListAssignableUsersResponse` envelope. */
+export interface ListAssignableUsersResponseDto {
+  users?: AssignableUserDto[];
+  limit?: number;
+  offset?: number;
+  total?: number;
+}
+
+/**
+ * `uimodels.MaintenanceCancelReason` — `GET /api/v1/maintenances/cancel-reasons`.
+ * The endpoint exposes the enum value plus display text (title/desc); the
+ * values match the frozen UI enum (`conflict|incident|...`).
+ */
+export interface MaintenanceCancelReasonDto {
+  value: string;
+  title?: string;
+  description?: string;
+}

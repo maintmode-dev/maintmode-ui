@@ -15,26 +15,7 @@ import { Textarea } from "@/shared/ui/shadcn/textarea";
 import { Combobox } from "@/shared/ui/domain/combobox";
 import type { CancelReason } from "@/domain/maintenance/maintenance";
 
-/**
- * Cancel reasons — frozen hardcoded enum fallback per design-plan (RUK-62
- * /cancel-reasons endpoint deferred). Phase 5 swaps to a server fetch
- * with this list as the offline fallback.
- */
-const CANCEL_REASONS: { value: CancelReason; label: string; description: string }[] = [
-  {
-    value: "conflict",
-    label: "Conflicts with another window",
-    description: "Resource overlap with another maintenance",
-  },
-  { value: "incident", label: "Active incident", description: "Production incident takes priority" },
-  {
-    value: "business_decision",
-    label: "Business decision",
-    description: "Postponed for non-technical reasons",
-  },
-  { value: "rescheduled", label: "Rescheduled", description: "Moved to a different window" },
-  { value: "mistake", label: "Created in error", description: "Should not have been planned" },
-];
+import { useCancelReasonsQuery } from "./queries/use-cancel-reasons-query";
 
 export interface CancelMaintenanceDialogProps {
   open: boolean;
@@ -53,6 +34,8 @@ export function CancelMaintenanceDialog({
 }: CancelMaintenanceDialogProps) {
   const [reason, setReason] = useState<CancelReason | undefined>(undefined);
   const [comment, setComment] = useState("");
+  const reasonsQuery = useCancelReasonsQuery();
+  const reasons = reasonsQuery.data ?? [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -69,9 +52,9 @@ export function CancelMaintenanceDialog({
               Reason
             </label>
             <Combobox
-              options={CANCEL_REASONS.map((r) => ({
+              options={reasons.map((r) => ({
                 value: r.value,
-                label: r.label,
+                label: r.title,
                 description: r.description,
               }))}
               value={reason}

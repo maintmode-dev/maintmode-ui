@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  mapAssignableUser,
   mapCalendarResponse,
   mapCancelReason,
+  mapCancelReasonView,
   mapConflict,
+  mapDraftToCreateRequest,
   mapImpact,
   mapMaintenanceView,
   mapPeriod,
@@ -17,6 +20,7 @@ import type {
   CalendarViewResponseDto,
   MaintenanceViewResponseDto,
 } from "@/server/backend/contracts/maintmode-dto";
+import type { MaintenanceDraftInput } from "@/domain/maintenance/maintenance";
 
 describe("mapScope", () => {
   it("passes through 'resource'", () => {
@@ -338,5 +342,94 @@ describe("mapMaintenanceView", () => {
       maintenance: { ...base.maintenance, created_by: undefined },
     });
     expect(detail.created_by).toBeUndefined();
+  });
+});
+
+describe("mapDraftToCreateRequest", () => {
+  const base: MaintenanceDraftInput = {
+    title: "Patch orders-db",
+    description: "Rolling restart",
+    planned_start: "2026-06-10T22:00:00Z",
+    scope: "resource",
+    impact: "partial_outage",
+    resource_ids: ["r-1", "r-2"],
+    steps: [
+      { order: 1, description: "Drain traffic", duration: "1h30m", rollback_description: "Re-add node" },
+      { order: 2, description: "Restart", duration: "10m" },
+    ],
+    approver_user_id: "u-9",
+  };
+
+  it("maps resources to id refs and keeps the human duration string on steps", () => {
+    const req = mapDraftToCreateRequest(base);
+    expect(req.resources).toEqual([{ id: "r-1" }, { id: "r-2" }]);
+    expect(req.steps[0]).toEqual({
+      order: 1,
+      description: "Drain traffic",
+      duration: "1h30m",
+      rollback_description: "Re-add node",
+    });
+    expect(req.steps[1]).toEqual({ order: 2, description: "Restart", duration: "10m" });
+  });
+
+  it("drops resources for global scope", () => {
+    const req = mapDraftToCreateRequest({ ...base, scope: "global" });
+    expect(req.resources).toEqual([]);
+  });
+
+  it("omits empty optional fields rather than sending empty strings", () => {
+    const req = mapDraftToCreateRequest({
+      ...base,
+      description: "",
+      approver_user_id: "",
+      steps: [{ order: 1, description: "Do it", duration: "" }],
+    });
+    expect(req.description).toBeUndefined();
+    expect(req.approver_user_id).toBeUndefined();
+    expect(req.steps[0].duration).toBeUndefined();
+  });
+
+  it("backfills step order from index when zero/missing", () => {
+    const req = mapDraftToCreateRequest({
+      ...base,
+      steps: [
+        { order: 0, description: "First" },
+        { order: 0, description: "Second" },
+      ],
+    });
+    expect(req.steps.map((s) => s.order)).toEqual([1, 2]);
+  });
+});
+
+describe("mapAssignableUser", () => {
+  it("maps a full user", () => {
+    expect(
+      mapAssignableUser({ id: "u-1", display_name: "Ada", email: "ada@x.io", roles: ["reviewer"] }),
+    ).toEqual({ id: "u-1", display_name: "Ada", email: "ada@x.io", roles: ["reviewer"] });
+  });
+
+  it("falls back to email then 'Unknown user' for a missing display name", () => {
+    expect(mapAssignableUser({ id: "u-2", email: "grace@x.io" }).display_name).toBe("grace@x.io");
+    expect(mapAssignableUser({ id: "u-3" }).display_name).toBe("Unknown user");
+    expect(mapAssignableUser({ id: "u-3" }).roles).toEqual([]);
+  });
+});
+
+describe("mapCancelReasonView", () => {
+  it("maps a known reason, defaulting title to the value when blank", () => {
+    expect(mapCancelReasonView({ value: "incident", title: "Active incident", description: "x" })).toEqual({
+      value: "incident",
+      title: "Active incident",
+      description: "x",
+    });
+    expect(mapCancelReasonView({ value: "mistake", title: "  " })).toEqual({
+      value: "mistake",
+      title: "mistake",
+      description: undefined,
+    });
+  });
+
+  it("drops reasons whose value is outside the known enum", () => {
+    expect(mapCancelReasonView({ value: "deprecated_reason", title: "Old" })).toBeNull();
   });
 });
