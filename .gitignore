@@ -13,5 +13,9 @@ dev.log
 .env.local
 .env.*.local
 
+# Per-environment runtime config holding real values / secrets. Only the
+# *.example files are committed (see deployment/<env>/app.env.example).
+deployment/*/app.env
+
 tsconfig.tsbuildinfo
 .claude/skills

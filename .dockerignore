@@ -1,0 +1,22 @@
+# Keep the build context small and reproducible. node_modules is reinstalled
+# from the lockfile inside the image; .next is rebuilt.
+node_modules
+.next
+.git
+.tmp
+screenshots
+*.log
+
+# Local env / secrets must never enter the image — runtime env is injected via
+# --env-file at `docker run` time (deployment/<env>/app.env).
+.env
+.env.local
+.env.*.local
+deployment/*/app.env
+
+# Tooling / editor noise not needed for the build.
+.DS_Store
+.claude
+.agents
+coverage
+tsconfig.tsbuildinfo
