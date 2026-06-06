@@ -114,3 +114,43 @@ export interface MaintenanceViewResponseDto {
   actions?: MaintenanceActionsDto;
   conflicts?: ConflictViewDto[];
 }
+
+/**
+ * `apimodels.Resource` — the resource read shape. No `type`/`owner`: archival
+ * is a lifecycle `status` toggled via the archive/unarchive endpoints, and the
+ * operator-facing handle is `external_id`.
+ */
+export interface ResourceDto {
+  id: string;
+  name?: string;
+  description?: string;
+  external_id?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** `apimodels.ListResourcesResponse` — paginated list envelope. */
+export interface ListResourcesResponseDto {
+  resources?: ResourceDto[];
+  limit?: number;
+  offset?: number;
+  total?: number;
+}
+
+/** `apimodels.CreateResourceRequest` — `name` required, rest optional. */
+export interface CreateResourceRequestDto {
+  name: string;
+  description?: string;
+  external_id?: string;
+}
+
+/**
+ * `apimodels.UpdateResourceRequest` — every field optional (partial update).
+ * Sending `external_id: ""` clears the stored value server-side.
+ */
+export interface UpdateResourceRequestDto {
+  name?: string;
+  description?: string;
+  external_id?: string;
+}

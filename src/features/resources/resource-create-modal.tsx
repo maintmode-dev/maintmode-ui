@@ -12,46 +12,57 @@ import {
 } from "@/shared/ui/shadcn/dialog";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
-import { Label } from "@/shared/ui/shadcn/label";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
-import type { ResourceType } from "@/shared/mock/mock-resource";
+
+import { useCreateResource } from "./queries/use-resources-query";
+import { ResourceField } from "./resource-field";
 
 export interface ResourceCreateModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-const TYPES: { value: ResourceType; label: string }[] = [
-  { value: "database", label: "Database" },
-  { value: "cluster", label: "Cluster" },
-  { value: "service", label: "Service" },
-  { value: "queue", label: "Queue" },
-  { value: "cache", label: "Cache" },
-  { value: "other", label: "Other" },
-];
-
 export function ResourceCreateModal({ open, onOpenChange }: ResourceCreateModalProps) {
   const [name, setName] = useState("");
-  const [type, setType] = useState<ResourceType>("service");
+  const [externalId, setExternalId] = useState("");
   const [description, setDescription] = useState("");
-  const [owner, setOwner] = useState("");
+  const createResource = useCreateResource();
+
+  // Clear the form when the dialog closes so a prior draft doesn't linger when
+  // it reopens. Done in the open-change handler rather than an effect to avoid
+  // a setState-in-effect cascade.
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
+      setName("");
+      setExternalId("");
+      setDescription("");
+    }
+    onOpenChange(next);
+  };
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    createResource.mutate(
+      {
+        name: trimmed,
+        description: description.trim() || undefined,
+        external_id: externalId.trim() || undefined,
+      },
+      { onSuccess: () => handleOpenChange(false) },
+    );
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New resource</DialogTitle>
           <DialogDescription>Add a service, database, or cluster MaintMode should track.</DialogDescription>
         </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(e) => {
-            e.preventDefault();
-            onOpenChange(false);
-          }}
-        >
-          <Field label="Name" htmlFor="r-name">
+        <form className="space-y-4" onSubmit={submit}>
+          <ResourceField label="Name" htmlFor="r-name">
             <Input
               id="r-name"
               value={name}
@@ -60,58 +71,39 @@ export function ResourceCreateModal({ open, onOpenChange }: ResourceCreateModalP
               required
               className="font-mono"
             />
-          </Field>
-          <Field label="Type" htmlFor="r-type">
-            <Select value={type} onValueChange={(v) => setType(v as ResourceType)}>
-              <SelectTrigger id="r-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TYPES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label="Owner (optional)" htmlFor="r-owner">
+          </ResourceField>
+          <ResourceField label="External ID (optional)" htmlFor="r-extid">
             <Input
-              id="r-owner"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              placeholder="team or email"
+              id="r-extid"
+              value={externalId}
+              onChange={(e) => setExternalId(e.target.value)}
+              placeholder="upstream identifier"
+              className="font-mono"
             />
-          </Field>
-          <Field label="Description (optional)" htmlFor="r-desc">
+          </ResourceField>
+          <ResourceField label="Description (optional)" htmlFor="r-desc">
             <Textarea
               id="r-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={3}
             />
-          </Field>
+          </ResourceField>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+              disabled={createResource.isPending}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={!name.trim()}>
-              Create resource
+            <Button type="submit" disabled={!name.trim() || createResource.isPending}>
+              {createResource.isPending ? "Creating…" : "Create resource"}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">
-        {label}
-      </Label>
-      {children}
-    </div>
   );
 }

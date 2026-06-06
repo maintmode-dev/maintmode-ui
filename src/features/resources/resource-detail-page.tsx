@@ -9,8 +9,6 @@ import { Stack } from "@/shared/ui/domain/stack";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
-import { Label } from "@/shared/ui/shadcn/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,16 +20,18 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/shadcn/alert-dialog";
 import { formatDateTime } from "@/shared/ui/lib/format";
+import { isResourceArchived, type Resource } from "@/domain/resource/resource";
 
-import { useResourceDetailQuery } from "./queries/use-resources-query";
+import { useArchiveResource, useResourceDetailQuery, useUpdateResource } from "./queries/use-resources-query";
+import { ResourceField } from "./resource-field";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
-import type { ResourceType } from "@/shared/mock/mock-resource";
 
 export function ResourceDetailPage({ id }: { id: string }) {
   const query = useResourceDetailQuery(id);
   const resource = query.data;
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const archiveResource = useArchiveResource();
 
   if (query.isPending) {
     return (
@@ -60,6 +60,8 @@ export function ResourceDetailPage({ id }: { id: string }) {
     );
   }
 
+  const archived = isResourceArchived(resource);
+
   return (
     <div className="mx-auto max-w-[900px] p-6 space-y-5">
       <header className="space-y-2">
@@ -78,18 +80,18 @@ export function ResourceDetailPage({ id }: { id: string }) {
             </TabsList>
           </Tabs>
         </div>
-        <p className="body-sm">
-          <span className="capitalize">{resource.type}</span>
-          {resource.archived ? <span className="ml-2 text-fg-dim">(archived)</span> : null}
+        <p className="body-sm capitalize">
+          {resource.status}
+          {archived ? <span className="ml-2 text-fg-dim">(archived)</span> : null}
         </p>
       </header>
 
       {mode === "view" ? (
         <dl className="grid grid-cols-[140px_1fr] gap-y-3 gap-x-6 text-sm">
-          <DT>Owner</DT>
-          <DD>{resource.owner ?? "—"}</DD>
+          <DT>External ID</DT>
+          <DD className="font-mono">{resource.external_id || "—"}</DD>
           <DT>Description</DT>
-          <DD>{resource.description ?? "—"}</DD>
+          <DD>{resource.description || "—"}</DD>
           <DT>Created</DT>
           <DD className="font-mono tabular-nums text-xs">{formatDateTime(resource.created_at)}</DD>
           <DT>Last updated</DT>
@@ -109,7 +111,7 @@ export function ResourceDetailPage({ id }: { id: string }) {
           onClick={() => setArchiveOpen(true)}
           className="text-[var(--destructive-fg)] hover:bg-[var(--destructive-bg)]"
         >
-          {resource.archived ? (
+          {archived ? (
             <>
               <ArchiveRestore className="size-3.5" aria-hidden="true" /> Unarchive
             </>
@@ -124,18 +126,27 @@ export function ResourceDetailPage({ id }: { id: string }) {
       <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {resource.archived ? "Unarchive resource?" : "Archive resource?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{archived ? "Unarchive resource?" : "Archive resource?"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {resource.archived
+              {archived
                 ? `“${resource.name}” will reappear in the active list and be available for new maintenances.`
                 : `“${resource.name}” will be hidden from the active list. Existing maintenances are not affected.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction>{resource.archived ? "Unarchive" : "Archive"}</AlertDialogAction>
+            <AlertDialogCancel disabled={archiveResource.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={archiveResource.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                archiveResource.mutate(
+                  { id: resource.id, archive: !archived },
+                  { onSuccess: () => setArchiveOpen(false) },
+                );
+              }}
+            >
+              {archived ? "Unarchive" : "Archive"}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -152,27 +163,31 @@ function DD({ children, className }: { children: React.ReactNode; className?: st
   return <dd className={className}>{children}</dd>;
 }
 
-function ResourceEditForm({
-  resource,
-  onClose,
-}: {
-  resource: { name: string; type: string; description?: string; owner?: string };
-  onClose: () => void;
-}) {
+function ResourceEditForm({ resource, onClose }: { resource: Resource; onClose: () => void }) {
   const [name, setName] = useState(resource.name);
-  const [type, setType] = useState(resource.type as ResourceType);
+  const [externalId, setExternalId] = useState(resource.external_id ?? "");
   const [description, setDescription] = useState(resource.description ?? "");
-  const [owner, setOwner] = useState(resource.owner ?? "");
+  const updateResource = useUpdateResource();
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    updateResource.mutate(
+      {
+        id: resource.id,
+        name: trimmedName,
+        description: description.trim(),
+        // "" is forwarded as the backend's explicit clear signal for external_id.
+        external_id: externalId.trim(),
+      },
+      { onSuccess: onClose },
+    );
+  };
 
   return (
-    <form
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        onClose();
-      }}
-    >
-      <Field label="Name" htmlFor="re-name">
+    <form className="space-y-4" onSubmit={submit}>
+      <ResourceField label="Name" htmlFor="re-name">
         <Input
           id="re-name"
           value={name}
@@ -180,51 +195,37 @@ function ResourceEditForm({
           required
           className="font-mono"
         />
-      </Field>
-      <Field label="Type" htmlFor="re-type">
-        <Select value={type} onValueChange={(v) => setType(v as ResourceType)}>
-          <SelectTrigger id="re-type">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {["database", "cluster", "service", "queue", "cache", "other"].map((t) => (
-              <SelectItem key={t} value={t} className="capitalize">
-                {t}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </Field>
-      <Field label="Owner" htmlFor="re-owner">
-        <Input id="re-owner" value={owner} onChange={(e) => setOwner(e.target.value)} />
-      </Field>
-      <Field label="Description" htmlFor="re-desc">
+      </ResourceField>
+      <ResourceField label="External ID" htmlFor="re-extid">
+        <Input
+          id="re-extid"
+          value={externalId}
+          onChange={(e) => setExternalId(e.target.value)}
+          placeholder="upstream identifier"
+          className="font-mono"
+        />
+      </ResourceField>
+      <ResourceField label="Description" htmlFor="re-desc">
         <Textarea
           id="re-desc"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
         />
-      </Field>
+      </ResourceField>
       <div className="flex gap-2 pt-2 border-t border-border-subtle">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={updateResource.isPending}>
           Discard
         </Button>
-        <Button type="submit" size="sm" className="ml-auto">
-          Save changes
+        <Button
+          type="submit"
+          size="sm"
+          className="ml-auto"
+          disabled={!name.trim() || updateResource.isPending}
+        >
+          {updateResource.isPending ? "Saving…" : "Save changes"}
         </Button>
       </div>
     </form>
-  );
-}
-
-function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">
-        {label}
-      </Label>
-      {children}
-    </div>
   );
 }

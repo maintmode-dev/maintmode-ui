@@ -10,15 +10,15 @@
  * | calendar (maintenance list)       | bff     | shipped  |
  * | maintenance detail (/ui/v1/{id})  | bff     | shipped  |
  * | maintenance create/edit/actions   | bff     | shipped  |
- * | resources directory               | mock    | RUK-68   |
- * | resource detail / archive         | mock    | RUK-69   |
  * | maintenance audit (per-id)        | mock    | RUK-42   |
  * | users list / block                | mock    | RUK-93   |
  * | invitations                       | mock    | RUK-94   |
  * | global audit log                  | bff     | shipped  |
  *
  * When a BE ticket lands, flip the flag here and remove the mock branch
- * in the corresponding query hook.
+ * in the corresponding query hook. Once a hook is fully BFF-only with no
+ * mock branch left (e.g. resources/resource detail after RUK-158), its flag
+ * is dropped from this object rather than left as dead config.
  *
  * NOT included (and intentionally so):
  *  - Cancel reasons (RUK-62) — UI uses a hardcoded enum that matches the
@@ -36,8 +36,7 @@ export const DATA_SOURCE = {
   calendar: "bff" as DataMode,
   maintenanceDetail: "bff" as DataMode,
   maintenanceWrites: "bff" as DataMode,
-  resources: "mock" as DataMode, // RUK-68
-  resourceDetail: "mock" as DataMode, // RUK-69
+  // resources / resourceDetail: BFF-only since RUK-158 — no flag, no mock branch.
   maintenanceAudit: "mock" as DataMode, // RUK-42
   users: "mock" as DataMode, // RUK-93
   invitations: "mock" as DataMode, // RUK-94
