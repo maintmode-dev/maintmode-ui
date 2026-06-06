@@ -10,7 +10,10 @@ DOCKERFILE   := deployment/.build/Dockerfile
 # Build context is the repo root so the Dockerfile can COPY the whole project.
 CONTEXT      := .
 
-# Runtime knobs (override on the CLI, e.g. `make up env=dev PORT=8080`).
+# Target environment for up/down/logs. Defaults to dev; override with env=local.
+env          ?= dev
+
+# Runtime knobs (override on the CLI, e.g. `make up env=local PORT=8080`).
 PORT         ?= 3000
 CONTAINER    ?= maintmode-ui-$(env)
 ENV_FILE      = deployment/$(env)/app.env
@@ -29,15 +32,13 @@ help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "  Run with an environment, e.g.:  make up env=dev"
+	@echo "  env defaults to dev; override with env=local (e.g. make up env=local)"
 	@echo "  Environments for up/down/logs:  dev | local  (prod is deploy-only)"
 
 # --- guards -----------------------------------------------------------------
 # Ensure `env` is one of the runnable environments and its env file exists.
 .PHONY: guard-env
 guard-env:
-	@if [ -z "$(env)" ]; then \
-		echo "error: env is required, e.g. 'make $(MAKECMDGOALS) env=dev'"; exit 1; fi
 	@if [ "$(env)" != "dev" ] && [ "$(env)" != "local" ]; then \
 		echo "error: env must be 'dev' or 'local' (got '$(env)'); prod is deploy-only"; exit 1; fi
 	@if [ ! -f "$(ENV_FILE)" ]; then \
@@ -61,7 +62,7 @@ ensure-image:
 # down: stop & remove the container.
 # reup: force a fresh image build, then up. Use after changing app code.
 .PHONY: up
-up: guard-env ensure-image ## Stop, (build if missing), and run: make up env=dev|local
+up: guard-env ensure-image ## Stop, (build if missing), and run (env=dev default): make up [env=local]
 	$(MAKE) down env=$(env)
 	docker run --rm -d \
 		--name $(CONTAINER) \
