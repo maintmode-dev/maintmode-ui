@@ -156,6 +156,64 @@ export interface UpdateResourceRequestDto {
 }
 
 // ---------------------------------------------------------------------------
+// Notification channels (`apimodels.*`) — the notify-target catalog (RUK-164).
+// ---------------------------------------------------------------------------
+
+/**
+ * `apimodels.Channel` — one notification channel in the catalog. `transport` is
+ * a free-text key; `archived_at` is present (date-time) only once archived. The
+ * authorship summaries match `UserSummaryDto` and are null until resolved.
+ */
+export interface ChannelDto {
+  id: string;
+  name?: string;
+  description?: string;
+  transport?: string;
+  transport_channel_id?: string;
+  /** Present (date-time) only when the channel is archived. */
+  archived_at?: string;
+  created_at?: string;
+  /** Null until the channel is first edited. */
+  updated_at?: string;
+  created_by?: UserSummaryDto;
+  updated_by?: UserSummaryDto;
+}
+
+/** `apimodels.ChannelsResponse` — `{ channels: Channel[] }`, no pagination window. */
+export interface ChannelsResponseDto {
+  channels?: ChannelDto[];
+}
+
+/** `apimodels.CreateChannelRequest` — all fields free-text; backend enforces requireds. */
+export interface CreateChannelRequestDto {
+  name: string;
+  description?: string;
+  transport: string;
+  transport_channel_id: string;
+}
+
+/**
+ * `apimodels.UpdateChannelRequest` — partial update. `transport` is immutable
+ * and intentionally absent (the backend ignores it if sent).
+ */
+export interface UpdateChannelRequestDto {
+  name?: string;
+  description?: string;
+  transport_channel_id?: string;
+}
+
+/** `apimodels.Transport` — a supported transport `{ id, title }` (e.g. slack / Slack). */
+export interface TransportDto {
+  id?: string;
+  title?: string;
+}
+
+/** `apimodels.TransportsResponse` — `{ transports: Transport[] }`. */
+export interface TransportsResponseDto {
+  transports?: TransportDto[];
+}
+
+// ---------------------------------------------------------------------------
 // Write contracts (`apimodels.*`) — create / edit draft maintenance.
 // ---------------------------------------------------------------------------
 

@@ -177,6 +177,19 @@
   --conflict-border: rgba(232, 121, 249, 0.4);
   --conflict-stripe: rgba(232, 121, 249, 0.22);
 
+  /* ---------- Transport — notify-channel pills (RUK-164) ----------
+     Brand-adjacent hues, off the status axis: slack violet, telegram cyan,
+     email slate. Archived rows desaturate these via .is-archived-pill. */
+  --transport-slack-fg: #d9b8e8;
+  --transport-slack-bg: rgba(74, 21, 75, 0.3);
+  --transport-slack-border: rgba(123, 63, 128, 0.45);
+  --transport-telegram-fg: #7cc4ee;
+  --transport-telegram-bg: rgba(0, 136, 204, 0.16);
+  --transport-telegram-border: rgba(0, 136, 204, 0.42);
+  --transport-email-fg: #a8b0c2;
+  --transport-email-bg: rgba(120, 130, 150, 0.14);
+  --transport-email-border: rgba(120, 130, 150, 0.36);
+
   /* ---------- Destructive — for Cancel / Delete buttons. Distinct from impact-full. ---------- */
   --destructive-fg: #f87171;
   --destructive-bg: rgba(248, 113, 113, 0.1);
@@ -263,6 +276,17 @@
   --conflict-bg: #fae8ff;
   --conflict-border: #f0abfc;
   --conflict-stripe: rgba(162, 28, 175, 0.2);
+
+  /* transport — notify-channel pills (RUK-164) */
+  --transport-slack-fg: #4a154b;
+  --transport-slack-bg: #f3e5f6;
+  --transport-slack-border: #e0c3e6;
+  --transport-telegram-fg: #0b6b9e;
+  --transport-telegram-bg: #e1f1fb;
+  --transport-telegram-border: #bbddf2;
+  --transport-email-fg: #475569;
+  --transport-email-bg: #eef1f6;
+  --transport-email-border: #d4dae3;
 
   /* destructive — separate from impact-full */
   --destructive-fg: #b42318;

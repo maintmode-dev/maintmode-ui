@@ -16,6 +16,9 @@ export type { ChipProps } from "./chip";
 export { ResourceChip } from "./resource-chip";
 export type { ResourceChipProps, ResourceType } from "./resource-chip";
 
+export { TransportPill } from "./transport-pill";
+export type { TransportPillProps } from "./transport-pill";
+
 export { ConflictCard, ConflictGridItem } from "./conflict-card";
 export type { ConflictCardProps, ConflictGridItemProps, ConflictState } from "./conflict-card";
 

@@ -20,6 +20,7 @@ import {
 const NAV = [
   { href: "/", label: "Calendar" },
   { href: "/resources", label: "Resources" },
+  { href: "/channels", label: "Channels" },
   { href: "/admin/users", label: "Users", adminOnly: true },
   { href: "/admin/audit-log", label: "Audit log", adminOnly: true },
 ];
