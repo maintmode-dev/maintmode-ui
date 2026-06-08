@@ -40,6 +40,15 @@ function isPublicPath(pathname: string): boolean {
 export default auth((request: NextRequest & { auth: AuthSession | null }) => {
   const { pathname, search } = request.nextUrl;
 
+  // A session whose backend token can no longer be refreshed
+  // (`RefreshAccessTokenError`) is effectively dead: every BFF call 401s.
+  // Treat it as unauthenticated here, otherwise we get an infinite
+  // `/` ⇄ `/login` redirect loop — the page 401s and `bffFetch` redirects to
+  // `/login`, but a still-"valid" cookie would bounce the user straight back
+  // to `/`, which 401s again. Collapsing it to null breaks the loop and lets
+  // the user re-authenticate.
+  const session = request.auth?.error === "RefreshAccessTokenError" ? null : request.auth;
+
   // Local-only escape hatch. Inverted control flow: the production branch
   // explicitly does NOTHING with the flag — even reading it is suspicious —
   // so a misreading of the check (e.g. negated condition) cannot accidentally
@@ -55,7 +64,7 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
   }
 
   if (pathname === "/login" || pathname === "/login/") {
-    if (request.auth) {
+    if (session) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }
     return NextResponse.next();
@@ -65,14 +74,14 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.next();
   }
 
-  if (!request.auth) {
+  if (!session) {
     const loginUrl = new URL("/login", request.nextUrl);
     loginUrl.searchParams.set("next", safeNext(`${pathname}${search}`));
     return NextResponse.redirect(loginUrl);
   }
 
   if (pathname.startsWith("/admin/")) {
-    const roles = request.auth?.user?.roles ?? [];
+    const roles = session.user?.roles ?? [];
     if (!roles.includes("admin")) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }
@@ -83,4 +92,6 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
 
 interface AuthSession {
   user?: { roles?: string[] };
+  /** Set when the backend token could not be refreshed; see the gate above. */
+  error?: string;
 }

@@ -22,14 +22,32 @@ const FULL_FMT = new Intl.DateTimeFormat("en-US", {
   hour12: false,
 });
 
+/** Placeholder for an empty/invalid timestamp (e.g. backend `updated_at: ""`). */
+const NO_DATE = "—";
+
+/**
+ * Parse an ISO string to a valid Date, or null. The backend returns `""` for
+ * never-set timestamps (e.g. a draft's `updated_at`); `new Date("")` is an
+ * Invalid Date and `Intl.DateTimeFormat.format` THROWS on it, which would crash
+ * the rendering component. Guard once here so every formatter is safe.
+ */
+function parseDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function formatTime(iso: string): string {
-  return TIME_FMT.format(new Date(iso));
+  const date = parseDate(iso);
+  return date ? TIME_FMT.format(date) : NO_DATE;
 }
 export function formatDate(iso: string): string {
-  return DATE_FMT.format(new Date(iso));
+  const date = parseDate(iso);
+  return date ? DATE_FMT.format(date) : NO_DATE;
 }
 export function formatDateTime(iso: string): string {
-  return FULL_FMT.format(new Date(iso));
+  const date = parseDate(iso);
+  return date ? FULL_FMT.format(date) : NO_DATE;
 }
 export function formatRange(startIso: string, endIso: string): string {
   return `${formatTime(startIso)} – ${formatTime(endIso)}`;
@@ -54,7 +72,9 @@ export function formatDuration(input?: string): string | undefined {
 }
 
 export function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+  const date = parseDate(iso);
+  if (!date) return NO_DATE;
+  const diff = Date.now() - date.getTime();
   const min = Math.round(diff / 60_000);
   if (min < 1) return "just now";
   if (min < 60) return `${min}m ago`;

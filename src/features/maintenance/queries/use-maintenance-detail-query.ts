@@ -13,6 +13,10 @@ export function maintenanceDetailKey(id: string) {
 
 export function useMaintenanceDetailQuery(id: string) {
   return useQuery({
+    // The quick sheet stays mounted on the calendar with an empty id while
+    // closed (maintenanceId ?? ""). Without this guard the query fires
+    // `/api/maintenance/` → 308 → 405 on every calendar load.
+    enabled: id.length > 0,
     queryKey: maintenanceDetailKey(id),
     queryFn: async (): Promise<MaintenanceDetail> => {
       if (DATA_SOURCE.maintenanceDetail === "mock") {

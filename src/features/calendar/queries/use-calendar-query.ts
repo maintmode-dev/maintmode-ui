@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { bffFetch } from "@/features/_shared/api/bff-fetch";
+import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
 import { MOCK_MAINTENANCES } from "@/shared/mock/maintenances";
 import type { Maintenance } from "@/domain/maintenance/maintenance";
@@ -34,5 +34,14 @@ export function useCalendarQuery(params: CalendarQueryParams) {
       return data.items;
     },
     staleTime: 30_000,
+    // Don't hammer the backend on auth/permission failures: a 401 means the
+    // session is dead (bffFetch already redirects to /login), and a 403 is
+    // terminal. Retrying those just amplifies a bad state.
+    retry: (failureCount, error) => {
+      if (error instanceof BffError && (error.status === 401 || error.status === 403)) {
+        return false;
+      }
+      return failureCount < 1;
+    },
   });
 }

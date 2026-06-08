@@ -7,6 +7,9 @@ dev.log
 
 /screenshots/
 
+# Playwright MCP staging output (console logs, snapshots, screenshots).
+.playwright-mcp/
+
 .tmp/
 
 .env

@@ -3,8 +3,15 @@ import { AlertTriangle } from "lucide-react";
 import { Button } from "@/shared/ui/shadcn/button";
 
 export interface LoginPageProps {
-  next?: string;
   error?: string;
+  /**
+   * Server action that starts an OAuth sign-in for the given provider id.
+   * Supplied by the server page (`src/app/login/page.tsx`) so this
+   * browser-owned component never imports the server auth boundary. It must
+   * wrap NextAuth's `signIn` so the CSRF token is attached — a plain form POST
+   * to `/api/auth/signin/<id>` omits it and fails with `MissingCSRF`.
+   */
+  signInAction: (providerId: string) => Promise<void>;
 }
 
 const PROVIDERS = [
@@ -14,7 +21,7 @@ const PROVIDERS = [
   { id: "okta", label: "Continue with Okta", enabled: false },
 ];
 
-export function LoginPage({ next, error }: LoginPageProps) {
+export function LoginPage({ error, signInAction }: LoginPageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[400px] space-y-6 bg-bg-elev-1 border border-border-subtle rounded-lg p-8">
@@ -45,8 +52,7 @@ export function LoginPage({ next, error }: LoginPageProps) {
 
         <div className="space-y-2">
           {PROVIDERS.map((p) => (
-            <form key={p.id} action={`/api/auth/signin/${p.id}`} method="post" className="contents">
-              {next ? <input type="hidden" name="callbackUrl" value={next} /> : null}
+            <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
               <Button
                 type="submit"
                 variant={p.enabled ? "default" : "outline"}

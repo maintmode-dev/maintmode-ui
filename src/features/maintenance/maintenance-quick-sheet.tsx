@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { ArrowRight, History } from "lucide-react";
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui/shadcn/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/shared/ui/shadcn/sheet";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Separator } from "@/shared/ui/shadcn/separator";
 import { ImpactBadge } from "@/shared/ui/domain/impact-badge";
@@ -29,6 +35,13 @@ export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: Mai
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-[480px] flex flex-col gap-0 p-0">
+        {/* Radix requires a Dialog title for screen readers at all times. When
+            there is no detail yet (loading/empty), render a visually-hidden
+            title so the a11y contract holds without showing a placeholder. */}
+        {!detail ? <SheetTitle className="sr-only">Maintenance details</SheetTitle> : null}
+        <SheetDescription className="sr-only">
+          Read-only maintenance preview with a link to full details.
+        </SheetDescription>
         {!detail && maintenanceId && query.isPending ? (
           <div className="p-6 space-y-3">
             <Skeleton type="row" width="60%" />
