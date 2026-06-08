@@ -16,9 +16,6 @@ export type { ChipProps } from "./chip";
 export { ResourceChip } from "./resource-chip";
 export type { ResourceChipProps, ResourceType } from "./resource-chip";
 
-export { TransportPill } from "./transport-pill";
-export type { TransportPillProps } from "./transport-pill";
-
 export { ConflictCard, ConflictGridItem } from "./conflict-card";
 export type { ConflictCardProps, ConflictGridItemProps, ConflictState } from "./conflict-card";
 
@@ -30,6 +27,9 @@ export type { StepRowProps, StepState } from "./step-row";
 
 export { Combobox } from "./combobox";
 export type { ComboboxOption, ComboboxProps } from "./combobox";
+
+export { MultiSelect } from "./multi-select";
+export type { MultiSelectOption, MultiSelectProps } from "./multi-select";
 
 export { CalendarEventBar } from "./calendar-event-bar";
 export type { CalendarEventBarProps } from "./calendar-event-bar";

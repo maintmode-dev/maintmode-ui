@@ -358,6 +358,7 @@ describe("mapDraftToCreateRequest", () => {
       { order: 2, description: "Restart", duration: "10m" },
     ],
     approver_user_id: "u-9",
+    notify_target_channel_ids: ["c-1", "c-2"],
   };
 
   it("maps resources to id refs and keeps the human duration string on steps", () => {
@@ -370,6 +371,16 @@ describe("mapDraftToCreateRequest", () => {
       rollback_description: "Re-add node",
     });
     expect(req.steps[1]).toEqual({ order: 2, description: "Restart", duration: "10m" });
+  });
+
+  it("folds notify channel ids into the object shape the backend requires", () => {
+    const req = mapDraftToCreateRequest(base);
+    expect(req.notify_targets).toEqual({ channel_ids: ["c-1", "c-2"] });
+  });
+
+  it("sends an empty channel_ids array rather than omitting notify_targets", () => {
+    const req = mapDraftToCreateRequest({ ...base, notify_target_channel_ids: [] });
+    expect(req.notify_targets).toEqual({ channel_ids: [] });
   });
 
   it("drops resources for global scope", () => {

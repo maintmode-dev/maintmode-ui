@@ -236,9 +236,22 @@ export interface MaintenanceStepInputDto {
 }
 
 /**
+ * `apimodels.NotifyTargets` — Go struct `NotifyTargets{ ChannelIDs []string }`.
+ * The backend requires at least one channel id; an empty/omitted object is
+ * rejected with `notify_targets: cannot be blank` on create AND edit.
+ */
+export interface NotifyTargetsDto {
+  channel_ids: string[];
+}
+
+/**
  * `apimodels.CreateDraftMaintRequest` — body for
  * `POST /api/v1/maintenances/create`. `UpdateDraftMaintRequest`
  * (`POST /api/v1/maintenances/{id}/edit`) shares the same shape.
+ *
+ * `notify_targets` is the OBJECT shape `{ channel_ids }` — NOT a bare string
+ * array (the earlier `string[]` typing was wrong and meant the field was never
+ * sent, blocking both create and edit).
  */
 export interface CreateDraftMaintRequestDto {
   approver_user_id?: string;
@@ -250,7 +263,7 @@ export interface CreateDraftMaintRequestDto {
   impact: string;
   resources: ResourceRefDto[];
   steps: MaintenanceStepInputDto[];
-  notify_targets?: string[];
+  notify_targets: NotifyTargetsDto;
   deferred_notifications?: string[];
 }
 

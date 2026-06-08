@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -8,27 +9,44 @@ import { Label } from "@/shared/ui/shadcn/label";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
 import { Combobox } from "@/shared/ui/domain/combobox";
+import { MultiSelect, type MultiSelectOption } from "@/shared/ui/domain/multi-select";
 import { ResourceChip } from "@/shared/ui/domain/resource-chip";
 import { formatDateTime } from "@/shared/ui/lib/format";
+import { cn } from "@/shared/ui/lib/cn";
 import type {
   MaintenanceDetail,
   MaintenanceDraftInput,
   MaintenanceImpact,
   MaintenanceScope,
-  MaintenanceStepInput,
 } from "@/domain/maintenance/maintenance";
 
 import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
-import { useUpdateMaintenance } from "./queries/use-maintenance-draft";
+import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
+import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
+import { useCreateMaintenance, useUpdateMaintenance } from "./queries/use-maintenance-draft";
+import {
+  emptyStep,
+  MaintenanceStepEditor,
+  MIN_STEP_MINUTES,
+  type StepDraft,
+} from "./maintenance-step-editor";
+
+/** Backend cap on notify targets (TC-MAINT-02 #12). */
+const MAX_CHANNELS = 10;
 
 export interface MaintenanceEditModeProps {
-  detail: MaintenanceDetail;
+  /** Existing maintenance to edit. Omit (with `creating`) for the create flow. */
+  detail?: MaintenanceDetail;
+  /** Create a new draft instead of editing an existing one. */
+  creating?: boolean;
+  /** Edit: return to view mode. Create: navigate away (e.g. back to calendar). */
   onClose: () => void;
 }
 
 function isoDateTimeLocal(iso: string): string {
   // <input type="datetime-local"> expects "YYYY-MM-DDTHH:MM"
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
@@ -39,69 +57,189 @@ function localToIso(local: string): string {
   return Number.isNaN(d.getTime()) ? local : d.toISOString();
 }
 
-/** Carry the existing steps through edit unchanged (the step editor is RUK-42). */
-function stepsToInput(detail: MaintenanceDetail): MaintenanceStepInput[] {
-  return detail.steps.map((s, i) => ({
-    order: s.order ?? i + 1,
+/** Plain minute count → Go-duration string ("90" → "90m"). */
+function minutesToGoDuration(minutes: string): string {
+  return `${minutes.trim()}m`;
+}
+
+/** Seed the step editor from an existing maintenance (durations → minutes). */
+function detailToSteps(detail: MaintenanceDetail | undefined): StepDraft[] {
+  if (!detail || detail.steps.length === 0) return [emptyStep()];
+  return detail.steps.map((s) => ({
     description: s.description ?? s.title,
-    duration: s.duration,
-    rollback_description: s.rollback_description,
+    rollback_description: s.rollback_description ?? "",
+    duration_minutes: durationToMinutes(s.duration),
   }));
 }
 
-export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProps) {
-  const [title, setTitle] = useState(detail.title);
-  const [description, setDescription] = useState(detail.description ?? "");
-  const [impact, setImpact] = useState<MaintenanceImpact>(detail.impact);
-  const [scope, setScope] = useState<MaintenanceScope>(detail.scope);
-  const [start, setStart] = useState(isoDateTimeLocal(detail.planned_period.start));
-  const [approverId, setApproverId] = useState<string | undefined>(undefined);
+/** Parse a Go/ISO duration string into a minute count for the editor input. */
+function durationToMinutes(duration: string | undefined): string {
+  if (!duration) return "";
+  const go = duration.match(/^(?:(\d+)h)?(?:(\d+)m)?$/i);
+  if (go && (go[1] || go[2])) {
+    return String(Number(go[1] ?? 0) * 60 + Number(go[2] ?? 0));
+  }
+  const iso = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?/i);
+  if (iso && (iso[1] || iso[2])) {
+    return String(Number(iso[1] ?? 0) * 60 + Number(iso[2] ?? 0));
+  }
+  return "";
+}
 
+/**
+ * Unified create / edit form for a maintenance draft. Rendered inside
+ * `MaintenanceDetailsPage`'s left pane — in edit mode over an existing
+ * `detail`, or in the `creating` state (empty fields, "Create draft" footer)
+ * launched from `/maintenance/new`.
+ *
+ * Per RUK-163 the form collects a notify-channel picker (min 1, max 10) and an
+ * inline step editor (min 1 step, each ≥ 5 min with a rollback plan) — both
+ * required by the backend — and validates client-side before submitting so the
+ * obvious gaps surface inline rather than as a server 400. Channels also unblock
+ * the long-standing `notify_targets: cannot be blank` failure on edit.
+ */
+export function MaintenanceEditMode({ detail, creating = false, onClose }: MaintenanceEditModeProps) {
+  const router = useRouter();
+  const create = useCreateMaintenance();
   const update = useUpdateMaintenance();
+  const pending = creating ? create.isPending : update.isPending;
+
+  const [title, setTitle] = useState(detail?.title ?? "");
+  const [description, setDescription] = useState(detail?.description ?? "");
+  const [impact, setImpact] = useState<MaintenanceImpact>(detail?.impact ?? "none");
+  const [scope, setScope] = useState<MaintenanceScope>(detail?.scope ?? "resource");
+  const [start, setStart] = useState(detail ? isoDateTimeLocal(detail.planned_period.start) : "");
+  const [approverId, setApproverId] = useState<string | undefined>(undefined);
+  const [resourceIds, setResourceIds] = useState<string[]>(() => detail?.resources.map((r) => r.id) ?? []);
+  // The backend UI detail view doesn't expose current notify_targets yet, so
+  // edit can't pre-select them — the operator re-picks. Required either way:
+  // the backend rejects a draft with no channels.
+  const [channelIds, setChannelIds] = useState<string[]>([]);
+  const [steps, setSteps] = useState<StepDraft[]>(() => detailToSteps(detail));
+  const [submitted, setSubmitted] = useState(false);
+
   const assignable = useAssignableUsersQuery();
+  const channelsQuery = useNotifyChannelsQuery();
+  const resourcesQuery = useResourcesQuery({ limit: 200 });
+
   const approverOptions = (assignable.data ?? []).map((u) => ({
     value: u.id,
     label: u.display_name,
     description: u.email,
   }));
+  const resourceOptions: MultiSelectOption[] = (resourcesQuery.data?.resources ?? []).map((r) => ({
+    value: r.id,
+    label: r.name,
+    description: r.external_id,
+    searchValue: `${r.name} ${r.external_id ?? ""}`,
+  }));
+  const channelOptions: MultiSelectOption[] = (channelsQuery.data ?? []).map((c) => ({
+    value: c.id,
+    label: c.name,
+    description: c.transportChannelId ? `${c.transport} · ${c.transportChannelId}` : c.transport,
+    searchValue: `${c.name} ${c.transport} ${c.transportChannelId ?? ""}`,
+  }));
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    const input: MaintenanceDraftInput = {
-      title,
-      description: description || undefined,
+  const selectedResources = resourceIds.map((id) => {
+    const fromCatalog = resourcesQuery.data?.resources.find((r) => r.id === id);
+    const fromDetail = detail?.resources.find((r) => r.id === id);
+    return { id, name: fromCatalog?.name ?? fromDetail?.name ?? id };
+  });
+  const selectedChannels = useMemo(
+    () => (channelsQuery.data ?? []).filter((c) => channelIds.includes(c.id)),
+    [channelsQuery.data, channelIds],
+  );
+
+  const errors = useMemo<Record<string, string>>(() => {
+    const e: Record<string, string> = {};
+    if (!title.trim()) e.title = "Title is required.";
+    if (!description.trim()) e.description = "Description is required.";
+    if (!start) e.start = "Planned start is required.";
+    if (creating && !approverId) e.approver = "An approver is required.";
+    if (scope === "resource" && resourceIds.length === 0) {
+      e.resources = "Pick at least one resource for resource-scoped maintenance.";
+    }
+    if (channelIds.length === 0) e.channels = "Pick at least one notification channel.";
+    if (channelIds.length > MAX_CHANNELS) e.channels = `At most ${MAX_CHANNELS} channels.`;
+    const stepBad =
+      steps.length === 0 ||
+      steps.some((s) => {
+        const mins = Number(s.duration_minutes);
+        return (
+          !s.description.trim() ||
+          !s.rollback_description.trim() ||
+          s.duration_minutes === "" ||
+          !Number.isFinite(mins) ||
+          mins < MIN_STEP_MINUTES
+        );
+      });
+    if (stepBad) {
+      e.steps = `Every step needs a description, a rollback plan, and a duration ≥ ${MIN_STEP_MINUTES} min.`;
+    }
+    return e;
+  }, [title, description, start, scope, resourceIds, approverId, steps, channelIds, creating]);
+
+  function buildInput(): MaintenanceDraftInput {
+    return {
+      title: title.trim(),
+      description: description.trim(),
       planned_start: localToIso(start),
       scope,
       impact,
-      resource_ids: detail.resources.map((r) => r.id),
-      steps: stepsToInput(detail),
-      // Only set when the operator picks someone; left undefined (and dropped
-      // by the mapper) to keep the existing approver — the detail view exposes
-      // the approver's display name, not its id, so we can't preselect it.
+      resource_ids: scope === "resource" ? resourceIds : [],
       approver_user_id: approverId,
+      notify_target_channel_ids: channelIds,
+      steps: steps.map((s, i) => ({
+        order: i + 1,
+        description: s.description.trim(),
+        rollback_description: s.rollback_description.trim(),
+        duration: minutesToGoDuration(s.duration_minutes),
+      })),
     };
-    update.mutate({ id: detail.id, input }, { onSuccess: () => onClose() });
   }
 
+  function handleSubmit(ev: React.FormEvent) {
+    ev.preventDefault();
+    setSubmitted(true);
+    if (Object.keys(errors).length > 0) return;
+    const input = buildInput();
+
+    if (creating) {
+      create.mutate(input, {
+        onSuccess: (res) => router.push(`/maintenance/${res.id}`),
+      });
+    } else if (detail) {
+      update.mutate({ id: detail.id, input }, { onSuccess: () => onClose() });
+    }
+  }
+
+  const show = (key: string) => (submitted ? errors[key] : undefined);
+
   return (
-    <form className="space-y-5" onSubmit={handleSubmit}>
-      <Field label="Title" htmlFor="m-title">
-        <Input id="m-title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+    <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+      <Field label="Title" htmlFor="m-title" error={show("title")}>
+        <Input
+          id="m-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="e.g. DB index migration"
+          aria-invalid={Boolean(show("title"))}
+        />
       </Field>
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Planned start" htmlFor="m-start">
+        <Field label="Planned start" htmlFor="m-start" error={show("start")}>
           <Input
             id="m-start"
             type="datetime-local"
             value={start}
             onChange={(e) => setStart(e.target.value)}
-            required
+            aria-invalid={Boolean(show("start"))}
           />
         </Field>
-        <Field label="Planned end">
+        <Field label="Planned end" hint="Computed from start + step durations">
           {/* Derived server-side from the start + step durations; read-only here. */}
           <div className="flex h-9 items-center rounded-sm border border-border-subtle bg-bg-elev-2 px-3 text-sm text-fg-dim tabular-nums">
-            {formatDateTime(detail.planned_period.end)}
+            {detail ? formatDateTime(detail.planned_period.end) : "Calculated on save"}
           </div>
         </Field>
       </div>
@@ -130,49 +268,124 @@ export function MaintenanceEditMode({ detail, onClose }: MaintenanceEditModeProp
           </Select>
         </Field>
       </div>
-      <Field label="Approver">
+      <Field label="Approver" error={show("approver")}>
         <Combobox
           options={approverOptions}
           value={approverId}
           onChange={setApproverId}
-          placeholder={detail.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
+          placeholder={detail?.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
           searchPlaceholder="Search people…"
           emptyText={assignable.isPending ? "Loading…" : "No people found."}
           ariaLabel="Approver"
         />
       </Field>
-      <Field label="Description" htmlFor="m-desc">
-        <Textarea id="m-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+      <Field label="Description" htmlFor="m-desc" error={show("description")}>
+        <Textarea
+          id="m-desc"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={4}
+          placeholder="What's happening and why"
+          aria-invalid={Boolean(show("description"))}
+        />
       </Field>
-      <Field label="Resources">
-        <div className="flex flex-wrap gap-1.5">
-          {detail.resources.map((r) => (
-            <ResourceChip key={r.id} name={r.name} type={r.type} onRemove={() => undefined} />
-          ))}
-          <Button type="button" variant="outline" size="sm">
-            + Add resource
-          </Button>
-        </div>
+      {scope === "resource" ? (
+        <Field label="Resources" error={show("resources")}>
+          <MultiSelect
+            options={resourceOptions}
+            value={resourceIds}
+            onChange={setResourceIds}
+            placeholder="Select resources…"
+            searchPlaceholder="Search resources…"
+            emptyText={resourcesQuery.isPending ? "Loading…" : "No resources found."}
+            ariaLabel="Resources"
+          />
+          {selectedResources.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {selectedResources.map((r) => (
+                <ResourceChip
+                  key={r.id}
+                  name={r.name}
+                  onRemove={() => setResourceIds((ids) => ids.filter((id) => id !== r.id))}
+                />
+              ))}
+            </div>
+          ) : null}
+        </Field>
+      ) : null}
+      <Field label="Steps" hint="At least one, each ≥ 5 min with a rollback plan" error={show("steps")}>
+        <MaintenanceStepEditor steps={steps} onChange={setSteps} disabled={pending} />
+      </Field>
+      <Field label="Notify channels" hint={`At least one, up to ${MAX_CHANNELS}`} error={show("channels")}>
+        <MultiSelect
+          options={channelOptions}
+          value={channelIds}
+          onChange={setChannelIds}
+          placeholder="Select channels…"
+          searchPlaceholder="Search channels…"
+          emptyText={channelsQuery.isPending ? "Loading…" : "No channels configured."}
+          ariaLabel="Notify channels"
+        />
+        {selectedChannels.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {selectedChannels.map((c) => (
+              <span
+                key={c.id}
+                className="inline-flex items-center gap-1.5 rounded-sm border border-border-subtle bg-bg-elev-3 px-2 py-[3px] text-xs text-fg"
+              >
+                <span className="text-fg-muted">{c.transport}</span>
+                <span className="font-medium">{c.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setChannelIds((ids) => ids.filter((id) => id !== c.id))}
+                  aria-label={`Remove ${c.name}`}
+                  className="ml-0.5 text-fg-muted hover:text-fg"
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </Field>
       <footer className="flex items-center gap-2 pt-2 border-t border-border-subtle">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={update.isPending}>
-          Discard
+        <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
+          {creating ? "Cancel" : "Discard"}
         </Button>
-        <Button type="submit" size="sm" className="ml-auto" disabled={update.isPending}>
-          {update.isPending ? "Saving…" : "Save changes"}
+        <Button type="submit" size="sm" className="ml-auto" disabled={pending}>
+          {creating ? (pending ? "Creating…" : "Create draft") : pending ? "Saving…" : "Save changes"}
         </Button>
       </footer>
     </form>
   );
 }
 
-function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  htmlFor,
+  hint,
+  error,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  hint?: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">
-        {label}
-      </Label>
+      <div className="flex items-baseline gap-2">
+        <Label
+          htmlFor={htmlFor}
+          className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim"
+        >
+          {label}
+        </Label>
+        {hint ? <span className="text-[10px] text-fg-muted">{hint}</span> : null}
+      </div>
       {children}
+      {error ? <p className={cn("text-xs text-destructive")}>{error}</p> : null}
     </div>
   );
 }

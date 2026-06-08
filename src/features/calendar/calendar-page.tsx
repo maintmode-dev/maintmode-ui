@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -111,8 +112,10 @@ export function CalendarPage() {
           </TabsList>
         </Tabs>
         <div className="ml-auto">
-          <Button size="sm">
-            <Plus className="size-3.5" aria-hidden="true" /> New maintenance
+          <Button asChild size="sm">
+            <Link href="/maintenance/new">
+              <Plus className="size-3.5" aria-hidden="true" /> New maintenance
+            </Link>
           </Button>
         </div>
       </header>
@@ -127,7 +130,15 @@ export function CalendarPage() {
             <CalendarWeekGrid anchor={anchor} items={[]} onSelect={() => undefined} />
             <div className="absolute inset-0 grid place-items-center pointer-events-auto">
               <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
-                <CalendarEmpty />
+                <CalendarEmpty
+                  cta={
+                    <Button asChild size="sm">
+                      <Link href="/maintenance/new">
+                        <Plus className="size-3" aria-hidden="true" /> New maintenance
+                      </Link>
+                    </Button>
+                  }
+                />
               </div>
             </div>
           </div>

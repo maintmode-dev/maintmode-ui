@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, CircleSlash, Edit2, History, Play, PlayCircle, X } from "lucide-react";
 import { useState } from "react";
 
@@ -23,10 +24,61 @@ import { useCancelMaintenance, useMaintenanceAction } from "./queries/use-mainte
 import type { CancelReason } from "@/domain/maintenance/maintenance";
 
 export interface MaintenanceDetailsPageProps {
-  id: string;
+  /** Existing maintenance id. Omit when `creating` (no entity exists yet). */
+  id?: string;
+  /**
+   * Render the create-draft flow (`/maintenance/new`): the page in edit-mode
+   * with empty fields, a create-specific top bar/footer, and a neutral
+   * conflicts note — no detail fetch. Per the design, there is no separate
+   * "Create maintenance" screen; creating IS this page in the `creating` state.
+   */
+  creating?: boolean;
 }
 
-export function MaintenanceDetailsPage({ id }: MaintenanceDetailsPageProps) {
+export function MaintenanceDetailsPage({ id, creating = false }: MaintenanceDetailsPageProps) {
+  if (creating) return <MaintenanceCreateView />;
+  return <MaintenanceDetailView id={id as string} />;
+}
+
+/**
+ * The `creating` state — this page rendered as a new-draft form. Reuses the
+ * shared edit/create form (`MaintenanceEditMode` in create mode) inside the
+ * same 60/40 shell, with a back-to-calendar top bar and a conflicts panel that
+ * just notes conflicts are computed after the draft is saved.
+ */
+function MaintenanceCreateView() {
+  const router = useRouter();
+  return (
+    <article className="grid grid-cols-[60%_40%] min-h-[calc(100vh-56px)]">
+      {/* LEFT */}
+      <div className="p-8 overflow-auto space-y-6">
+        <header className="space-y-3">
+          <div className="flex items-center gap-3 text-xs font-mono text-fg-dim">
+            <Link href="/" className="hover:text-fg flex items-center gap-1">
+              <ArrowLeft className="size-3" aria-hidden="true" /> Back to calendar
+            </Link>
+          </div>
+          <h1 className="h1">New maintenance</h1>
+          <p className="text-sm text-fg-muted m-0">
+            Plan a maintenance window. It’s saved as a draft you can review and submit for approval.
+          </p>
+        </header>
+
+        <MaintenanceEditMode creating onClose={() => router.push("/")} />
+      </div>
+
+      {/* RIGHT */}
+      <aside className="p-7 bg-bg-elev-2 border-l border-border-subtle overflow-auto space-y-4">
+        <header className="flex items-baseline gap-3">
+          <h2 className="h2">Conflicts</h2>
+        </header>
+        <p className="caption">Conflicts are checked after you save the draft.</p>
+      </aside>
+    </article>
+  );
+}
+
+function MaintenanceDetailView({ id }: { id: string }) {
   const query = useMaintenanceDetailQuery(id);
   const actionMutation = useMaintenanceAction();
   const cancelMutation = useCancelMaintenance();

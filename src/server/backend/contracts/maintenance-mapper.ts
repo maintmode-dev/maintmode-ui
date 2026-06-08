@@ -232,6 +232,10 @@ export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDra
       duration: step.duration || undefined,
       rollback_description: step.rollback_description || undefined,
     })),
+    // The backend requires `notify_targets: { channel_ids }` (min 1); folding
+    // the flat domain list into the object shape is what unblocks create AND
+    // edit (a missing field was the `notify_targets: cannot be blank` 400).
+    notify_targets: { channel_ids: input.notify_target_channel_ids },
   };
 }
 
