@@ -54,15 +54,19 @@
   --font-mono:
     ui-monospace, "SFMono-Regular", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  /* Type scale — denser than default. 13px is the body floor in product UI. */
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-md: 13px;
-  --text-lg: 14px;
-  --text-xl: 16px;
-  --text-2xl: 20px;
-  --text-3xl: 28px;
+  /* Type scale. Bumped one notch from the original dense scale (2026-06-09) so
+     product body text reads at 14px instead of 13px — the previous floor felt
+     cramped on wide viewports. These tokens feed both `.h1`/body styles AND the
+     Tailwind `text-*` utilities (mapped in @theme inline), so the whole app
+     scales from this one place — no per-screen font overrides. */
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+  --text-2xl: 22px;
+  --text-3xl: 30px;
   --leading-tight: 1.2;
   --leading-snug: 1.35;
   --leading-normal: 1.5;
@@ -411,6 +415,20 @@
 
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
+
+  /* Font-size utilities resolve to the product type scale (the `--text-*`
+     tokens above), so `text-xs`/`text-sm`/`text-base`/… match `.h1`/body and
+     the whole app shares ONE scale. `text-base` is the 14px body floor; the
+     dense 11px caption is `text-2xs`. Bumping the tokens above rescales every
+     utility at once. */
+  --text-2xs: var(--text-2xs);
+  --text-xs: var(--text-xs);
+  --text-sm: var(--text-sm);
+  --text-base: var(--text-md);
+  --text-lg: var(--text-lg);
+  --text-xl: var(--text-xl);
+  --text-2xl: var(--text-2xl);
+  --text-3xl: var(--text-3xl);
 
   --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);

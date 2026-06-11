@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { AuditEmpty, AuditError, AuditLoading } from "@/shared/ui/states";
-import { formatDateTime, formatRelative } from "@/shared/ui/lib/format";
+import { formatRelative, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
 import { useMaintenanceAuditQuery } from "./queries/use-audit-queries";
@@ -27,6 +27,13 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
 
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // The mono maintenance id (MNT-xxxx) names the back-link and heads the page;
+  // fall back to the raw id when the backend hasn't assigned a reference yet.
+  const reference = detail?.reference;
+  const backLabel = reference ? `Back to ${reference}` : "Back to maintenance";
+  // `Last activity` reads from the newest event (the feed is newest-first).
+  const lastActivity = events.length > 0 ? events[0].created_at : null;
+
   return (
     <div className="mx-auto max-w-[1200px] p-6 space-y-4">
       <header className="space-y-2">
@@ -34,10 +41,23 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
           href={`/maintenance/${id}`}
           className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
         >
-          <ArrowLeft className="size-3" aria-hidden="true" /> Back to maintenance
+          <ArrowLeft className="size-3" aria-hidden="true" />{" "}
+          <span className={reference ? "font-mono" : undefined}>{backLabel}</span>
         </Link>
-        <h1 className="h1">Audit · {detail?.title ?? id}</h1>
-        <p className="body-sm">Audit events recorded against this maintenance.</p>
+        <div className="flex items-baseline gap-2">
+          {reference ? <span className="font-mono text-sm text-brand">{reference}</span> : null}
+          {reference ? <span className="text-fg-dim" aria-hidden="true">·</span> : null}
+          <h1 className="h1">{detail?.title ?? id}</h1>
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">
+            Audit history
+          </span>
+          <span className="font-mono tabular-nums text-xs text-fg-muted">
+            {events.length} {events.length === 1 ? "event" : "events"}
+            {lastActivity ? ` · Last activity ${formatRelative(lastActivity)}` : ""}
+          </span>
+        </div>
       </header>
 
       {status === "loading" ? (
@@ -59,7 +79,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
           <table className="w-full text-left text-sm">
             <thead className="bg-bg-elev-2 border-b border-border-subtle">
               <tr>
-                {["When", "Actor", "Action", "Target", ""].map((h, i) => (
+                {["Time (UTC)", "Actor", "Action", "Target", ""].map((h, i) => (
                   <th
                     key={i}
                     className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim"
@@ -82,7 +102,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
                       )}
                     >
                       <td className="px-3 py-2 font-mono tabular-nums text-xs text-fg whitespace-nowrap">
-                        <span title={formatDateTime(e.created_at)}>{formatRelative(e.created_at)}</span>
+                        {formatUtc(e.created_at)}
                       </td>
                       <td className="px-3 py-2">{e.actor}</td>
                       <td className="px-3 py-2 font-mono text-xs text-fg-muted">{e.action}</td>

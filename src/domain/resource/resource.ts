@@ -15,7 +15,16 @@ export interface Resource {
   /** Free-text lifecycle status, e.g. "active" / "archived". */
   status: string;
   created_at: string;
+  created_by?: ResourceActor;
   updated_at: string;
+  updated_by?: ResourceActor;
+}
+
+/** Authorship summary resolved from the auth service (RUK-169); may degrade to "Unknown user". */
+export interface ResourceActor {
+  id?: string;
+  email?: string;
+  displayName?: string;
 }
 
 /** Lifecycle status the backend uses to mark a resource as archived. */

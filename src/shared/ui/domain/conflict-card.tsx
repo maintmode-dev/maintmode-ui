@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/shared/ui/lib/cn";
 
@@ -13,13 +13,17 @@ export interface ConflictCardProps {
   /** Highlighted overlap-zone callout (uses conflict-stripes pattern). */
   overlap?: ReactNode;
   state?: ConflictState;
+  /** When set, the whole card is a button opening the conflicting maintenance. */
+  onClick?: () => void;
   className?: string;
 }
 
 /**
  * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/styles.css
  *   → `.ap-confcard`, `.ap-confcard.is-new`, `.ap-confcard.is-resolved`, `.ap-overlap`.
- * Fuchsia 3px left rail; switches to green for resolved.
+ * Fuchsia 3px left rail; switches to green for resolved. With `onClick` the whole
+ * card is a button that opens the conflicting maintenance (in the quick-sheet
+ * peek) — keyboard-focusable, hover + chevron affordance.
  */
 export function ConflictCard({
   title,
@@ -27,20 +31,22 @@ export function ConflictCard({
   details,
   overlap,
   state = "active",
+  onClick,
   className,
 }: ConflictCardProps) {
-  return (
-    <article
-      className={cn(
-        "relative bg-bg-elev-1 border border-border-subtle rounded-md px-4 py-3.5 transition-[border-color,opacity] duration-150 border-l-[3px]",
-        state === "active" && "border-l-[var(--conflict-fg)]",
-        state === "new" &&
-          "border-l-[5px] border-l-[var(--conflict-fg)] bg-[color-mix(in_oklab,var(--conflict-fg)_5%,var(--bg-elev-1))]",
-        state === "resolved" && "opacity-55 border-l-[var(--status-completed-fg)]",
-        "hover:border-border",
-        className,
-      )}
-    >
+  const cardClass = cn(
+    "relative block w-full text-left bg-bg-elev-1 border border-border-subtle rounded-md px-4 py-3.5 transition-[border-color,opacity] duration-150 border-l-[3px]",
+    state === "active" && "border-l-[var(--conflict-fg)]",
+    state === "new" &&
+      "border-l-[5px] border-l-[var(--conflict-fg)] bg-[color-mix(in_oklab,var(--conflict-fg)_5%,var(--bg-elev-1))]",
+    state === "resolved" && "opacity-55 border-l-[var(--status-completed-fg)]",
+    "hover:border-border",
+    onClick && "cursor-pointer focus-visible:outline-2 focus-visible:outline-ring",
+    className,
+  );
+
+  const body = (
+    <>
       <header className="flex items-center gap-2 mb-2.5">
         <h3
           className={cn(
@@ -51,6 +57,7 @@ export function ConflictCard({
           {title}
         </h3>
         {meta ? <span className="font-mono text-xs text-fg-dim">{meta}</span> : null}
+        {onClick ? <ChevronRight className="size-3.5 shrink-0 text-fg-dim" aria-hidden="true" /> : null}
       </header>
       {details ? <div className="grid grid-cols-2 gap-x-4 gap-y-2 py-1.5">{details}</div> : null}
       {overlap ? (
@@ -59,8 +66,17 @@ export function ConflictCard({
           {overlap}
         </div>
       ) : null}
-    </article>
+    </>
   );
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={cardClass}>
+        {body}
+      </button>
+    );
+  }
+  return <article className={cardClass}>{body}</article>;
 }
 
 export interface ConflictGridItemProps {

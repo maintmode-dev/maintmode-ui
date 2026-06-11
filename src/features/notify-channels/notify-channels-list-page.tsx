@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Filter, MessageCircle, Plus, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Filter, MessageCircle, Plus, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { isNotifyChannelArchived } from "@/domain/notify-channel/notify-channel";
@@ -13,7 +14,7 @@ import { Stack } from "@/shared/ui/domain/stack";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { TransportPill } from "@/shared/ui/domain/transport-pill";
 import { CalendarError } from "@/shared/ui/states";
-import { formatRelative } from "@/shared/ui/lib/format";
+import { formatUtc } from "@/shared/ui/lib/format";
 
 import { useNotifyChannelsQuery } from "./queries/use-notify-channels-query";
 import { NotifyChannelCreateModal } from "./notify-channel-create-modal";
@@ -25,6 +26,7 @@ import { NotifyChannelCreateModal } from "./notify-channel-create-modal";
  * the `Show archived` toggle is server-side (it widens `include_archived`).
  */
 export function NotifyChannelsListPage() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -40,14 +42,23 @@ export function NotifyChannelsListPage() {
 
   const isFiltering = trimmedQuery.length > 0;
 
+  // `N active · N archived` caption (contract). Counts come from the loaded set:
+  // archived rows are only present once `Show archived` widens the fetch, so the
+  // archived count reads 0 until the toggle is on — accurate to what's loaded.
+  const allChannels = channelsData ?? [];
+  const archivedCount = allChannels.filter((c) => isNotifyChannelArchived(c)).length;
+  const activeCount = allChannels.length - archivedCount;
+
   return (
     <div className="mx-auto max-w-[1200px] p-6 space-y-4">
       <header className="flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[240px]">
           <h1 className="h1">Channels</h1>
-          <p className="body-sm mt-1">
-            Notification channels maintenance windows can notify. Used as the source for notify targets.
-          </p>
+          {channelsData ? (
+            <p className="mt-1 font-mono tabular-nums text-xs text-fg-dim">
+              {activeCount} active · {archivedCount} archived
+            </p>
+          ) : null}
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="size-3.5" aria-hidden="true" /> New channel
@@ -64,9 +75,19 @@ export function NotifyChannelsListPage() {
             placeholder="Search channels by name"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pl-8"
+            className="pl-8 pr-8"
             aria-label="Search channels by name"
           />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-dim hover:text-fg"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Switch id="archived" checked={showArchived} onCheckedChange={setShowArchived} />
@@ -92,9 +113,13 @@ export function NotifyChannelsListPage() {
             title="No channels match these filters"
             caption="Adjust the search or clear it to see the full catalog."
             cta={
-              <Button onClick={() => setQuery("")} size="sm" variant="outline">
-                Clear search
-              </Button>
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="text-sm text-brand hover:underline"
+              >
+                Clear filters
+              </button>
             }
           />
         ) : (
@@ -114,7 +139,7 @@ export function NotifyChannelsListPage() {
           <table className="w-full text-left text-sm">
             <thead className="bg-bg-elev-2 border-b border-border-subtle">
               <tr>
-                {["Name", "Transport", "Last updated", ""].map((h, i) => (
+                {["Name", "Transport", "Created", ""].map((h, i) => (
                   <th
                     key={i}
                     className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim"
@@ -127,10 +152,24 @@ export function NotifyChannelsListPage() {
             <tbody>
               {filtered.map((c) => {
                 const archived = isNotifyChannelArchived(c);
+                const href = `/channels/${c.id}`;
+                const navigate = () => router.push(href);
                 return (
                   <tr
                     key={c.id}
-                    className="border-b border-border-subtle last:border-b-0 hover:bg-bg-row-hover"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Open ${c.name}`}
+                    onClick={navigate}
+                    onKeyDown={(e) => {
+                      // Whole row is the navigation target (contract). Activate on
+                      // Enter / Space like a button; don't hijack other keys.
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate();
+                      }
+                    }}
+                    className="group cursor-pointer border-b border-border-subtle last:border-b-0 hover:bg-bg-row-hover focus-visible:bg-bg-row-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-strong"
                   >
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-2">
@@ -146,16 +185,21 @@ export function NotifyChannelsListPage() {
                     <td className="px-3 py-2.5">
                       <TransportPill transport={c.transport} archived={archived} />
                     </td>
-                    <td className="px-3 py-2.5 text-fg-muted">
-                      {formatRelative(c.updatedAt || c.createdAt)}
+                    <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-fg-muted">
+                      {formatUtc(c.createdAt)}
                     </td>
                     <td className="px-3 py-2.5 w-12 text-right">
                       <Link
-                        href={`/channels/${c.id}`}
-                        className="text-fg-muted hover:text-fg"
-                        aria-label={`Open ${c.name}`}
+                        href={href}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                        // Row-level nav already handles activation + a11y; this
+                        // is a hover-revealed visual affordance (`›`) and a
+                        // middle-click / open-in-new-tab escape hatch.
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-fg-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
                       >
-                        <ArrowRight className="size-3.5 inline" aria-hidden="true" />
+                        <ChevronRight className="size-3.5 inline" aria-hidden="true" />
                       </Link>
                     </td>
                   </tr>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  assertValidDraftInput,
   mapAssignableUser,
   mapCalendarResponse,
   mapCancelReason,
@@ -15,11 +16,13 @@ import {
   mapStep,
   mapStepStatus,
   mapUserSummary,
+  parseDraftBody,
 } from "@/server/backend/contracts/maintenance-mapper";
 import type {
   CalendarViewResponseDto,
   MaintenanceViewResponseDto,
 } from "@/server/backend/contracts/maintmode-dto";
+import { BffValidationError } from "@/server/backend/errors/bff-error";
 import type { MaintenanceDraftInput } from "@/domain/maintenance/maintenance";
 
 describe("mapScope", () => {
@@ -227,6 +230,7 @@ describe("mapCalendarResponse", () => {
         scope: "resource",
         planned_period: { start: "2026-06-05T14:00:00Z", end: "2026-06-05T16:00:00Z" },
         resources: [],
+        notify_targets: [],
         steps: [],
         created_by: "Alice Operator",
         created_at: "2026-06-05T14:00:00Z",
@@ -343,6 +347,28 @@ describe("mapMaintenanceView", () => {
     });
     expect(detail.created_by).toBeUndefined();
   });
+
+  it("defaults notify_targets to an empty array (read view omits the field today)", () => {
+    expect(mapMaintenanceView(base).notify_targets).toEqual([]);
+  });
+
+  it("maps notify_targets defensively once the backend sends them", () => {
+    const detail = mapMaintenanceView({
+      ...base,
+      maintenance: {
+        ...base.maintenance,
+        notify_targets: [
+          { id: "c-1", name: "#incidents-eu", transport: "slack" },
+          { channel_id: "c-2", name: "oncall", transport: "telegram" },
+          { name: "" }, // dropped: no id and no name
+        ],
+      },
+    });
+    expect(detail.notify_targets).toEqual([
+      { id: "c-1", name: "#incidents-eu", transport: "slack" },
+      { id: "c-2", name: "oncall", transport: "telegram" },
+    ]);
+  });
 });
 
 describe("mapDraftToCreateRequest", () => {
@@ -409,6 +435,100 @@ describe("mapDraftToCreateRequest", () => {
       ],
     });
     expect(req.steps.map((s) => s.order)).toEqual([1, 2]);
+  });
+});
+
+describe("assertValidDraftInput", () => {
+  const valid: MaintenanceDraftInput = {
+    title: "Patch orders-db",
+    planned_start: "2026-06-10T22:00:00Z",
+    scope: "resource",
+    impact: "partial_outage",
+    resource_ids: ["r-1"],
+    steps: [{ order: 1, description: "Drain" }],
+    notify_target_channel_ids: ["c-1"],
+  };
+
+  it("passes a structurally-complete body", () => {
+    expect(() => assertValidDraftInput(valid)).not.toThrow();
+  });
+
+  it("rejects a non-object body as a 400 BffValidationError", () => {
+    expect(() => assertValidDraftInput("nope")).toThrow(BffValidationError);
+    expect(() => assertValidDraftInput(null)).toThrow(BffValidationError);
+  });
+
+  it("rejects an incomplete body missing steps (the mapper-would-throw case)", () => {
+    // This is the exact shape that previously surfaced as 500 BFF_ERROR: the
+    // mapper dereferences `steps.map` on an absent array.
+    const incomplete: Partial<MaintenanceDraftInput> = { ...valid };
+    delete incomplete.steps;
+    let caught: unknown;
+    try {
+      assertValidDraftInput(incomplete);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(BffValidationError);
+    expect((caught as BffValidationError).fieldErrors).toContainEqual({
+      field: "steps",
+      message: "steps must be an array",
+    });
+  });
+
+  it("requires resource_ids only for resource scope", () => {
+    const withoutIds: Partial<MaintenanceDraftInput> = { ...valid };
+    delete withoutIds.resource_ids;
+    expect(() => assertValidDraftInput({ ...withoutIds, scope: "global" })).not.toThrow();
+    expect(() => assertValidDraftInput({ ...withoutIds, scope: "resource" })).toThrow(BffValidationError);
+  });
+
+  it("rejects a missing/invalid scope, title, planned_start, and notify targets", () => {
+    let caught: unknown;
+    try {
+      assertValidDraftInput({ scope: "weird" });
+    } catch (error) {
+      caught = error;
+    }
+    const fields = (caught as BffValidationError).fieldErrors.map((f) => f.field);
+    expect(fields).toEqual(
+      expect.arrayContaining(["title", "planned_start", "scope", "steps", "notify_target_channel_ids"]),
+    );
+  });
+});
+
+describe("parseDraftBody", () => {
+  const validJson = JSON.stringify({
+    title: "Patch orders-db",
+    planned_start: "2026-06-10T22:00:00Z",
+    scope: "global",
+    impact: "none",
+    resource_ids: [],
+    steps: [{ order: 1, description: "Drain" }],
+    notify_target_channel_ids: ["c-1"],
+  });
+
+  it("parses and returns a valid body", () => {
+    const input = parseDraftBody(validJson);
+    expect(input.title).toBe("Patch orders-db");
+  });
+
+  it("maps malformed JSON to a 400 BffValidationError, not a thrown SyntaxError", () => {
+    let caught: unknown;
+    try {
+      parseDraftBody("{ not json");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(BffValidationError);
+    expect((caught as BffValidationError).fieldErrors).toContainEqual({
+      field: "body",
+      message: "Request body is not valid JSON",
+    });
+  });
+
+  it("maps a structurally-incomplete body to a 400 BffValidationError", () => {
+    expect(() => parseDraftBody(JSON.stringify({ title: "x" }))).toThrow(BffValidationError);
   });
 });
 

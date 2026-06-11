@@ -60,5 +60,11 @@ export const AUTH_ERROR_CODES = {
   identityLookupFailed: "identity_lookup_failed",
   invalidIdToken: "invalid_id_token",
   sessionCreationFailed: "session_creation_failed",
+  // Accept-invite only: the signed-in Google account's email differs from the
+  // invited email. Surfaced distinctly (not the generic code) because it's a
+  // fact about the user's OWN account, not about the invitation — so it leaks
+  // nothing and lets the UI say "wrong account". Other accept failures stay
+  // generic for anti-enumeration.
+  emailMismatch: "email_mismatch",
 } as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];

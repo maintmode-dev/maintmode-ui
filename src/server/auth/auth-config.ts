@@ -13,7 +13,12 @@ import {
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
 import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
-import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
+import {
+  AUTH_ERROR_CODES,
+  BackendAuthError,
+  type AuthSessionUser,
+  type BackendTokenPair,
+} from "@/server/auth/contracts";
 
 const REFRESH_LEEWAY_MS = 60_000;
 
@@ -244,10 +249,32 @@ async function runInvitationAccept(
     };
     return true;
   } catch (error) {
+    // `email_mismatch` is the one accept failure surfaced distinctly: the
+    // signed-in account isn't the invited one (a fact about the user's own
+    // account, not the invitation). Every other accept failure stays generic
+    // so nothing about the invitation leaks (anti-enumeration).
+    if (backendErrorCode(error) === "email_mismatch") {
+      throw new BackendExchangeError(AUTH_ERROR_CODES.emailMismatch);
+    }
     const code = isIdentityLookupError(error)
       ? AUTH_ERROR_CODES.identityLookupFailed
       : AUTH_ERROR_CODES.oauthHandoffFailed;
     throw new BackendExchangeError(code);
+  }
+}
+
+/**
+ * Best-effort extraction of the backend error `code` from a `BackendAuthError`
+ * (whose `responseBody` carries the raw `{ code, message }` JSON). Returns
+ * undefined when the error isn't a BackendAuthError or the body isn't parseable.
+ */
+function backendErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof BackendAuthError)) return undefined;
+  try {
+    const parsed = JSON.parse(error.responseBody) as { code?: unknown };
+    return typeof parsed.code === "string" ? parsed.code : undefined;
+  } catch {
+    return undefined;
   }
 }
 

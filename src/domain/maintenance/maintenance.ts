@@ -30,6 +30,22 @@ export interface MaintenanceResource {
   type?: string;
 }
 
+/**
+ * A notify target as it would surface on the read path — the channel the
+ * maintenance broadcasts to. The write contract already carries
+ * `notify_target_channel_ids`; the read view does not expose `notify_targets`
+ * yet (backend gap), so `Maintenance.notify_targets` is currently always empty.
+ * The mapper reads it defensively so the Notify-channels section lights up the
+ * moment the backend starts returning it — no further UI change needed.
+ */
+export interface MaintenanceNotifyTarget {
+  id: string;
+  /** Human channel name, e.g. "#incidents-eu". */
+  name: string;
+  /** Transport glyph driver: `slack | telegram | email | …` (open string). */
+  transport?: string;
+}
+
 export type StepStatus = "pending" | "in_progress" | "done" | "skipped";
 
 export interface MaintenanceStep {
@@ -84,6 +100,12 @@ export interface Maintenance {
   planned_period: Period;
   actual_period?: Period;
   resources: MaintenanceResource[];
+  /**
+   * Notify channels the maintenance broadcasts to. Read-only on this shape.
+   * Empty until the backend adds `notify_targets` to the read view (see
+   * {@link MaintenanceNotifyTarget}).
+   */
+  notify_targets: MaintenanceNotifyTarget[];
   steps: MaintenanceStep[];
   /** Set when status=canceled. */
   cancel_reason?: CancelReason;

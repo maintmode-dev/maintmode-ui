@@ -8,22 +8,28 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 /**
  * GET /api/audit — proxy to backend `GET /api/v1/audit/log` (auth base).
  *
- * Read-only global security log feed. The backend returns
- * `apiauthmodels.AuditLogResponse` (`{ logs: AuditLog[] }`) with flat
- * `AuditAction` values and string `details`; `mapAuditLogResponse` folds that
- * into the `{ events: AuditEvent[] }` shape `useGlobalAuditQuery` consumes,
- * dropping rows with an unmapped action.
+ * Read-only global security log feed. The backend does the filtering, paging,
+ * and category counting; we forward the whitelisted query params and fold the
+ * `apiauthmodels.AuditLogResponse` (`{ logs, total, facets }`) into the domain
+ * `AuditPage` the page consumes. `action` is a CSV of `AuditAction` values.
  */
+const FORWARDED_PARAMS = ["limit", "offset", "action", "actor", "created_from", "created_to"] as const;
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const qs = url.searchParams.toString();
+    const forwarded = new URLSearchParams();
+    for (const key of FORWARDED_PARAMS) {
+      const value = url.searchParams.get(key);
+      if (value != null && value !== "") forwarded.set(key, value);
+    }
+    const qs = forwarded.toString();
     const dto = await authenticatedBackendRequest<AuditLogResponseDto>({
       path: `/api/v1/audit/log${qs ? `?${qs}` : ""}`,
       method: "GET",
       useAuthBase: true,
     });
-    return NextResponse.json({ events: mapAuditLogResponse(dto) });
+    return NextResponse.json(mapAuditLogResponse(dto));
   } catch (error) {
     return routeErrorResponse(error);
   }

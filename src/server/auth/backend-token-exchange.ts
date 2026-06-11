@@ -7,6 +7,7 @@ const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
 const ACCEPT_INVITATION_PATH = "/api/v1/users/invitations/accept";
 const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
+const LOGOUT_ALL_PATH = "/api/v1/logout/all";
 const ME_PATH = "/api/v1/me";
 
 /**
@@ -96,6 +97,35 @@ export async function revokeBackendSession(accessToken: string, refreshToken: st
         authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: controller.signal,
+    });
+    if (!response.ok && response.status !== 204) {
+      const body = await response.text();
+      throw new BackendAuthError(response.status, body || response.statusText);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * Revokes every refresh token for the current user via `POST /api/v1/logout/all`
+ * — signs the account out on all devices. Only the access token is needed
+ * (`Authorization: Bearer`); there is no body.
+ */
+export async function revokeAllBackendSessions(accessToken: string): Promise<void> {
+  const config = readMaintmodeBackendConfig();
+  const target = resolveBackendUrl(config.authApiBaseUrl, LOGOUT_ALL_PATH);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+
+  try {
+    const response = await fetch(target, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${accessToken}`,
+      },
       signal: controller.signal,
     });
     if (!response.ok && response.status !== 204) {

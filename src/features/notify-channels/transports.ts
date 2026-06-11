@@ -1,5 +1,7 @@
-import { Bell, Hash, Mail, Send } from "lucide-react";
+import { Bell, Mail, Send } from "lucide-react";
 import type { ComponentType } from "react";
+
+import { SlackGlyph } from "@/shared/ui/icons/slack-glyph";
 
 /**
  * UI descriptors for notification transports.
@@ -23,7 +25,7 @@ export interface TransportDescriptor {
 }
 
 const SLACK: TransportDescriptor = {
-  icon: Hash,
+  icon: SlackGlyph,
   channelIdLabel: "Channel ID",
   channelIdPlaceholder: "C0123456789",
   channelIdHelp: "Find it in Slack: channel name → details → Channel ID (starts with C).",

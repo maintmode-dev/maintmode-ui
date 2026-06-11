@@ -9,6 +9,7 @@ import { Label } from "@/shared/ui/shadcn/label";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
 import { Combobox } from "@/shared/ui/domain/combobox";
+import { DateTimePicker } from "@/shared/ui/domain/date-time-picker";
 import { MultiSelect, type MultiSelectOption } from "@/shared/ui/domain/multi-select";
 import { ResourceChip } from "@/shared/ui/domain/resource-chip";
 import { formatDateTime } from "@/shared/ui/lib/format";
@@ -75,13 +76,19 @@ function detailToSteps(detail: MaintenanceDetail | undefined): StepDraft[] {
 /** Parse a Go/ISO duration string into a minute count for the editor input. */
 function durationToMinutes(duration: string | undefined): string {
   if (!duration) return "";
-  const go = duration.match(/^(?:(\d+)h)?(?:(\d+)m)?$/i);
-  if (go && (go[1] || go[2])) {
-    return String(Number(go[1] ?? 0) * 60 + Number(go[2] ?? 0));
+  // Go's time.Duration always renders every nonzero-leading unit, so a
+  // 2-hour step comes back as "2h0m0s" (not "2h"). Accept the trailing
+  // seconds component and fold it into the minute count instead of failing
+  // the match — otherwise the editor drops the duration on a loaded draft.
+  const go = duration.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (go && (go[1] || go[2] || go[3])) {
+    const minutes = Number(go[1] ?? 0) * 60 + Number(go[2] ?? 0) + Number(go[3] ?? 0) / 60;
+    return String(Math.round(minutes));
   }
-  const iso = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?/i);
-  if (iso && (iso[1] || iso[2])) {
-    return String(Number(iso[1] ?? 0) * 60 + Number(iso[2] ?? 0));
+  const iso = duration.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/i);
+  if (iso && (iso[1] || iso[2] || iso[3])) {
+    const minutes = Number(iso[1] ?? 0) * 60 + Number(iso[2] ?? 0) + Number(iso[3] ?? 0) / 60;
+    return String(Math.round(minutes));
   }
   return "";
 }
@@ -215,6 +222,11 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
 
   const show = (key: string) => (submitted ? errors[key] : undefined);
 
+  // Create-flow gate (contract): `Create draft` stays disabled until the two
+  // required fields — Title + planned start — are present, with a left hint
+  // while disabled. (Full validation still runs on submit for the rest.)
+  const createReady = Boolean(title.trim() && start);
+
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate>
       <Field label="Title" htmlFor="m-title" error={show("title")}>
@@ -228,12 +240,12 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
       </Field>
       <div className="grid grid-cols-2 gap-4">
         <Field label="Planned start" htmlFor="m-start" error={show("start")}>
-          <Input
+          <DateTimePicker
             id="m-start"
-            type="datetime-local"
             value={start}
-            onChange={(e) => setStart(e.target.value)}
+            onChange={setStart}
             aria-invalid={Boolean(show("start"))}
+            aria-label="Planned start"
           />
         </Field>
         <Field label="Planned end" hint="Computed from start + step durations">
@@ -352,7 +364,15 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
           {creating ? "Cancel" : "Discard"}
         </Button>
-        <Button type="submit" size="sm" className="ml-auto" disabled={pending}>
+        {creating && !createReady ? (
+          <span className="ml-auto mr-2 text-xs text-fg-dim">Enter a title and start time to continue</span>
+        ) : null}
+        <Button
+          type="submit"
+          size="sm"
+          className={creating && !createReady ? "" : "ml-auto"}
+          disabled={pending || (creating && !createReady)}
+        >
           {creating ? (pending ? "Creating…" : "Create draft") : pending ? "Saving…" : "Save changes"}
         </Button>
       </footer>

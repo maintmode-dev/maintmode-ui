@@ -39,8 +39,9 @@ export type InvitationStatus = "pending" | "expired" | "accepted" | "revoked";
 
 /**
  * Mirrors the auth-service `Invitation` (swagger `auth`,
- * `GET /api/v1/users/invitations`). `invited_by` is a compact actor summary
- * `{ id, handle }`; `sent_at` is when the invite was issued and
+ * `GET /api/v1/users/invitations`). `inviter` is a `UserSummary`
+ * `{ id, email?, display_name? }` — the field was `invited_by: { id, handle }`
+ * before the auth swagger update; `sent_at` is when the invite was issued and
  * `accepted_at` is present only once a recipient claims it.
  */
 export interface Invitation {
@@ -51,12 +52,27 @@ export interface Invitation {
   sent_at: string;
   accepted_at?: string;
   expires_at: string;
-  invited_by: InvitationActor;
+  inviter: InvitationActor;
 }
 
+/** Inviter `UserSummary` from the auth service; fields may be empty/absent. */
 export interface InvitationActor {
   id: string;
-  handle: string;
+  email?: string;
+  display_name?: string;
+}
+
+/**
+ * Display handle for an inviter, degrading like the backend's `InviterHandle`:
+ * `display_name` → email local-part → `Unknown user`. Never renders blank, and
+ * tolerates a missing `inviter` (defensive against backend shape drift).
+ */
+export function inviterHandle(inviter: InvitationActor | undefined | null): string {
+  const name = inviter?.display_name?.trim();
+  if (name) return name;
+  const local = inviter?.email?.split("@")[0]?.trim();
+  if (local) return local;
+  return "Unknown user";
 }
 
 /** Body for `POST /api/v1/users/invite` (`CreateInvitationRequest`). */

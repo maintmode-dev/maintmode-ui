@@ -8,17 +8,26 @@ import { Label } from "@/shared/ui/shadcn/label";
 export function ResourceField({
   label,
   htmlFor,
+  counter,
   children,
 }: {
   label: string;
   htmlFor?: string;
+  /** Optional `N / max` char counter shown at the right of the label row. */
+  counter?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">
-        {label}
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label
+          htmlFor={htmlFor}
+          className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim"
+        >
+          {label}
+        </Label>
+        {counter ? <span className="font-mono tabular-nums text-[10px] text-fg-dim">{counter}</span> : null}
+      </div>
       {children}
     </div>
   );

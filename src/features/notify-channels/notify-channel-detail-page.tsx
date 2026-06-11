@@ -1,10 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Archive, ArchiveRestore, ArrowLeft, Edit2, Lock } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Lock } from "lucide-react";
 import { useState } from "react";
 
-import { isNotifyChannelArchived, type NotifyChannel } from "@/domain/notify-channel/notify-channel";
+import {
+  isNotifyChannelArchived,
+  type NotifyChannel,
+  type NotifyChannelActor,
+} from "@/domain/notify-channel/notify-channel";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Stack } from "@/shared/ui/domain/stack";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
@@ -12,6 +16,8 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { Textarea } from "@/shared/ui/shadcn/textarea";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { TransportPill } from "@/shared/ui/domain/transport-pill";
+import { ArchiveStatusPill } from "@/shared/ui/domain/archive-status-pill";
+import { CopyField } from "@/shared/ui/domain/copy-field";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/shadcn/alert-dialog";
-import { formatDateTime } from "@/shared/ui/lib/format";
+import { formatUtc } from "@/shared/ui/lib/format";
 
 import {
   useArchiveNotifyChannel,
@@ -30,6 +36,7 @@ import {
   useUpdateNotifyChannel,
 } from "./queries/use-notify-channels-query";
 import { NotifyChannelField } from "./notify-channel-field";
+import { NotifyChannelRelatedMaintenance } from "./notify-channel-related-maintenance";
 import { transportDescriptor } from "./transports";
 
 /**
@@ -47,7 +54,7 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
 
   if (query.isPending) {
     return (
-      <div className="mx-auto max-w-[900px] p-6 space-y-3">
+      <div className="mx-auto max-w-[1100px] p-6 space-y-3">
         <Skeleton type="row" width="40%" />
         <Skeleton type="block" />
       </div>
@@ -76,7 +83,7 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
   const descriptor = transportDescriptor(channel.transport);
 
   return (
-    <div className="mx-auto max-w-[900px] p-6 space-y-5">
+    <div className="mx-auto max-w-[1100px] p-6 space-y-5">
       <header className="space-y-2">
         <Link href="/channels" className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg">
           <ArrowLeft className="size-3" aria-hidden="true" /> Back to channels
@@ -84,7 +91,7 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
         <div className="flex items-center gap-3">
           <TransportPill transport={channel.transport} archived={archived} />
           <h1 className="h1">{channel.name}</h1>
-          {archived ? <span className="body-sm text-fg-dim">(archived)</span> : null}
+          <ArchiveStatusPill archived={archived} />
           <Tabs value={mode} onValueChange={(v) => setMode(v as "view" | "edit")} className="ml-auto">
             <TabsList>
               <TabsTrigger value="view">View</TabsTrigger>
@@ -92,48 +99,82 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
             </TabsList>
           </Tabs>
         </div>
+        {/* No meta row (2026-06-09 contract change). The internal UUID is not
+            shown — it lives in the URL for support deep-links — and every other
+            identifier (transport channel id, Created/Updated · @handle) is a
+            labelled cell in the Identity grid below. */}
       </header>
 
-      {mode === "view" ? (
-        <dl className="grid grid-cols-[160px_1fr] gap-y-3 gap-x-6 text-sm">
-          <DT>Transport</DT>
-          <DD>
-            <TransportPill transport={channel.transport} archived={archived} />
-          </DD>
-          <DT>{descriptor.channelIdLabel}</DT>
-          <DD className="font-mono">{channel.transportChannelId || "—"}</DD>
-          <DT>Description</DT>
-          <DD>{channel.description || "—"}</DD>
-          <DT>Created</DT>
-          <DD className="font-mono tabular-nums text-xs">{formatDateTime(channel.createdAt)}</DD>
-          <DT>Last updated</DT>
-          <DD className="font-mono tabular-nums text-xs">{formatDateTime(channel.updatedAt)}</DD>
-        </dl>
-      ) : (
-        <NotifyChannelEditForm channel={channel} onClose={() => setMode("view")} />
-      )}
+      {/* Identity card: identity-only grid (or the edit form) + a muted
+          provenance footer. Created / Last updated are demoted from grid cells
+          to the footer — audit timestamps are low-frequency reference, the
+          product has a dedicated Audit log for depth (2026-06-09 contract).
+          The card wrapper (border + bg-elev-1 + radius) separates this block
+          from the Related maintenance section below. */}
+      <div className="space-y-4 rounded-lg border border-border-subtle bg-bg-elev-1 p-6">
+        {mode === "view" ? (
+          <dl className="grid grid-cols-[180px_1fr] gap-y-3.5 gap-x-6 text-sm">
+            <DT>Name</DT>
+            <DD>{channel.name}</DD>
+            <DT>Transport</DT>
+            <DD>
+              <TransportPill transport={channel.transport} archived={archived} />
+            </DD>
+            <DT>Description</DT>
+            <DD>{channel.description || "—"}</DD>
+            <DT>{descriptor.channelIdLabel}</DT>
+            <DD>
+              {channel.transportChannelId ? (
+                <CopyField value={channel.transportChannelId} label={`Copy ${descriptor.channelIdLabel.toLowerCase()}`} />
+              ) : (
+                "—"
+              )}
+            </DD>
+          </dl>
+        ) : (
+          <NotifyChannelEditForm channel={channel} onClose={() => setMode("view")} />
+        )}
 
-      <footer className="flex items-center gap-2 pt-4 border-t border-border-subtle">
-        <Button variant="outline" size="sm" onClick={() => setMode("edit")}>
-          <Edit2 className="size-3.5" aria-hidden="true" /> Edit
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setArchiveOpen(true)}
-          className="text-[var(--destructive-fg)] hover:bg-[var(--destructive-bg)]"
-        >
-          {archived ? (
+        <p className="border-t border-border-subtle pt-3 font-mono text-[10px] text-fg-dim">
+          Created <span className="tabular-nums">{formatUtc(channel.createdAt)}</span> ·{" "}
+          {actorHandle(channel.createdBy)}
+          {channel.updatedAt ? (
             <>
-              <ArchiveRestore className="size-3.5" aria-hidden="true" /> Unarchive
+              {" · "}Updated <span className="tabular-nums">{formatUtc(channel.updatedAt)}</span> ·{" "}
+              {actorHandle(channel.updatedBy)}
             </>
-          ) : (
-            <>
-              <Archive className="size-3.5" aria-hidden="true" /> Archive
-            </>
-          )}
-        </Button>
-      </footer>
+          ) : null}
+        </p>
+      </div>
+
+      {/* Section 2 — Related maintenance. View-mode only; edit-mode replaces the
+          identity grid with the form, so the related list is hidden there. */}
+      {mode === "view" ? <NotifyChannelRelatedMaintenance channelId={channel.id} /> : null}
+
+      {/* View-mode footer only. Edit-mode is entered via the header View/Edit
+          tablist (not a footer button), so the footer carries just the
+          Archive / Unarchive action. Edit-mode supplies its own Discard / Save
+          row inside NotifyChannelEditForm. */}
+      {mode === "view" ? (
+        <footer className="flex items-center gap-2 pt-4 border-t border-border-subtle">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setArchiveOpen(true)}
+            className="text-[var(--destructive-fg)] hover:bg-[var(--destructive-bg)]"
+          >
+            {archived ? (
+              <>
+                <ArchiveRestore className="size-3.5" aria-hidden="true" /> Unarchive
+              </>
+            ) : (
+              <>
+                <Archive className="size-3.5" aria-hidden="true" /> Archive
+              </>
+            )}
+          </Button>
+        </footer>
+      ) : null}
 
       <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <AlertDialogContent>
@@ -168,9 +209,19 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
   );
 }
 
+/**
+ * Render an actor as `@handle` for the meta row. Prefers the resolved display
+ * name, falls back to the email local-part, then to `@unknown` when the auth
+ * service couldn't resolve the author (backend degrades to "Unknown user").
+ */
+function actorHandle(actor?: NotifyChannelActor) {
+  const handle = actor?.displayName?.trim() || actor?.email?.split("@")[0]?.trim() || "unknown";
+  return <span className="font-mono">@{handle}</span>;
+}
+
 function DT({ children }: { children: React.ReactNode }) {
   return (
-    <dt className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim pt-1">{children}</dt>
+    <dt className="text-2xs font-semibold uppercase tracking-[0.08em] text-fg-dim pt-1.5">{children}</dt>
   );
 }
 function DD({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -183,6 +234,13 @@ function NotifyChannelEditForm({ channel, onClose }: { channel: NotifyChannel; o
   const [channelId, setChannelId] = useState(channel.transportChannelId);
   const updateChannel = useUpdateNotifyChannel();
   const descriptor = transportDescriptor(channel.transport);
+
+  // Transport is immutable, so only these three fields can differ from the
+  // loaded channel. Save stays disabled until at least one of them does.
+  const isDirty =
+    name !== channel.name ||
+    description !== (channel.description ?? "") ||
+    channelId !== channel.transportChannelId;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -241,7 +299,7 @@ function NotifyChannelEditForm({ channel, onClose }: { channel: NotifyChannel; o
           type="submit"
           size="sm"
           className="ml-auto"
-          disabled={!name.trim() || updateChannel.isPending}
+          disabled={!name.trim() || !isDirty || updateChannel.isPending}
         >
           {updateChannel.isPending ? "Saving…" : "Save changes"}
         </Button>

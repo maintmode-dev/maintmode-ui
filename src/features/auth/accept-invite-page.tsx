@@ -1,9 +1,11 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Mail, RefreshCw } from "lucide-react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
+import { Stack } from "@/shared/ui/domain/stack";
 
 import {
   type InviteStatus,
@@ -13,6 +15,12 @@ import {
 
 export interface AcceptInvitePageProps {
   token?: string;
+  /**
+   * Server action that stashes the invitation token and starts the OAuth
+   * sign-in via NextAuth `signIn` (so CSRF is attached). Bound with the token
+   * at the call site, mirroring the `/login` `signInAction` pattern.
+   */
+  acceptAction: (token: string) => Promise<void>;
 }
 
 /**
@@ -20,26 +28,29 @@ export interface AcceptInvitePageProps {
  * only `status` and (when valid) `suggested_provider`; everything else is a
  * single recovery-first explanation.
  */
-export function AcceptInvitePage({ token }: AcceptInvitePageProps) {
+export function AcceptInvitePage({ token, acceptAction }: AcceptInvitePageProps) {
   const query = useInvitationPreview(token);
+
+  // A missing token can never resolve to a valid invite — render the `missing`
+  // error stack directly rather than a blank card (the query may not even run
+  // without a token).
+  const noToken = !token || token.trim() === "";
 
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
-      <div className="w-full max-w-[440px] bg-bg-elev-1 border border-border-subtle rounded-lg p-8 space-y-5">
-        <header className="space-y-2">
-          <div
-            className="size-8 rounded-sm bg-accent-soft border border-[var(--accent)]/40"
-            aria-hidden="true"
-          />
-          <h1 className="h2">Accept invitation</h1>
-        </header>
-
-        {query.isPending ? (
+      <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
+        {noToken ? (
+          <InvalidInvite status="missing" />
+        ) : query.isPending ? (
           <Skeleton type="block" />
         ) : query.isError ? (
           <InvalidInvite status="unknown_error" onRetry={() => query.refetch()} />
         ) : query.data.status === "valid" ? (
-          <ValidInvite token={token} suggestedProvider={query.data.suggested_provider} />
+          <ValidInvite
+            token={token}
+            suggestedProvider={query.data.suggested_provider}
+            acceptAction={acceptAction}
+          />
         ) : (
           <InvalidInvite status={query.data.status} />
         )}
@@ -51,9 +62,11 @@ export function AcceptInvitePage({ token }: AcceptInvitePageProps) {
 function ValidInvite({
   token,
   suggestedProvider,
+  acceptAction,
 }: {
   token?: string;
   suggestedProvider?: SuggestedProvider;
+  acceptAction: (token: string) => Promise<void>;
 }) {
   // MVP wires Google only (RUK-92 adds the rest). The backend currently always
   // returns null for suggested_provider, so this defaults to Google.
@@ -61,32 +74,34 @@ function ValidInvite({
   const label = provider === "github" ? "Continue with GitHub" : "Continue with Google";
   const googleOnly = provider !== "google";
 
+  // Centered composition — consistent with the error/terminal states' stack.
   return (
-    <>
-      <div className="flex items-start gap-2 px-3 py-2 rounded-sm bg-[var(--status-completed-bg)] border border-[var(--status-completed-border)] text-sm text-[var(--status-completed-fg)]">
-        <CheckCircle2 className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-        <span>This invitation is valid.</span>
-      </div>
-      <p className="body-sm">
-        Sign in with the provider below to claim it. We will link the new account to the invitation
-        automatically.
-      </p>
+    <div className="flex flex-col items-center gap-5 text-center">
+      <header className="flex flex-col items-center gap-2">
+        <span
+          className="flex size-9 items-center justify-center rounded-full bg-accent-soft text-[var(--accent-fg)]"
+          aria-hidden="true"
+        >
+          <Mail className="size-4" />
+        </span>
+        <h1 className="h2">You&apos;ve been invited</h1>
+      </header>
+      <p className="body-sm">Sign in with the email this invitation was sent to.</p>
       {/*
-        Submit to the BFF accept entry-point, not straight to NextAuth: the
-        route stashes the invitation token in an httpOnly cookie before starting
-        the OAuth round-trip, so the backend can bind this sign-in to the invite
-        without the token ever appearing in a URL. The access/refresh tokens are
-        exchanged server-side and never reach the browser.
+        Submit to the `acceptAction` server action (not a plain POST to NextAuth):
+        it stashes the invitation token in an httpOnly cookie, then starts the
+        OAuth round-trip via NextAuth `signIn` so the CSRF token is attached.
+        The `signIn` callback consumes the cookie and exchanges via the backend
+        accept endpoint — the token never appears in a URL and backend tokens
+        never reach the browser.
       */}
-      <form action="/api/invitations/accept" method="post" className="contents">
-        <input type="hidden" name="token" value={token ?? ""} />
-        <input type="hidden" name="provider" value="google" />
+      <form action={acceptAction.bind(null, token ?? "")} className="w-full">
         <Button type="submit" className="w-full" disabled={googleOnly}>
           {label}
         </Button>
       </form>
       {googleOnly ? <p className="caption">Other providers ship with RUK-92. Use Google for now.</p> : null}
-    </>
+    </div>
   );
 }
 
@@ -99,8 +114,8 @@ function InvalidInvite({
 }) {
   const copy: Record<typeof status, { title: string; body: string }> = {
     invalid: {
-      title: "This invitation link isn't valid",
-      body: "Open the original link from your email, or ask your administrator for a new invitation.",
+      title: "Invalid invitation link",
+      body: "This link can't be used. Ask whoever invited you to send a new one.",
     },
     expired: {
       title: "This invitation has expired",
@@ -124,18 +139,27 @@ function InvalidInvite({
     },
   };
   const c = copy[status];
+
+  // Centered icon-stack (mirrors empty-states). `unknown_error` is the only
+  // retryable state — it offers Try again; every other terminal/error state
+  // offers the single recovery route off this public page: Go to login.
   return (
-    <>
-      <div className="flex items-start gap-2 px-3 py-2 rounded-sm bg-[var(--destructive-bg)] border border-[var(--destructive-border)] text-sm text-[var(--destructive-fg)]">
-        <AlertTriangle className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-        <span>{c.title}</span>
-      </div>
-      <p className="body-sm">{c.body}</p>
-      {status === "unknown_error" && onRetry ? (
-        <Button type="button" variant="outline" className="w-full" onClick={onRetry}>
-          <RefreshCw className="size-3.5" aria-hidden="true" /> Try again
-        </Button>
-      ) : null}
-    </>
+    <Stack
+      className="py-4"
+      icon={<AlertTriangle aria-hidden="true" />}
+      title={c.title}
+      caption={c.body}
+      cta={
+        status === "unknown_error" && onRetry ? (
+          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+            <RefreshCw className="size-3.5" aria-hidden="true" /> Try again
+          </Button>
+        ) : (
+          <Button asChild variant="outline" size="sm">
+            <Link href="/login">Go to login</Link>
+          </Button>
+        )
+      }
+    />
   );
 }

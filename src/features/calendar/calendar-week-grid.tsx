@@ -7,7 +7,7 @@ import { CalendarEventBar } from "@/shared/ui/domain/calendar-event-bar";
 import { formatRange } from "@/shared/ui/lib/format";
 import type { Maintenance } from "@/domain/maintenance/maintenance";
 
-import { placeItems } from "./place-items";
+import { MAX_LANES, placeWeek } from "./place-items";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -24,7 +24,7 @@ function isSameDay(a: Date, b: Date) {
 }
 
 export function CalendarWeekGrid({ anchor, items, onSelect }: CalendarWeekGridProps) {
-  const placed = useMemo(() => placeItems(items, anchor), [items, anchor]);
+  const { placed, overflow } = useMemo(() => placeWeek(items, anchor), [items, anchor]);
   // Memoize "today" so it stays stable across renders within the same minute;
   // updates when the component re-mounts.
   const today = useMemo(() => new Date(), []);
@@ -83,6 +83,7 @@ export function CalendarWeekGrid({ anchor, items, onSelect }: CalendarWeekGridPr
         {days.map((d, i) => {
           const isWeekend = i >= 5;
           const dayPlaced = placed.filter((p) => p.dayIdx === i);
+          const dayOverflow = overflow.filter((o) => o.dayIdx === i);
           return (
             <div
               key={i}
@@ -92,6 +93,28 @@ export function CalendarWeekGrid({ anchor, items, onSelect }: CalendarWeekGridPr
               {HOURS.map((h) => (
                 <div key={h} style={{ height: HOUR_PX }} className="border-b border-grid-line" />
               ))}
+              {/* "+N more" overflow chip — collapses events past MAX_LANES so
+                  the column stays readable instead of stacking slivers. Pinned
+                  to the last visible lane at the cluster's top. */}
+              {dayOverflow.map((o, oi) => {
+                const widthPct = 100 / MAX_LANES;
+                const leftPct = (MAX_LANES - 1) * widthPct;
+                return (
+                  <div
+                    key={`overflow-${i}-${oi}`}
+                    className="absolute z-10 flex items-start justify-center"
+                    style={{
+                      top: `calc(${o.topPct}% + 2px)`,
+                      left: `calc(${leftPct}% + 4px)`,
+                      width: `calc(${widthPct}% - 8px)`,
+                    }}
+                  >
+                    <span className="rounded-sm bg-bg-elev-4 px-1.5 py-px text-[10px] font-medium tabular-nums text-fg-muted shadow-[var(--shadow-sm)]">
+                      +{o.count} more
+                    </span>
+                  </div>
+                );
+              })}
               {dayPlaced.map(({ m, topPct, heightPct, continuation, lane, lanes }, idx) => {
                 // Lane width: divide column into N equal columns with a 2px
                 // gutter between bars. A bar that doesn't overlap takes the

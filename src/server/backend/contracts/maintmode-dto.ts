@@ -101,11 +101,25 @@ export interface MaintenanceViewDto {
   created_by?: UserSummaryDto;
   approver?: UserSummaryDto;
   resources?: MaintenanceViewResourceDto[];
+  /**
+   * Notify channels the maintenance broadcasts to. Not yet emitted by the
+   * backend read view (only the write path carries `notify_target_channel_ids`);
+   * typed here so the mapper can pick it up defensively once it lands.
+   */
+  notify_targets?: MaintenanceViewNotifyTargetDto[];
   steps?: MaintenanceViewStepDto[];
   cancel_reason?: string;
   cancel_reason_comment?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+/** A notify target as the read view would expose it (anticipated shape). */
+export interface MaintenanceViewNotifyTargetDto {
+  id?: string;
+  channel_id?: string;
+  name?: string;
+  transport?: string;
 }
 
 /** `uimodels.MaintenanceViewResponse` envelope. */
@@ -127,7 +141,10 @@ export interface ResourceDto {
   external_id?: string;
   status?: string;
   created_at?: string;
+  /** Authorship summary (RUK-169); null until the auth service resolves it. */
+  created_by?: UserSummaryDto;
   updated_at?: string;
+  updated_by?: UserSummaryDto;
 }
 
 /** `apimodels.ListResourcesResponse` — paginated list envelope. */
@@ -306,15 +323,50 @@ export interface AuditLogDto {
   id?: string;
   action?: string;
   actor?: string;
+  actor_id?: string;
+  /** Human display name of the actor (auth service resolves it). */
+  actor_display_name?: string;
   created_at?: string;
+  /** One-line human summary (kept for fallback display). */
   details?: string;
   entity_type?: string;
   entity_id?: string;
   target_type?: string;
   target_id?: string;
+  /** Structured per-action payload — present on the upgraded contract. */
+  metadata?: AuditLogMetadataDto;
 }
 
-/** `apiauthmodels.AuditLogResponse` envelope — `{ logs: AuditLog[] }`. */
+/**
+ * `apiauthmodels.AuditLogMetadata` — action-specific structured payload that
+ * backs the expandable-row detail grids. Every field is optional; which ones
+ * are populated depends on the action (login → ip/user_agent/session_id;
+ * logout → session_id/logout_kind; role events → roles_added/removed/target_*).
+ */
+export interface AuditLogMetadataDto {
+  ip?: string;
+  user_agent?: string;
+  session_id?: string;
+  failure_reason?: string;
+  logout_kind?: string;
+  roles?: string[];
+  roles_added?: string[];
+  roles_removed?: string[];
+  target_display_name?: string;
+  target_email?: string;
+}
+
+/** `apiauthmodels.AuditFacets` — category counts over the actor/date window. */
+export interface AuditFacetsDto {
+  all?: number;
+  auth?: number;
+  roles?: number;
+  block?: number;
+}
+
+/** `apiauthmodels.AuditLogResponse` — `{ logs, total, facets }`. */
 export interface AuditLogResponseDto {
   logs?: AuditLogDto[];
+  total?: number;
+  facets?: AuditFacetsDto;
 }

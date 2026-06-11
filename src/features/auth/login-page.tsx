@@ -1,6 +1,10 @@
-import { AlertTriangle } from "lucide-react";
+"use client";
+
+import { AlertTriangle, ChevronRight } from "lucide-react";
 
 import { Button } from "@/shared/ui/shadcn/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
+import { BrandIcon, MaintMark, type BrandProvider } from "@/shared/ui/icons/brand-icons";
 
 export interface LoginPageProps {
   error?: string;
@@ -14,62 +18,90 @@ export interface LoginPageProps {
   signInAction: (providerId: string) => Promise<void>;
 }
 
-const PROVIDERS = [
+const PROVIDERS: { id: BrandProvider; label: string; enabled: boolean }[] = [
   { id: "google", label: "Continue with Google", enabled: true },
   { id: "github", label: "Continue with GitHub", enabled: false },
-  { id: "microsoft", label: "Continue with Microsoft", enabled: false },
-  { id: "okta", label: "Continue with Okta", enabled: false },
 ];
+
+/** Disabled providers are gated behind BE-7 / RUK-92. */
+const COMING_SOON_TOOLTIP = "Coming soon — additional providers track BE-7 / RUK-92";
 
 export function LoginPage({ error, signInAction }: LoginPageProps) {
   return (
-    <main className="min-h-screen grid place-items-center p-6 bg-bg">
-      <div className="w-full max-w-[400px] space-y-6 bg-bg-elev-1 border border-border-subtle rounded-lg p-8">
-        <header className="space-y-2">
-          <div
-            className="size-8 rounded-sm bg-accent-soft border border-[var(--accent)]/40"
-            aria-hidden="true"
-          />
-          <h1 className="h2">Sign in to MaintMode</h1>
-          <p className="body-sm">
-            Use your work account. We don&apos;t store passwords — sign-in goes through your provider.
-          </p>
-        </header>
-
-        {error ? (
-          <div
-            role="alert"
-            className="flex items-start gap-2 px-3 py-2 rounded-sm bg-[var(--destructive-bg)] border border-[var(--destructive-border)] text-sm text-[var(--destructive-fg)]"
-          >
-            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-            <span>
-              {error === "AccessDenied"
-                ? "This account is not provisioned. Ask an admin for an invitation."
-                : "Sign-in didn't complete. Try again."}
+    <TooltipProvider>
+      <main className="min-h-screen grid place-items-center p-6 bg-bg">
+        <div className="w-full max-w-[420px] space-y-6 bg-bg-elev-1 border border-border-subtle rounded-xl p-8">
+          <header className="space-y-2">
+            <span
+              className="flex size-8 items-center justify-center text-[var(--accent-fg)]"
+              aria-hidden="true"
+            >
+              <MaintMark size={26} />
             </span>
+            <h1 className="h2">MaintMode</h1>
+            <p className="body-sm">Sign in to plan and coordinate maintenance windows.</p>
+          </header>
+
+          {error ? (
+            <div
+              role="alert"
+              className="flex items-start gap-2 px-3 py-2 rounded-sm bg-[var(--destructive-bg)] border border-[var(--destructive-border)] text-sm text-[var(--destructive-fg)]"
+            >
+              <AlertTriangle className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+              <span>
+                {error === "email_mismatch"
+                  ? "This account isn't the one this invitation was sent to. Sign in with the right account."
+                  : error === "AccessDenied"
+                    ? "This account is not provisioned. Ask an admin for an invitation."
+                    : "Sign-in didn't complete. Try again."}
+              </span>
+            </div>
+          ) : null}
+
+          <div className="flex flex-col gap-2.5">
+            {PROVIDERS.map((p) =>
+              p.enabled ? (
+                <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
+                  <Button type="submit" className="w-full justify-start gap-2.5 px-3">
+                    <ProviderMark id={p.id} />
+                    {p.label}
+                    <ChevronRight className="size-4 ml-auto" aria-hidden="true" />
+                  </Button>
+                </form>
+              ) : (
+                <Tooltip key={p.id}>
+                  {/* Disabled buttons don't emit pointer events — wrap in a span
+                      so the "coming soon" tooltip still triggers on hover/focus. */}
+                  <TooltipTrigger asChild>
+                    <span className="inline-block w-full" tabIndex={0}>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start gap-2.5 px-3 pointer-events-none"
+                        disabled
+                      >
+                        <ProviderMark id={p.id} />
+                        {p.label}
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>{COMING_SOON_TOOLTIP}</TooltipContent>
+                </Tooltip>
+              ),
+            )}
           </div>
-        ) : null}
 
-        <div className="space-y-2">
-          {PROVIDERS.map((p) => (
-            <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
-              <Button
-                type="submit"
-                variant={p.enabled ? "default" : "outline"}
-                className="w-full justify-center"
-                disabled={!p.enabled}
-              >
-                {p.label}
-                {!p.enabled ? <span className="text-xs text-fg-dim ml-2">soon</span> : null}
-              </Button>
-            </form>
-          ))}
+          <p className="caption text-center">Internal tool · Access by invitation only</p>
         </div>
+      </main>
+    </TooltipProvider>
+  );
+}
 
-        <p className="caption text-center">
-          Additional providers ship with RUK-92. Need access? Ask your administrator for an invite.
-        </p>
-      </div>
-    </main>
+/** Fixed-size white brand tile — keeps the icon column aligned across buttons. */
+function ProviderMark({ id }: { id: BrandProvider }) {
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-white">
+      <BrandIcon name={id} size={14} />
+    </span>
   );
 }

@@ -15,7 +15,12 @@ const todayAt = (h: number, m = 0, dayOffset = 0) => {
   return d.toISOString();
 };
 
-export const MOCK_MAINTENANCES: Maintenance[] = [
+// Mock maintenances carry no notify targets (the read view doesn't expose them
+// yet); `withNotifyTargets` stamps the empty array so each literal stays terse.
+const withNotifyTargets = (list: Omit<Maintenance, "notify_targets">[]): Maintenance[] =>
+  list.map((m) => ({ ...m, notify_targets: [] }));
+
+export const MOCK_MAINTENANCES: Maintenance[] = withNotifyTargets([
   {
     id: "m-1001",
     reference: "MNT-1001",
@@ -120,7 +125,7 @@ export const MOCK_MAINTENANCES: Maintenance[] = [
     created_at: nowIso(-60),
     updated_at: nowIso(-60),
   },
-];
+]);
 
 export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefined {
   const base = MOCK_MAINTENANCES.find((m) => m.id === id);

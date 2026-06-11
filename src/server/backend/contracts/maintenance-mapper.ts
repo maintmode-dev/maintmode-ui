@@ -23,6 +23,7 @@ import type {
   MaintenanceDetail,
   MaintenanceDraftInput,
   MaintenanceImpact,
+  MaintenanceNotifyTarget,
   MaintenanceResource,
   MaintenanceScope,
   MaintenanceStatus,
@@ -31,6 +32,8 @@ import type {
   StepStatus,
 } from "@/domain/maintenance/maintenance";
 
+import { BffValidationError, type FieldError } from "@/server/backend/errors/bff-error";
+
 import type {
   AssignableUserDto,
   CalendarViewResponseDto,
@@ -38,6 +41,7 @@ import type {
   CreateDraftMaintRequestDto,
   MaintenanceCancelReasonDto,
   MaintenanceViewDto,
+  MaintenanceViewNotifyTargetDto,
   MaintenanceViewResourceDto,
   MaintenanceViewResponseDto,
   MaintenanceViewStepDto,
@@ -129,6 +133,19 @@ export function mapStep(step: MaintenanceViewStepDto, index: number): Maintenanc
   };
 }
 
+/**
+ * Read-view notify targets → domain. The backend read view does not emit
+ * `notify_targets` yet, so this is empty in practice today; map defensively so
+ * the Notify-channels section starts rendering the moment the field appears.
+ */
+export function mapNotifyTargets(
+  targets: MaintenanceViewNotifyTargetDto[] | undefined,
+): MaintenanceNotifyTarget[] {
+  return (targets ?? [])
+    .map((t) => ({ id: t.id ?? t.channel_id ?? "", name: t.name ?? "", transport: t.transport }))
+    .filter((t) => t.id || t.name);
+}
+
 /** `ConflictView` → domain `Conflict`. No `reference`/`resolved` on the wire. */
 export function mapConflict(conflict: ConflictViewDto): Conflict {
   return {
@@ -160,6 +177,7 @@ export function mapCalendarResponse(dto: CalendarViewResponseDto): Maintenance[]
       scope: mapScope(event.scope),
       planned_period: { start, end },
       resources: [],
+      notify_targets: [],
       steps: [],
       created_by: event.created_by ? mapUserSummary(event.created_by) : undefined,
       // Calendar events carry no audit timestamps; the grid never reads these.
@@ -186,6 +204,7 @@ export function mapMaintenanceView(dto: MaintenanceViewResponseDto): Maintenance
     planned_period: plannedPeriod,
     actual_period: actualPeriod,
     resources: (m.resources ?? []).map(mapResource),
+    notify_targets: mapNotifyTargets(m.notify_targets),
     steps: (m.steps ?? []).map(mapStep),
     cancel_reason: mapCancelReason(m.cancel_reason),
     cancel_reason_comment: m.cancel_reason_comment,
@@ -208,6 +227,82 @@ export function mapMaintenanceView(dto: MaintenanceViewResponseDto): Maintenance
 // ---------------------------------------------------------------------------
 // Write direction: domain form input → backend request DTO.
 // ---------------------------------------------------------------------------
+
+/**
+ * Validate the parsed request body has the shape `mapDraftToCreateRequest`
+ * dereferences, throwing `BffValidationError` (→ 400) for a malformed/incomplete
+ * client body. The BFF routes `JSON.parse(... as MaintenanceDraftInput)` is a
+ * compile-time assertion only — without this guard a body missing `steps` (or
+ * `resource_ids` under `resource` scope) makes the mapper throw a bare
+ * `TypeError`, which `normalizeRouteError` (correctly) treats as an internal bug
+ * and surfaces as 500 `BFF_ERROR`. A client-supplied incomplete body is a 400,
+ * not a server fault: validate the structure here so a genuine adapter
+ * `TypeError` stays the only thing that reaches the 500 branch.
+ *
+ * This is a structural guard, not full business validation — the backend remains
+ * the source of truth for value-level rules (e.g. `notify_targets: min 1`,
+ * non-empty title). Those reach the backend and come back as its own 400.
+ */
+/**
+ * Parse a draft request body and validate its structure. Malformed JSON and a
+ * structurally-incomplete body are both client errors → `BffValidationError`
+ * (400). Without this, `JSON.parse` throws a `SyntaxError` that falls through to
+ * the 500 `BFF_ERROR` branch.
+ */
+export function parseDraftBody(raw: string): MaintenanceDraftInput {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new BffValidationError(
+      [{ field: "body", message: "Request body is not valid JSON" }],
+      "Malformed request body",
+    );
+  }
+  assertValidDraftInput(parsed);
+  return parsed;
+}
+
+export function assertValidDraftInput(input: unknown): asserts input is MaintenanceDraftInput {
+  const fieldErrors: FieldError[] = [];
+
+  if (!input || typeof input !== "object") {
+    throw new BffValidationError(
+      [{ field: "body", message: "Request body must be a JSON object" }],
+      "Malformed request body",
+    );
+  }
+
+  const record = input as Record<string, unknown>;
+
+  if (typeof record.title !== "string") {
+    fieldErrors.push({ field: "title", message: "title is required and must be a string" });
+  }
+  if (typeof record.planned_start !== "string") {
+    fieldErrors.push({ field: "planned_start", message: "planned_start is required and must be a string" });
+  }
+  if (record.scope !== "global" && record.scope !== "resource") {
+    fieldErrors.push({ field: "scope", message: "scope must be 'global' or 'resource'" });
+  }
+  // `resource_ids` is dereferenced (`.map`) for `resource` scope; `global` drops
+  // it, so only require the array when the scope actually reads it.
+  if (record.scope === "resource" && !Array.isArray(record.resource_ids)) {
+    fieldErrors.push({ field: "resource_ids", message: "resource_ids must be an array for resource scope" });
+  }
+  if (!Array.isArray(record.steps)) {
+    fieldErrors.push({ field: "steps", message: "steps must be an array" });
+  }
+  if (!Array.isArray(record.notify_target_channel_ids)) {
+    fieldErrors.push({
+      field: "notify_target_channel_ids",
+      message: "notify_target_channel_ids must be an array",
+    });
+  }
+
+  if (fieldErrors.length > 0) {
+    throw new BffValidationError(fieldErrors, "Malformed request body");
+  }
+}
 
 /**
  * Domain `MaintenanceDraftInput` → `CreateDraftMaintRequest` /

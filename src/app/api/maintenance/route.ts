@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
-import { mapDraftToCreateRequest } from "@/server/backend/contracts/maintenance-mapper";
+import { mapDraftToCreateRequest, parseDraftBody } from "@/server/backend/contracts/maintenance-mapper";
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
-import type { MaintenanceDraftInput } from "@/domain/maintenance/maintenance";
 
 // A draft body (title, description, steps with rollback text) is small; cap
 // the forwarded payload so a crafted request can't buffer arbitrary memory on
@@ -42,7 +41,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Request body too large", code: "BODY_TOO_LARGE" }, { status: 413 });
     }
 
-    const input = JSON.parse(raw) as MaintenanceDraftInput;
+    // Parse + structurally validate so a malformed/incomplete client body
+    // becomes a 400 here rather than a `TypeError` inside the mapper (or a
+    // `SyntaxError` from JSON.parse) that surfaces as 500 `BFF_ERROR`.
+    const input = parseDraftBody(raw);
     const data = await authenticatedBackendRequest<unknown>({
       path: "/api/v1/maintenances/create",
       method: "POST",

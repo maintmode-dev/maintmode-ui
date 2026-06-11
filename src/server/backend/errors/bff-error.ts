@@ -228,7 +228,7 @@ function defaultMessageForStatus(status: number) {
 
 function defaultHintForStatus(status: number) {
   if (status >= 500) {
-    return "The frontend did not fall back to mock data; check backend availability.";
+    return "The maintmode backend returned an internal error; check the backend logs for this request.";
   }
   return undefined;
 }

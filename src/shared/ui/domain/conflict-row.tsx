@@ -8,22 +8,43 @@ export interface ConflictRowProps {
   trailing?: ReactNode;
   resolved?: boolean;
   onClick?: () => void;
+  /**
+   * Drop the row's own fuchsia accent rail + elevated background — use when the
+   * rows sit inside a section that already carries a single accent bar (e.g. the
+   * quick-sheet CONFLICTS list), so the bars don't double up into two stripes.
+   */
+  flush?: boolean;
   className?: string;
 }
 
 /**
  * Compact row variant of ConflictCard — for lists, drawers, side-panels.
- * Same fuchsia accent rail; row-style interaction (hover bg).
+ * Carries its own fuchsia accent rail by default; pass `flush` to drop it when
+ * the surrounding section already provides one.
  */
-export function ConflictRow({ title, meta, trailing, resolved, onClick, className }: ConflictRowProps) {
+export function ConflictRow({
+  title,
+  meta,
+  trailing,
+  resolved,
+  onClick,
+  flush,
+  className,
+}: ConflictRowProps) {
   const Element = onClick ? "button" : "div";
   return (
     <Element
       type={onClick ? "button" : undefined}
       onClick={onClick}
       className={cn(
-        "w-full text-left flex items-center gap-3 px-3 py-2 rounded-sm border-l-[3px] bg-bg-elev-1 transition-colors",
-        resolved ? "border-l-[var(--status-completed-fg)] opacity-60" : "border-l-[var(--conflict-fg)]",
+        "w-full text-left flex items-center gap-3 px-3 py-2 rounded-sm transition-colors",
+        flush
+          ? "bg-transparent"
+          : cn(
+              "border-l-[3px] bg-bg-elev-1",
+              resolved ? "border-l-[var(--status-completed-fg)] opacity-60" : "border-l-[var(--conflict-fg)]",
+            ),
+        flush && resolved && "opacity-60",
         onClick && "hover:bg-bg-row-hover cursor-pointer",
         className,
       )}

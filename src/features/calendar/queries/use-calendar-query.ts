@@ -12,6 +12,18 @@ export interface CalendarQueryParams {
   from: string;
   /** Inclusive window end as `YYYY-MM-DD` (backend `to`, expanded to end-of-day). */
   to: string;
+  /**
+   * Notify-channel ids to filter by (backend `channel_ids`, RUK-167). Returns
+   * only maintenances that notify at least one of these channels — powers the
+   * ChannelDetailPage "Related maintenance" section. Omit for the full calendar.
+   */
+  channelIds?: string[];
+  /**
+   * Resource ids to filter by (backend `resource_ids`). Returns only
+   * maintenances scoped to at least one of these resources — powers the
+   * ResourceDetailPage "Related maintenance" section. Omit for the full calendar.
+   */
+  resourceIds?: string[];
 }
 
 interface CalendarResponse {
@@ -19,7 +31,12 @@ interface CalendarResponse {
 }
 
 export function calendarKey(p: CalendarQueryParams) {
-  return ["calendar", p.from, p.to] as const;
+  return [
+    "calendar",
+    p.from,
+    p.to,
+    { channelIds: p.channelIds ?? [], resourceIds: p.resourceIds ?? [] },
+  ] as const;
 }
 
 export function useCalendarQuery(params: CalendarQueryParams) {
@@ -29,8 +46,14 @@ export function useCalendarQuery(params: CalendarQueryParams) {
       if (DATA_SOURCE.calendar === "mock") {
         return MOCK_MAINTENANCES;
       }
-      const url = `/api/calendar?from=${encodeURIComponent(params.from)}&to=${encodeURIComponent(params.to)}`;
-      const data = await bffFetch<CalendarResponse>(url);
+      const search = new URLSearchParams({ from: params.from, to: params.to });
+      for (const channelId of params.channelIds ?? []) {
+        if (channelId) search.append("channel_ids", channelId);
+      }
+      for (const resourceId of params.resourceIds ?? []) {
+        if (resourceId) search.append("resource_ids", resourceId);
+      }
+      const data = await bffFetch<CalendarResponse>(`/api/calendar?${search.toString()}`);
       return data.items;
     },
     staleTime: 30_000,

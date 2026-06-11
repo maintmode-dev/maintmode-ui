@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Plus, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Filter, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { isResourceArchived } from "@/domain/resource/resource";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Switch } from "@/shared/ui/shadcn/switch";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Stack } from "@/shared/ui/domain/stack";
-import { formatRelative } from "@/shared/ui/lib/format";
+import { formatUtc } from "@/shared/ui/lib/format";
 
 import { useResourcesQuery } from "./queries/use-resources-query";
 import { ResourceCreateModal } from "./resource-create-modal";
@@ -19,6 +21,7 @@ import { CalendarError } from "@/shared/ui/states";
 const PAGE_SIZE = 50;
 
 export function ResourcesListPage() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
@@ -41,12 +44,22 @@ export function ResourcesListPage() {
   // EC-2: the list is one page; `total` can exceed what's loaded here.
   const hasMore = page ? page.total > resources.length : false;
 
+  // `N active · N archived` caption (contract). Archived rows are only present
+  // once `Show archived` widens the fetch, so the archived count reads 0 until
+  // the toggle is on — accurate to what's loaded.
+  const archivedCount = resources.filter((r) => isResourceArchived(r)).length;
+  const activeCount = resources.length - archivedCount;
+
   return (
     <div className="mx-auto max-w-[1200px] p-6 space-y-4">
       <header className="flex items-end gap-3 flex-wrap">
         <div className="flex-1 min-w-[240px]">
           <h1 className="h1">Resources</h1>
-          <p className="body-sm mt-1">Catalog of services, databases, and clusters tracked by MaintMode.</p>
+          {page ? (
+            <p className="mt-1 font-mono tabular-nums text-xs text-fg-dim">
+              {activeCount} active · {archivedCount} archived
+            </p>
+          ) : null}
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="size-3.5" aria-hidden="true" /> New resource
@@ -60,11 +73,22 @@ export function ResourcesListPage() {
             aria-hidden="true"
           />
           <Input
-            placeholder="Search by name"
+            placeholder="Search resources by name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="pl-8"
+            className="pl-8 pr-8"
+            aria-label="Search resources by name"
           />
+          {query ? (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-fg-dim hover:text-fg"
+            >
+              <X className="size-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Switch id="archived" checked={showArchived} onCheckedChange={setShowArchived} />
@@ -84,23 +108,40 @@ export function ResourcesListPage() {
       ) : resourcesQuery.isError ? (
         <CalendarError onRetry={() => resourcesQuery.refetch()} />
       ) : resources.length === 0 ? (
-        <Stack
-          icon={<Search aria-hidden="true" />}
-          title="No resources match"
-          caption="Adjust the filter or create a new resource."
-          cta={
-            <Button onClick={() => setCreateOpen(true)} size="sm">
-              <Plus className="size-3" aria-hidden="true" /> New resource
-            </Button>
-          }
-        />
+        debouncedQuery ? (
+          <Stack
+            icon={<Filter aria-hidden="true" />}
+            title="No resources match these filters"
+            caption="Adjust the search or clear it to see the full catalog."
+            cta={
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="text-sm text-brand hover:underline"
+              >
+                Clear filters
+              </button>
+            }
+          />
+        ) : (
+          <Stack
+            icon={<Search aria-hidden="true" />}
+            title="No resources yet"
+            caption="Create a resource so maintenance windows have something to schedule against."
+            cta={
+              <Button onClick={() => setCreateOpen(true)} size="sm">
+                <Plus className="size-3" aria-hidden="true" /> New resource
+              </Button>
+            }
+          />
+        )
       ) : (
         <>
           <div className="bg-bg-elev-1 border border-border-subtle rounded-md overflow-hidden">
             <table className="w-full text-left text-sm">
               <thead className="bg-bg-elev-2 border-b border-border-subtle">
                 <tr>
-                  {["Name", "External ID", "Status", "Last updated", ""].map((h, i) => (
+                  {["Name", "Created", ""].map((h, i) => (
                     <th
                       key={i}
                       className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim"
@@ -111,29 +152,53 @@ export function ResourcesListPage() {
                 </tr>
               </thead>
               <tbody>
-                {resources.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-b border-border-subtle last:border-b-0 hover:bg-bg-row-hover"
-                  >
-                    <td className="px-3 py-2.5">
-                      <div className="font-mono text-fg">{r.name}</div>
-                      {r.description ? <div className="text-xs text-fg-dim">{r.description}</div> : null}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono text-fg-muted">{r.external_id || "—"}</td>
-                    <td className="px-3 py-2.5 capitalize text-fg-muted">{r.status}</td>
-                    <td className="px-3 py-2.5 text-fg-muted">{formatRelative(r.updated_at)}</td>
-                    <td className="px-3 py-2.5 w-12 text-right">
-                      <Link
-                        href={`/resources/${r.id}`}
-                        className="text-fg-muted hover:text-fg"
-                        aria-label={`Open ${r.name}`}
-                      >
-                        <ArrowRight className="size-3.5 inline" aria-hidden="true" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {resources.map((r) => {
+                  const archived = isResourceArchived(r);
+                  const href = `/resources/${r.id}`;
+                  const navigate = () => router.push(href);
+                  return (
+                    <tr
+                      key={r.id}
+                      role="link"
+                      tabIndex={0}
+                      aria-label={`Open ${r.name}`}
+                      onClick={navigate}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          navigate();
+                        }
+                      }}
+                      className="group cursor-pointer border-b border-border-subtle last:border-b-0 hover:bg-bg-row-hover focus-visible:bg-bg-row-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-border-strong"
+                    >
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className={archived ? "text-fg-muted" : "text-fg"}>{r.name}</span>
+                          {archived ? (
+                            <span className="inline-flex items-center rounded-full border border-border-subtle bg-bg-elev-3 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.06em] text-fg-muted">
+                              Archived
+                            </span>
+                          ) : null}
+                        </div>
+                        {r.description ? <div className="text-xs text-fg-dim">{r.description}</div> : null}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-fg-muted">
+                        {formatUtc(r.created_at)}
+                      </td>
+                      <td className="px-3 py-2.5 w-12 text-right">
+                        <Link
+                          href={href}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-fg-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                        >
+                          <ChevronRight className="size-3.5 inline" aria-hidden="true" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

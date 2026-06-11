@@ -16,13 +16,13 @@ describe("projectInvitationPreview", () => {
       suggested_provider: "google",
       email: "victim@corp.test",
       roles: ["admin"],
-      invited_by: { id: "u-1", handle: "boss" },
+      inviter: { id: "u-1", email: "boss@corp.test", display_name: "Boss" },
     });
 
     expect(result).toEqual({ status: "valid", suggested_provider: "google" });
     expect(result).not.toHaveProperty("email");
     expect(result).not.toHaveProperty("roles");
-    expect(result).not.toHaveProperty("invited_by");
+    expect(result).not.toHaveProperty("inviter");
   });
 
   it.each(["valid", "invalid", "expired", "accepted", "revoked"])(

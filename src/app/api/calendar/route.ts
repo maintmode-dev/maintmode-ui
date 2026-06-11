@@ -10,15 +10,17 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
  *
  * The backend requires `from`/`to` as `YYYY-MM-DD` dates (not ISO datetimes),
  * as an inclusive day range (`to` is expanded to end-of-day server-side), and
- * optionally accepts repeated `statuses` / `resource_ids` filters. It
+ * optionally accepts repeated `statuses` / `resource_ids` / `channel_ids`
+ * filters (the last powers the ChannelDetailPage "Related maintenance" section —
+ * backend RUK-167). It
  * answers with `uimodels.CalendarViewResponse` (`{ events, meta }`), which the
  * `mapCalendarResponse` adapter projects into the domain `Maintenance[]` the
  * UI's `useCalendarQuery` expects under `{ items }`.
  *
  * Inputs are sanitized before forwarding: `from`/`to` must match `YYYY-MM-DD`
  * (anything else is dropped, leaving the backend to apply its defaults), and
- * the repeated `statuses`/`resource_ids` filters are capped so a crafted
- * request can't amplify into an unbounded backend query string.
+ * the repeated `statuses`/`resource_ids`/`channel_ids` filters are capped so a
+ * crafted request can't amplify into an unbounded backend query string.
  */
 const DATE_PARAM = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_FILTER_VALUES = 100;
@@ -40,6 +42,7 @@ export async function GET(request: Request) {
     if (to && DATE_PARAM.test(to)) backendQuery.set("to", to);
     forwardFilter(backendQuery, "statuses", url.searchParams.getAll("statuses"));
     forwardFilter(backendQuery, "resource_ids", url.searchParams.getAll("resource_ids"));
+    forwardFilter(backendQuery, "channel_ids", url.searchParams.getAll("channel_ids"));
 
     const qs = backendQuery.toString();
     const dto = await authenticatedBackendRequest<CalendarViewResponseDto>({

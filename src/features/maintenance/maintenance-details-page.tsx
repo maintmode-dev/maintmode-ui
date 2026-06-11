@@ -2,7 +2,17 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, CircleSlash, Edit2, History, Play, PlayCircle, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  CircleSlash,
+  Edit2,
+  History,
+  Play,
+  PlayCircle,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
@@ -11,17 +21,21 @@ import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
 import { StatusBadge } from "@/shared/ui/domain/status-badge";
 import { ImpactBadge } from "@/shared/ui/domain/impact-badge";
 import { ResourceChip } from "@/shared/ui/domain/resource-chip";
+import { ChannelChip } from "@/shared/ui/domain/channel-chip";
 import { StepRow } from "@/shared/ui/domain/step-row";
 import { ConflictCard, ConflictGridItem } from "@/shared/ui/domain/conflict-card";
 import { DetailsError, DetailsForbidden, DetailsLoading, DetailsNotFound } from "@/shared/ui/states";
-import { formatRange, formatDateTime } from "@/shared/ui/lib/format";
+import { formatRange, formatDuration, formatUtc } from "@/shared/ui/lib/format";
+import { cn } from "@/shared/ui/lib/cn";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
 import { CancelMaintenanceDialog } from "./cancel-maintenance-dialog";
+import { MaintenanceQuickSheet } from "./maintenance-quick-sheet";
 import { MaintenanceEditMode } from "./maintenance-edit-mode";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useCancelMaintenance, useMaintenanceAction } from "./queries/use-maintenance-actions";
-import type { CancelReason } from "@/domain/maintenance/maintenance";
+import { useStepAction } from "./queries/use-step-actions";
+import type { CancelReason, MaintenanceDetail } from "@/domain/maintenance/maintenance";
 
 export interface MaintenanceDetailsPageProps {
   /** Existing maintenance id. Omit when `creating` (no entity exists yet). */
@@ -82,9 +96,13 @@ function MaintenanceDetailView({ id }: { id: string }) {
   const query = useMaintenanceDetailQuery(id);
   const actionMutation = useMaintenanceAction();
   const cancelMutation = useCancelMaintenance();
+  const stepMutation = useStepAction();
 
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [cancelOpen, setCancelOpen] = useState(false);
+  // A clicked conflict opens the conflicting maintenance in the quick-sheet
+  // peek (not a full-page navigation).
+  const [conflictPeekId, setConflictPeekId] = useState<string | null>(null);
 
   if (query.isPending) return <DetailsLoading />;
   if (query.isError) {
@@ -118,6 +136,12 @@ function MaintenanceDetailView({ id }: { id: string }) {
             </Link>
             <span aria-hidden="true">·</span>
             <span>{detail.reference ?? detail.id}</span>
+            <Link
+              href={`/maintenance/${detail.id}/audit`}
+              className="ml-auto flex items-center gap-1 hover:text-fg"
+            >
+              <History className="size-3" aria-hidden="true" /> View history →
+            </Link>
           </div>
           <div className="flex items-start gap-3">
             <h1 className="h1 flex-1">{detail.title}</h1>
@@ -133,86 +157,110 @@ function MaintenanceDetailView({ id }: { id: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={detail.status} />
             <ImpactBadge impact={detail.impact} />
-            <span className="text-xs text-fg-dim">Updated {formatDateTime(detail.updated_at)}</span>
+            <span className="font-mono tabular-nums text-xs text-fg-dim">
+              Updated {formatUtc(detail.updated_at)}
+            </span>
           </div>
         </header>
 
         {mode === "edit" ? (
           <MaintenanceEditMode detail={detail} onClose={() => setMode("view")} />
         ) : (
-          <div className="space-y-6">
-            <Section label="Time">
-              <div className="flex items-center gap-3">
-                <span className="font-mono tabular-nums">
-                  {formatRange(detail.planned_period.start, detail.planned_period.end)}
-                </span>
-                <span className="text-fg-dim">planned</span>
-                {detail.actual_period ? (
-                  <>
-                    <Separator orientation="vertical" className="h-4" />
+          <div className="space-y-4">
+            {/* Fields grouped into 3 semantic cards (regroup 2026-06-11):
+                Overview (when + who-acts) · Impact & targets (scope/impact/
+                resources/notify) · Plan (description + steps). Author moved to
+                the Metadata block below; Approver — the active lifecycle role —
+                lives in Overview. */}
+
+            {/* ── CARD 1 · OVERVIEW (time + approver) ── */}
+            <Card label="Overview">
+              <div className="grid grid-cols-2 gap-4">
+                <Section label="Time" className="col-span-2">
+                  <div className="flex flex-wrap items-center gap-3">
                     <span className="font-mono tabular-nums">
-                      {formatRange(detail.actual_period.start, detail.actual_period.end)}
+                      {formatRange(detail.planned_period.start, detail.planned_period.end)}
                     </span>
-                    <span className="text-fg-dim">actual</span>
-                  </>
+                    <span className="text-fg-dim">planned</span>
+                    {detail.actual_period ? (
+                      <>
+                        <Separator orientation="vertical" className="h-4" />
+                        <span className="font-mono tabular-nums">
+                          {formatRange(detail.actual_period.start, detail.actual_period.end)}
+                        </span>
+                        <span className="text-fg-dim">actual</span>
+                      </>
+                    ) : null}
+                  </div>
+                </Section>
+                <Section label="Approver">
+                  {detail.approver ? (
+                    <span className="font-mono">{detail.approver}</span>
+                  ) : (
+                    <span className="text-fg-dim">—</span>
+                  )}
+                </Section>
+              </div>
+            </Card>
+
+            {/* ── CARD 2 · IMPACT & TARGETS ── */}
+            <Card label="Impact & targets">
+              <div className="grid grid-cols-2 gap-4">
+                <Section label="Scope">
+                  <span className="capitalize">{detail.scope}</span>
+                </Section>
+                <Section label="Impact">
+                  <ImpactBadge impact={detail.impact} />
+                </Section>
+                {detail.scope !== "global" ? (
+                  <Section label="Resources" className="col-span-2">
+                    {detail.resources.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {detail.resources.map((r) => (
+                          <ResourceChip key={r.id} name={r.name} type={r.type} />
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-fg-dim">—</span>
+                    )}
+                  </Section>
                 ) : null}
+                <Section label="Notify channels" className="col-span-2">
+                  {detail.notify_targets.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {detail.notify_targets.map((c) => (
+                        <ChannelChip key={c.id} name={c.name} transport={c.transport} />
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-fg-dim">—</span>
+                  )}
+                </Section>
               </div>
-            </Section>
+            </Card>
 
-            <Section label="Scope">
-              <span className="capitalize">{detail.scope}</span>
-            </Section>
-
-            <Section label="Impact">
-              <ImpactBadge impact={detail.impact} />
-            </Section>
-
-            <Section label="People">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-1">
-                <span className="flex items-center gap-2">
-                  <span className="text-fg-dim">Author</span>
-                  <span>{detail.created_by ?? "Unknown user"}</span>
-                </span>
-                {detail.approver ? (
-                  <span className="flex items-center gap-2">
-                    <span className="text-fg-dim">Approver</span>
-                    <span>{detail.approver}</span>
-                  </span>
-                ) : null}
-              </div>
-            </Section>
-
-            <Section label="Resources">
-              <div className="flex flex-wrap gap-1.5">
-                {detail.resources.map((r) => (
-                  <ResourceChip key={r.id} name={r.name} type={r.type} />
-                ))}
-              </div>
-            </Section>
-
-            {detail.description ? (
-              <Section label="Description">
-                <p className="text-fg leading-relaxed m-0">{detail.description}</p>
+            {/* ── CARD 3 · PLAN (description + steps) ── */}
+            <Card label="Plan">
+              {detail.description ? (
+                <Section label="Description">
+                  <p className="text-fg leading-relaxed m-0">{detail.description}</p>
+                </Section>
+              ) : null}
+              <Section label={`Steps · ${detail.steps.length}`}>
+                <StepsView
+                  detail={detail}
+                  pending={stepMutation.isPending}
+                  onStepAction={(stepId, action) =>
+                    stepMutation.mutate({ maintenanceId: detail.id, stepId, action })
+                  }
+                />
               </Section>
-            ) : null}
+            </Card>
 
-            <Section label="Steps">
-              <div>
-                {detail.steps.length === 0 ? (
-                  <p className="caption">No steps defined.</p>
-                ) : (
-                  detail.steps.map((s, i) => (
-                    <StepRow
-                      key={s.id}
-                      number={s.order ?? i + 1}
-                      title={s.title}
-                      duration={s.duration}
-                      state={s.status}
-                    />
-                  ))
-                )}
-              </div>
-            </Section>
+            {/* METADATA — collapsed note below the cards. Carries Author
+                (created_by) + rev + created_at. Snapshot id isn't on the read
+                payload, so it's omitted rather than faked. */}
+            <MetadataBlock detail={detail} />
           </div>
         )}
 
@@ -245,20 +293,19 @@ function MaintenanceDetailView({ id }: { id: string }) {
               {detail.conflicts.length}
             </span>
           ) : null}
-          <Link
-            href={`/maintenance/${detail.id}/audit`}
-            className="ml-auto text-xs text-fg-muted hover:text-fg flex items-center gap-1"
-          >
-            <History className="size-3" aria-hidden="true" /> Audit log
-          </Link>
         </header>
-        {detail.conflicts.length === 0 ? (
+        {mode === "edit" ? (
+          // No conflict-preview endpoint in MVP: dim the panel and tell the
+          // operator conflicts are recomputed when the edit is saved.
+          <p className="caption opacity-60">Conflicts will be recalculated after save.</p>
+        ) : detail.conflicts.length === 0 ? (
           <p className="caption">No overlapping maintenances detected.</p>
         ) : (
           <div className="space-y-3">
             {detail.conflicts.map((c) => (
               <ConflictCard
                 key={c.maintenance_id}
+                onClick={() => setConflictPeekId(c.maintenance_id)}
                 title={c.title}
                 meta={formatRange(c.overlap_start, c.overlap_end)}
                 details={
@@ -282,6 +329,8 @@ function MaintenanceDetailView({ id }: { id: string }) {
         open={cancelOpen}
         onOpenChange={setCancelOpen}
         maintenanceTitle={detail.title}
+        maintenanceRef={detail.reference ?? detail.id}
+        maintenanceStatus={detail.status}
         pending={cancelMutation.isPending}
         onConfirm={(reason: CancelReason, comment: string) => {
           cancelMutation.mutate(
@@ -290,16 +339,157 @@ function MaintenanceDetailView({ id }: { id: string }) {
           );
         }}
       />
+
+      <MaintenanceQuickSheet
+        maintenanceId={conflictPeekId}
+        open={conflictPeekId !== null}
+        onOpenChange={(o) => !o && setConflictPeekId(null)}
+      />
     </article>
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
+function Section({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <section className="space-y-2">
+    <section className={cn("space-y-2", className)}>
       <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">{label}</div>
       <div className="text-sm text-fg">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Bordered semantic card grouping a set of fields under an uppercase label.
+ * `--bg-elev-2` + `--border` + `--radius-lg`, per the regroup contract.
+ */
+function Card({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-bg-elev-2 p-5 space-y-4">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Collapsed METADATA note below the cards. Author (created_by) + rev +
+ * created_at — passive record-metadata, moved out of the body. Snapshot id is
+ * not exposed on the read payload, so it's omitted (not faked).
+ */
+function MetadataBlock({ detail }: { detail: MaintenanceDetail }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="pt-1">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim hover:text-fg"
+      >
+        <ChevronDown
+          className={cn("size-3 transition-transform", !open && "-rotate-90")}
+          aria-hidden="true"
+        />
+        Metadata
+      </button>
+      {open ? (
+        <div className="mt-2 text-xs text-fg-muted leading-relaxed">
+          author <span className="font-mono">{detail.created_by ?? "Unknown user"}</span>
+          {detail.revision != null ? (
+            <>
+              {" · "}rev <span className="font-mono">{detail.revision}</span>
+            </>
+          ) : null}
+          <br />
+          created <span className="font-mono tabular-nums">{formatUtc(detail.created_at)}</span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Steps list for the details page. Every step is click-to-expand in ANY status
+ * (regroup 2026-06-11) so the rollback plan is readable before the maintenance
+ * starts. The running step (in_progress) is auto-expanded and carries its
+ * Complete/Cancel runtime controls; other steps expand to their Rollback.
+ */
+function StepsView({
+  detail,
+  pending,
+  onStepAction,
+}: {
+  detail: MaintenanceDetail;
+  pending: boolean;
+  onStepAction: (stepId: string, action: "start" | "complete" | "cancel") => void;
+}) {
+  const runningIdx = detail.steps.findIndex((s) => s.status === "in_progress");
+  const [openIdx, setOpenIdx] = useState<number | null>(runningIdx >= 0 ? runningIdx : null);
+  // Re-seed the open step to the running one when it changes (e.g. after a step
+  // completes and the next starts) — adjusted during render, not in an effect,
+  // so in_progress keeps the running step auto-expanded without a cascade.
+  const [seenRunningIdx, setSeenRunningIdx] = useState(runningIdx);
+  if (runningIdx !== seenRunningIdx) {
+    setSeenRunningIdx(runningIdx);
+    setOpenIdx(runningIdx >= 0 ? runningIdx : null);
+  }
+
+  if (detail.steps.length === 0) return <p className="caption">No steps defined.</p>;
+
+  return (
+    <div>
+      {detail.steps.map((s, i) => {
+        const isOpen = openIdx === i;
+        const isRunning = s.status === "in_progress";
+        const rollback = s.rollback_description?.trim() || undefined;
+        return (
+          <StepRow
+            key={s.id}
+            number={s.order ?? i + 1}
+            title={s.title}
+            duration={formatDuration(s.duration)}
+            state={s.status}
+            onClick={() => setOpenIdx(isOpen ? null : i)}
+            rollback={
+              isOpen ? (
+                <span className="space-y-2 block">
+                  <span className="block">{rollback ?? "No rollback plan recorded."}</span>
+                  {isRunning && detail.status === "in_progress" ? (
+                    <span className="flex items-center gap-1.5 pt-1">
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => onStepAction(s.id, "complete")}
+                        disabled={pending}
+                      >
+                        <Check className="size-3" aria-hidden="true" /> Complete
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => onStepAction(s.id, "cancel")}
+                        disabled={pending}
+                        className="text-[var(--destructive-fg)] hover:bg-[var(--destructive-bg)]"
+                      >
+                        <X className="size-3" aria-hidden="true" /> Skip
+                      </Button>
+                    </span>
+                  ) : null}
+                </span>
+              ) : undefined
+            }
+          />
+        );
+      })}
+    </div>
   );
 }
 
@@ -313,6 +503,8 @@ function ActionBar({
   pending,
 }: {
   detail: {
+    status: string;
+    steps: { status: string }[];
     actions: {
       can_edit: boolean;
       can_cancel: boolean;
@@ -329,6 +521,13 @@ function ActionBar({
   pending: boolean;
 }) {
   const a = detail.actions;
+  // The maintenance can't complete while any step is non-terminal — the backend
+  // gates `can_complete` on it. Explain the stuck Complete so the operator knows
+  // to finish the steps above (the per-step controls in the Steps section).
+  const completeBlockedBySteps =
+    detail.status === "in_progress" &&
+    !a.can_complete &&
+    detail.steps.some((s) => s.status === "pending" || s.status === "in_progress");
   return (
     <footer className="sticky bottom-0 -mx-8 px-8 py-3 mt-6 border-t border-border-subtle bg-bg-elev-1 flex items-center gap-2">
       {a.can_edit ? (
@@ -344,7 +543,7 @@ function ActionBar({
           disabled={pending}
           className="text-[var(--destructive-fg)] hover:bg-[var(--destructive-bg)]"
         >
-          <X className="size-3.5" aria-hidden="true" /> Cancel
+          <X className="size-3.5" aria-hidden="true" /> Cancel maintenance
         </Button>
       ) : null}
       <div className="ml-auto flex items-center gap-2">
@@ -360,10 +559,20 @@ function ActionBar({
         ) : null}
         {a.can_complete ? (
           <Button size="sm" onClick={onComplete} disabled={pending}>
-            <Play className="size-3.5" aria-hidden="true" /> Complete
+            <Play className="size-3.5" aria-hidden="true" /> Complete maintenance
           </Button>
+        ) : completeBlockedBySteps ? (
+          <span className="caption inline-flex items-center gap-1">
+            <CircleSlash className="size-3" aria-hidden="true" /> Finish all steps to complete this
+            maintenance
+          </span>
         ) : null}
-        {!a.can_edit && !a.can_cancel && !a.can_approve && !a.can_start && !a.can_complete ? (
+        {!a.can_edit &&
+        !a.can_cancel &&
+        !a.can_approve &&
+        !a.can_start &&
+        !a.can_complete &&
+        !completeBlockedBySteps ? (
           <span className="caption inline-flex items-center gap-1">
             <CircleSlash className="size-3" aria-hidden="true" /> No actions available
           </span>

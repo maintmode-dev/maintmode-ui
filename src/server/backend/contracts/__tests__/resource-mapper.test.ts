@@ -25,8 +25,25 @@ describe("mapResource", () => {
       external_id: undefined,
       status: "",
       created_at: "",
+      created_by: undefined,
       updated_at: "",
+      updated_by: undefined,
     });
+  });
+
+  it("maps created_by / updated_by authorship summaries (RUK-169)", () => {
+    const mapped = mapResource({
+      id: "r-3",
+      name: "orders-db",
+      created_by: { id: "u-1", email: "maria@x.io", display_name: "Maria Lopez" },
+      updated_by: { id: "u-2", email: "ivan@x.io", display_name: "Ivan K" },
+    });
+    expect(mapped.created_by).toEqual({ id: "u-1", email: "maria@x.io", displayName: "Maria Lopez" });
+    expect(mapped.updated_by).toEqual({ id: "u-2", email: "ivan@x.io", displayName: "Ivan K" });
+  });
+
+  it("drops an empty authorship summary to undefined", () => {
+    expect(mapResource({ id: "r-4", name: "x", created_by: {} }).created_by).toBeUndefined();
   });
 });
 

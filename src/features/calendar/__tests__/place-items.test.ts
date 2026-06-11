@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Maintenance } from "@/domain/maintenance/maintenance";
 
-import { placeItems } from "../place-items";
+import { MAX_LANES, placeItems, placeDayItems, placeWeek } from "../place-items";
 
 // Build a local-time anchor for Monday 2026-05-25 00:00 in the runner's TZ.
 // We intentionally avoid `Z` so tests are stable regardless of TZ — the
@@ -21,6 +21,7 @@ function mk(id: string, startIso: string, endIso: string): Maintenance {
     scope: "global",
     planned_period: { start: startIso, end: endIso },
     resources: [],
+    notify_targets: [],
     steps: [],
     created_at: startIso,
     updated_at: startIso,
@@ -97,5 +98,51 @@ describe("placeItems", () => {
     const blip = mk("blip", iso(2026, 5, 26, 10), new Date(2026, 4, 26, 10, 0, 30).toISOString());
     const placed = placeItems([blip], monday);
     expect(placed[0].heightPct).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("placeWeek overflow", () => {
+  it("caps visible lanes at MAX_LANES and collapses the rest into a marker", () => {
+    // 6 events all at the same minute → 6 lanes, but only MAX_LANES render.
+    const items = Array.from({ length: 6 }, (_, n) =>
+      mk(`e${n}`, iso(2026, 5, 26, 16), iso(2026, 5, 26, 17)),
+    );
+    const { placed, overflow } = placeWeek(items, monday);
+    expect(placed).toHaveLength(MAX_LANES);
+    expect(placed.every((p) => p.lanes === MAX_LANES)).toBe(true);
+    expect(placed.every((p) => p.lane < MAX_LANES)).toBe(true);
+    expect(overflow).toHaveLength(1);
+    expect(overflow[0].dayIdx).toBe(1); // Tue
+    expect(overflow[0].count).toBe(6 - MAX_LANES);
+  });
+
+  it("produces no overflow marker when overlaps fit within MAX_LANES", () => {
+    const items = Array.from({ length: MAX_LANES }, (_, n) =>
+      mk(`e${n}`, iso(2026, 5, 26, 16), iso(2026, 5, 26, 17)),
+    );
+    const { placed, overflow } = placeWeek(items, monday);
+    expect(placed).toHaveLength(MAX_LANES);
+    expect(overflow).toEqual([]);
+  });
+});
+
+describe("placeDayItems", () => {
+  const tuesday = new Date(2026, 4, 26, 0, 0, 0);
+
+  it("keeps only the events that fall on the given day, all at dayIdx 0", () => {
+    const onDay = mk("on", iso(2026, 5, 26, 10), iso(2026, 5, 26, 11));
+    const otherDay = mk("off", iso(2026, 5, 27, 10), iso(2026, 5, 27, 11));
+    const placed = placeDayItems([onDay, otherDay], tuesday);
+    expect(placed).toHaveLength(1);
+    expect(placed[0].m.id).toBe("on");
+    expect(placed[0].dayIdx).toBe(0);
+  });
+
+  it("still lane-assigns overlapping same-day events", () => {
+    const a = mk("a", iso(2026, 5, 26, 9), iso(2026, 5, 26, 11));
+    const b = mk("b", iso(2026, 5, 26, 10), iso(2026, 5, 26, 12));
+    const placed = placeDayItems([a, b], tuesday);
+    expect(placed).toHaveLength(2);
+    expect(placed.map((p) => p.lane).sort()).toEqual([0, 1]);
   });
 });

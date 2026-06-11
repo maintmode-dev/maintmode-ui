@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, LogOut, Settings as SettingsIcon, Sun, Moon } from "lucide-react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/app/theme-provider";
 import { useSyncExternalStore } from "react";
 
+import { signOutAction } from "@/server/auth/auth-actions";
 import { cn } from "@/shared/ui/lib/cn";
 import { Button } from "@/shared/ui/shadcn/button";
 import {
@@ -86,9 +87,13 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <form action="/api/auth/logout" method="post" className="contents">
-                    <button type="submit" className="contents text-left">
+                {/* Don't let Radix close the menu on select — that unmounts the
+                    form before the submit dispatches and the sign-out never
+                    fires. preventDefault keeps the item mounted; the server
+                    action runs and redirects to /login. */}
+                <DropdownMenuItem onSelect={(e) => e.preventDefault()} className="p-0">
+                  <form action={signOutAction} className="w-full">
+                    <button type="submit" className="flex w-full items-center gap-2 px-2 py-1.5 text-left">
                       <LogOut className="size-3.5" aria-hidden="true" /> Sign out
                     </button>
                   </form>

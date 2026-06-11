@@ -9,9 +9,20 @@
  * never has to guard against missing `name`/`status`/timestamps.
  */
 
-import type { Resource } from "@/domain/resource/resource";
+import type { Resource, ResourceActor } from "@/domain/resource/resource";
 
-import type { ListResourcesResponseDto, ResourceDto } from "./maintmode-dto";
+import type { ListResourcesResponseDto, ResourceDto, UserSummaryDto } from "./maintmode-dto";
+
+/** `uimodels.UserSummary` → domain actor, dropping the summary entirely when empty. */
+function mapActor(dto: UserSummaryDto | undefined): ResourceActor | undefined {
+  if (!dto) return undefined;
+  if (dto.id == null && dto.email == null && dto.display_name == null) return undefined;
+  return {
+    id: dto.id,
+    email: dto.email,
+    displayName: dto.display_name,
+  };
+}
 
 /** Domain projection of one resource list/detail item. */
 export interface ResourceList {
@@ -34,7 +45,9 @@ export function mapResource(dto: ResourceDto): Resource {
     // backend never sent — defaulting to "active" could mask an archived row.
     status: dto.status ?? "",
     created_at: dto.created_at ?? "",
+    created_by: mapActor(dto.created_by),
     updated_at: dto.updated_at ?? "",
+    updated_by: mapActor(dto.updated_by),
   };
 }
 

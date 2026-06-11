@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   formatDate,
   formatDateTime,
+  formatDuration,
   formatRange,
   formatRelative,
   formatTime,
+  formatUtc,
 } from "../format";
 
 // Regression: the backend returns `updated_at: ""` for never-updated rows.
@@ -39,6 +41,48 @@ describe("date formatters tolerate empty/invalid input", () => {
   it("formatRelative does not throw on bad input", () => {
     for (const v of bad) expect(() => formatRelative(v)).not.toThrow();
     expect(formatRelative("")).toBe("—");
+  });
+
+  it("formatUtc does not throw on bad/empty input", () => {
+    for (const v of bad) expect(() => formatUtc(v)).not.toThrow();
+    expect(formatUtc("")).toBe("—");
+    expect(formatUtc(null)).toBe("—");
+    expect(formatUtc(undefined)).toBe("—");
+  });
+});
+
+describe("formatDuration renders compact step durations", () => {
+  it("collapses Go-style zero components", () => {
+    expect(formatDuration("2h0m0s")).toBe("2h");
+    expect(formatDuration("90m0s")).toBe("1h30m");
+    expect(formatDuration("0m30s")).toBe("30s");
+  });
+  it("reads a bare integer as minutes", () => {
+    expect(formatDuration("120")).toBe("2h");
+    expect(formatDuration("5")).toBe("5m");
+  });
+  it("parses ISO-8601 PT durations", () => {
+    expect(formatDuration("PT1H30M")).toBe("1h30m");
+    expect(formatDuration("PT45M")).toBe("45m");
+  });
+  it("returns undefined for empty/missing input", () => {
+    expect(formatDuration(undefined)).toBeUndefined();
+    expect(formatDuration("")).toBeUndefined();
+  });
+  it("passes through an unparseable string unchanged", () => {
+    expect(formatDuration("soon")).toBe("soon");
+  });
+});
+
+describe("formatUtc renders the project ISO-UTC convention", () => {
+  it("emits `YYYY-MM-DD HH:mm UTC` in UTC regardless of viewer locale", () => {
+    // 2026-06-09T10:05:00Z → fixed UTC wall-clock, zero-padded, ` UTC` suffix.
+    expect(formatUtc("2026-06-09T10:05:00Z")).toBe("2026-06-09 10:05 UTC");
+  });
+
+  it("does not shift the instant into the local timezone", () => {
+    // Midnight UTC must read 00:00, not a local-offset hour.
+    expect(formatUtc("2026-01-01T00:00:00Z")).toBe("2026-01-01 00:00 UTC");
   });
 });
 

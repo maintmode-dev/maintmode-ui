@@ -1,6 +1,7 @@
-import { Bell, Hash, Mail, Send } from "lucide-react";
+import { Bell, Mail, Send } from "lucide-react";
 import type { ComponentType } from "react";
 
+import { SlackGlyph } from "@/shared/ui/icons/slack-glyph";
 import { cn } from "@/shared/ui/lib/cn";
 
 /**
@@ -23,7 +24,7 @@ interface TransportVisual {
 
 const TRANSPORTS: Record<string, TransportVisual> = {
   slack: {
-    icon: Hash,
+    icon: SlackGlyph,
     className:
       "text-[var(--transport-slack-fg)] bg-[var(--transport-slack-bg)] border-[var(--transport-slack-border)]",
   },

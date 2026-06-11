@@ -22,6 +22,22 @@ const FULL_FMT = new Intl.DateTimeFormat("en-US", {
   hour12: false,
 });
 
+/**
+ * Project-wide identity timestamp format: `YYYY-MM-DD HH:mm UTC`, rendered in
+ * UTC (not the viewer's locale) so a stamp reads the same for everyone. Pair
+ * with `font-mono tabular-nums` at the call site. This is the canonical format
+ * for list "Created" columns and detail identity cards / meta rows.
+ */
+const UTC_FMT = new Intl.DateTimeFormat("en-GB", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+  timeZone: "UTC",
+});
+
 /** Placeholder for an empty/invalid timestamp (e.g. backend `updated_at: ""`). */
 const NO_DATE = "—";
 
@@ -49,26 +65,60 @@ export function formatDateTime(iso: string): string {
   const date = parseDate(iso);
   return date ? FULL_FMT.format(date) : NO_DATE;
 }
+/**
+ * Identity timestamp as `YYYY-MM-DD HH:mm UTC`. `Intl` with `en-GB` yields
+ * `DD/MM/YYYY, HH:mm`; reorder to ISO and append the ` UTC` suffix so the
+ * convention is unambiguous regardless of viewer locale.
+ */
+export function formatUtc(iso: string | null | undefined): string {
+  const date = parseDate(iso);
+  if (!date) return NO_DATE;
+  const parts = UTC_FMT.formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} UTC`;
+}
 export function formatRange(startIso: string, endIso: string): string {
   return `${formatTime(startIso)} – ${formatTime(endIso)}`;
 }
 
-/** "5m", "12m", "1h 30m" — for step duration display. */
+/**
+ * Compact step-duration text: "5m", "1h", "1h30m". Collapses zero components so
+ * Go's `time.Duration` serialization ("2h0m0s", "90m0s") and the ISO-8601 form
+ * (PT5M, PT1H30M) both render as the contract's short style. A bare integer is
+ * read as minutes ("120" → "2h"). Returns the input unchanged if unparseable.
+ */
 export function formatDuration(input?: string): string | undefined {
-  if (!input) return undefined;
-  // Already a plain "5m" / "1h 30m"? Return as-is.
-  if (/^[\d hms]+$/i.test(input.trim())) return input.trim();
-  // ISO 8601: PT5M, PT1H30M, PT45S
-  const m = input.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
-  if (!m) return input;
-  const h = Number(m[1] ?? 0);
-  const min = Number(m[2] ?? 0);
-  const s = Number(m[3] ?? 0);
+  if (input == null) return undefined;
+  const trimmed = String(input).trim();
+  if (!trimmed) return undefined;
+
+  let h = 0;
+  let min = 0;
+  let s = 0;
+
+  // Bare integer → minutes ("120" → 2h).
+  if (/^\d+$/.test(trimmed)) {
+    min = Number(trimmed);
+  } else {
+    // Go-style "2h0m0s" / "90m" or ISO-8601 "PT1H30M". One regex covers both
+    // (the leading "PT" is optional and case-insensitive).
+    const m = trimmed.match(/^(?:PT)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+    if (!m || !(m[1] || m[2] || m[3])) return trimmed;
+    h = Number(m[1] ?? 0);
+    min = Number(m[2] ?? 0);
+    s = Number(m[3] ?? 0);
+  }
+
+  // Normalize 60+ minutes into hours so "90m" reads "1h30m".
+  h += Math.floor(min / 60);
+  min %= 60;
+
   const parts: string[] = [];
   if (h) parts.push(`${h}h`);
   if (min) parts.push(`${min}m`);
   if (!parts.length && s) parts.push(`${s}s`);
-  return parts.join(" ");
+  if (!parts.length) parts.push("0m");
+  return parts.join("");
 }
 
 export function formatRelative(iso: string): string {

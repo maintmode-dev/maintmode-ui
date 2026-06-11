@@ -11,10 +11,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/shared/ui/shadcn/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
+import { Combobox, type ComboboxOption } from "@/shared/ui/domain/combobox";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
-import { Textarea } from "@/shared/ui/shadcn/textarea";
 
 import { useCreateNotifyChannel } from "./queries/use-notify-channels-query";
 import { useTransportsQuery } from "./queries/use-transports-query";
@@ -47,6 +46,26 @@ export function NotifyChannelCreateModal({ open, onOpenChange }: NotifyChannelCr
   const createChannel = useCreateNotifyChannel();
 
   const descriptor = transport ? transportDescriptor(transport) : null;
+
+  // Each option renders glyph + title + a one-line description, matching the
+  // channel-create snapshot's reason-picker-style popover (and inheriting the
+  // Combobox's autofocus search + `No results` empty state). `searchValue`
+  // keeps both the id and title filterable as the catalog grows (BE-11).
+  const transportOptions: ComboboxOption[] = transports.map((t) => {
+    const d = transportDescriptor(t.id);
+    const Glyph = d.icon;
+    return {
+      value: t.id,
+      searchValue: `${t.title} ${t.id}`,
+      label: (
+        <span className="flex items-center gap-2">
+          <Glyph className="size-3.5 shrink-0 text-fg-muted" aria-hidden={true} />
+          {t.title}
+        </span>
+      ),
+      description: d.channelIdLabel,
+    };
+  });
 
   const reset = () => {
     setName("");
@@ -94,6 +113,16 @@ export function NotifyChannelCreateModal({ open, onOpenChange }: NotifyChannelCr
   const channelIdLabel = descriptor?.channelIdLabel ?? "Channel ID";
   const canSubmit = !!name.trim() && !!transport && !!channelId.trim() && !createChannel.isPending;
 
+  // Footer contextual hint (contract): priority-ordered nudge toward the next
+  // required field, then a ready confirmation once the form can submit.
+  const footerHint = !name.trim()
+    ? "Enter a name to continue."
+    : !transport
+      ? "Select a transport to continue."
+      : !channelId.trim()
+        ? `Enter the ${channelIdLabel.toLowerCase()} to continue.`
+        : "Notifications will be sent to this channel.";
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
@@ -127,34 +156,30 @@ export function NotifyChannelCreateModal({ open, onOpenChange }: NotifyChannelCr
             label="Description (optional)"
             htmlFor="c-desc"
             help="Optional. Metadata only — not a runbook."
+            counter={`${description.length} / 200`}
           >
-            <Textarea
+            <Input
               id="c-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="e.g. Notifies the on-call team"
               maxLength={200}
-              rows={2}
             />
           </NotifyChannelField>
 
           <NotifyChannelField
             label="Transport"
-            htmlFor="c-transport"
             help="Where notifications are delivered. Picking one sets the field below."
           >
-            <Select value={transport} onValueChange={handleTransportChange}>
-              <SelectTrigger id="c-transport" className="w-full">
-                <SelectValue placeholder="Select a transport…" />
-              </SelectTrigger>
-              <SelectContent>
-                {transports.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Combobox
+              value={transport}
+              onChange={handleTransportChange}
+              options={transportOptions}
+              placeholder="Select a transport…"
+              searchPlaceholder={`Search ${transportOptions.length} transports…`}
+              emptyText="No transports match your search."
+              ariaLabel="Select a transport"
+            />
           </NotifyChannelField>
 
           <NotifyChannelField
@@ -175,18 +200,21 @@ export function NotifyChannelCreateModal({ open, onOpenChange }: NotifyChannelCr
             />
           </NotifyChannelField>
 
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleOpenChange(false)}
-              disabled={createChannel.isPending}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!canSubmit}>
-              {createChannel.isPending ? "Creating…" : "Create channel"}
-            </Button>
+          <DialogFooter className="sm:justify-between sm:items-center">
+            <p className="text-xs text-fg-dim">{footerHint}</p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+                disabled={createChannel.isPending}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!canSubmit}>
+                {createChannel.isPending ? "Creating…" : "Create channel"}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

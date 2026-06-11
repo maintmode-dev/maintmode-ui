@@ -36,6 +36,23 @@ describe("normalizeRouteError", () => {
     });
   });
 
+  it("hints at backend logs (not mock fallback) for backend 5xx without its own hint", () => {
+    expect(
+      normalizeRouteError(
+        new BackendRequestError(
+          500,
+          JSON.stringify({ code: "internal error", message: "complete maintenance failed" }),
+        ),
+      ),
+    ).toEqual({
+      error: "complete maintenance failed",
+      code: "internal error",
+      hint: "The maintmode backend returned an internal error; check the backend logs for this request.",
+      fieldErrors: undefined,
+      status: 500,
+    });
+  });
+
   it("does not hide internal TypeError bugs as backend outages", () => {
     expect(normalizeRouteError(new TypeError("adapter bug"))).toEqual({
       error: "Unexpected BFF error",

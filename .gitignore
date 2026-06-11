@@ -22,3 +22,4 @@ deployment/*/app.env
 
 tsconfig.tsbuildinfo
 .claude/skills
+smoke-run/

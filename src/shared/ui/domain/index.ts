@@ -7,6 +7,15 @@ export type { SkeletonProps } from "./skeleton";
 export { StatusBadge, STATUS_LABEL } from "./status-badge";
 export type { MaintenanceStatus, StatusBadgeProps } from "./status-badge";
 
+export { ArchiveStatusPill } from "./archive-status-pill";
+export type { ArchiveStatusPillProps } from "./archive-status-pill";
+
+export { CopyField } from "./copy-field";
+export type { CopyFieldProps } from "./copy-field";
+
+export { SemanticPill } from "./semantic-pill";
+export type { SemanticPillProps, SemanticTone } from "./semantic-pill";
+
 export { ImpactBadge, IMPACT_LABEL } from "./impact-badge";
 export type { ImpactLevel, ImpactBadgeProps } from "./impact-badge";
 
@@ -15,6 +24,9 @@ export type { ChipProps } from "./chip";
 
 export { ResourceChip } from "./resource-chip";
 export type { ResourceChipProps, ResourceType } from "./resource-chip";
+
+export { ChannelChip } from "./channel-chip";
+export type { ChannelChipProps } from "./channel-chip";
 
 export { ConflictCard, ConflictGridItem } from "./conflict-card";
 export type { ConflictCardProps, ConflictGridItemProps, ConflictState } from "./conflict-card";

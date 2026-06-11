@@ -52,7 +52,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       useAuthBase: true,
     });
 
-    const events = mapAuditLogResponse(dto).filter(
+    const events = mapAuditLogResponse(dto).events.filter(
       (event) => event.entity_id === id || event.target_id === id,
     );
 
