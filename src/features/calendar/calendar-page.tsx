@@ -9,9 +9,7 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
 import { cn } from "@/shared/ui/lib/cn";
 
-import { CalendarWeekGrid } from "./calendar-week-grid";
-import { CalendarDayGrid } from "./calendar-day-grid";
-import { CalendarMonthGrid } from "./calendar-month-grid";
+import { CalendarGrid } from "./calendar-grid";
 import { CalendarSidebar } from "./calendar-sidebar";
 import { applyCalendarFilters, defaultFilterState } from "./calendar-filters";
 import { useCalendarQuery } from "./queries/use-calendar-query";
@@ -99,12 +97,9 @@ export function CalendarPage() {
     setView(next);
   };
 
-  const renderGrid = (gridItems: typeof items) => {
-    if (view === "day") return <CalendarDayGrid day={anchor} items={gridItems} onSelect={setSelectedId} />;
-    if (view === "month")
-      return <CalendarMonthGrid month={anchor} items={gridItems} onSelect={setSelectedId} />;
-    return <CalendarWeekGrid anchor={anchor} items={gridItems} onSelect={setSelectedId} />;
-  };
+  const renderGrid = (gridItems: typeof items) => (
+    <CalendarGrid view={view} anchor={anchor} items={gridItems} onSelect={setSelectedId} />
+  );
 
   return (
     <div className="mx-auto max-w-[1400px] p-6 space-y-4">

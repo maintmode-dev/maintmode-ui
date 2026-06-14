@@ -1,16 +1,25 @@
 /**
  * Display helpers. Keep these purely visual — no business logic.
+ *
+ * All timestamps render in UTC, never the viewer's locale: maintenance windows
+ * are scheduled and reasoned about in UTC across the product (the calendar grid,
+ * the Day-view ` · HH:mm UTC` clock, and identity stamps via `formatUtc` are all
+ * UTC). Formatting times locally here drifted the quick-sheet / detail ranges
+ * off the calendar bar for any non-UTC operator — so these formatters are
+ * pinned to `timeZone: "UTC"` too.
  */
 
 const TIME_FMT = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
+  timeZone: "UTC",
 });
 
 const DATE_FMT = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "2-digit",
+  timeZone: "UTC",
 });
 
 const FULL_FMT = new Intl.DateTimeFormat("en-US", {
@@ -20,6 +29,7 @@ const FULL_FMT = new Intl.DateTimeFormat("en-US", {
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
+  timeZone: "UTC",
 });
 
 /**

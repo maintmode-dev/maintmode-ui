@@ -86,11 +86,25 @@ describe("formatUtc renders the project ISO-UTC convention", () => {
   });
 });
 
-describe("date formatters still work for valid input", () => {
-  it("formats a valid ISO timestamp", () => {
-    // Exact wording depends on locale/TZ; assert it produced a non-placeholder.
-    expect(formatDate("2026-06-09T10:00:00Z")).not.toBe("—");
-    expect(formatDateTime("2026-06-09T10:00:00Z")).not.toBe("—");
-    expect(formatTime("2026-06-09T10:00:00Z")).not.toBe("—");
+describe("date formatters render in UTC, not the viewer's locale", () => {
+  // Pin exact UTC output so a regression back to local time fails on any
+  // machine — the whole product reasons about maintenance windows in UTC, and
+  // these ranges must line up with the calendar grid / Day-view UTC clock.
+  it("formatTime emits the UTC wall-clock", () => {
+    expect(formatTime("2026-06-09T10:00:00Z")).toBe("10:00");
+  });
+
+  it("formatRange emits both bounds in UTC", () => {
+    expect(formatRange("2026-06-09T10:00:00Z", "2026-06-09T11:30:00Z")).toBe("10:00 – 11:30");
+  });
+
+  it("formatDate uses the UTC calendar day at a TZ boundary", () => {
+    // 23:30 UTC is already the 9th in UTC but the 10th in a far-east locale —
+    // must read the UTC day.
+    expect(formatDate("2026-06-09T23:30:00Z")).toBe("Jun 09");
+  });
+
+  it("formatDateTime emits the UTC date and time", () => {
+    expect(formatDateTime("2026-06-09T10:05:00Z")).toBe("Jun 09, 2026, 10:05");
   });
 });
