@@ -90,10 +90,13 @@ describe("bffFetch", () => {
         rejected = true;
       });
 
-    // Yield the microtask queue several times so bffFetch can observe
-    // the response, parse the body, and call `.replace()`.
-    for (let i = 0; i < 8; i += 1) {
-      await Promise.resolve();
+    // bffFetch must observe the response, parse the JSON body, then call
+    // `.replace()` — a chain whose microtask count isn't fixed (Response.json()
+    // can take several turns, especially under CI load). Poll for the actual
+    // redirect rather than guessing a yield count, so the test is deterministic.
+    const deadline = Date.now() + 1000;
+    while (replaceMock.mock.calls.length === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 0));
     }
 
     expect(replaceMock).toHaveBeenCalledTimes(1);
