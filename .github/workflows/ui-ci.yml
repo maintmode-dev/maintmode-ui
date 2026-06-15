@@ -105,5 +105,5 @@ jobs:
           curl -fsSL -X POST \
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/ruko1202/maintmode-deploy/dispatches \
+            https://api.github.com/repos/maintmode-dev/maintmode-deploy/dispatches \
             -d "{\"event_type\":\"deploy-dev\",\"client_payload\":{\"ui_tag\":\"sha-${GITHUB_SHA::7}\"}}"
