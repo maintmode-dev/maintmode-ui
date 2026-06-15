@@ -118,10 +118,13 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   const [start, setStart] = useState(detail ? isoDateTimeLocal(detail.planned_period.start) : "");
   const [approverId, setApproverId] = useState<string | undefined>(undefined);
   const [resourceIds, setResourceIds] = useState<string[]>(() => detail?.resources.map((r) => r.id) ?? []);
-  // The backend UI detail view doesn't expose current notify_targets yet, so
-  // edit can't pre-select them — the operator re-picks. Required either way:
-  // the backend rejects a draft with no channels.
-  const [channelIds, setChannelIds] = useState<string[]>([]);
+  // Hydrate from the loaded draft's notify_targets so Edit pre-selects the
+  // channels already attached (mirrors `resourceIds` above). Without this the
+  // picker opened empty and Save was blocked by the "≥1 channel" rule even
+  // though the draft had a channel — risking a silent loss of the binding.
+  const [channelIds, setChannelIds] = useState<string[]>(
+    () => detail?.notify_targets.map((c) => c.id) ?? [],
+  );
   const [steps, setSteps] = useState<StepDraft[]>(() => detailToSteps(detail));
   const [submitted, setSubmitted] = useState(false);
 

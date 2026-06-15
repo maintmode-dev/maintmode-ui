@@ -11,6 +11,7 @@ import {
   History,
   Play,
   PlayCircle,
+  Power,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -419,10 +420,14 @@ function MetadataBlock({ detail }: { detail: MaintenanceDetail }) {
 /**
  * Steps list for the details page. Every step is click-to-expand in ANY status
  * (regroup 2026-06-11) so the rollback plan is readable before the maintenance
- * starts. The running step (in_progress) is auto-expanded and carries its
- * Complete/Cancel runtime controls; other steps expand to their Rollback.
+ * starts. While the maintenance is in_progress the running step (in_progress)
+ * is auto-expanded and carries its Complete/Cancel runtime controls; the next
+ * pending step carries a Start control. Steps run in order, so only the first
+ * pending step is startable — and only when no step is currently running.
+ *
+ * Exported for component tests (step-lifecycle controls / TC-STEP-01).
  */
-function StepsView({
+export function StepsView({
   detail,
   pending,
   onStepAction,
@@ -432,14 +437,25 @@ function StepsView({
   onStepAction: (stepId: string, action: "start" | "complete" | "cancel") => void;
 }) {
   const runningIdx = detail.steps.findIndex((s) => s.status === "in_progress");
-  const [openIdx, setOpenIdx] = useState<number | null>(runningIdx >= 0 ? runningIdx : null);
-  // Re-seed the open step to the running one when it changes (e.g. after a step
-  // completes and the next starts) — adjusted during render, not in an effect,
-  // so in_progress keeps the running step auto-expanded without a cascade.
-  const [seenRunningIdx, setSeenRunningIdx] = useState(runningIdx);
-  if (runningIdx !== seenRunningIdx) {
-    setSeenRunningIdx(runningIdx);
-    setOpenIdx(runningIdx >= 0 ? runningIdx : null);
+  // The next startable step: the first pending step, but only while the
+  // maintenance is in_progress and nothing else is running (the backend rejects
+  // out-of-order / concurrent starts with 400/409, surfaced as a toast).
+  const nextStartableIdx =
+    detail.status === "in_progress" && runningIdx < 0
+      ? detail.steps.findIndex((s) => s.status === "pending")
+      : -1;
+  // Auto-expand the step that needs attention: the running one if any, else the
+  // next pending step (so its Start control is visible without hunting).
+  const focusIdx = runningIdx >= 0 ? runningIdx : nextStartableIdx;
+  const [openIdx, setOpenIdx] = useState<number | null>(focusIdx >= 0 ? focusIdx : null);
+  // Re-seed the open step to the focused one when it changes (e.g. after a step
+  // completes and the next becomes startable, or is started) — adjusted during
+  // render, not in an effect, so the focused step stays expanded without a
+  // cascade.
+  const [seenFocusIdx, setSeenFocusIdx] = useState(focusIdx);
+  if (focusIdx !== seenFocusIdx) {
+    setSeenFocusIdx(focusIdx);
+    setOpenIdx(focusIdx >= 0 ? focusIdx : null);
   }
 
   if (detail.steps.length === 0) return <p className="caption">No steps defined.</p>;
@@ -449,6 +465,7 @@ function StepsView({
       {detail.steps.map((s, i) => {
         const isOpen = openIdx === i;
         const isRunning = s.status === "in_progress";
+        const isNextStartable = i === nextStartableIdx;
         const rollback = s.rollback_description?.trim() || undefined;
         return (
           <StepRow
@@ -480,6 +497,17 @@ function StepsView({
                         className="text-[var(--destructive-fg)] hover:bg-[var(--destructive-bg)]"
                       >
                         <X className="size-3" aria-hidden="true" /> Skip
+                      </Button>
+                    </span>
+                  ) : isNextStartable ? (
+                    <span className="flex items-center gap-1.5 pt-1">
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => onStepAction(s.id, "start")}
+                        disabled={pending}
+                      >
+                        <Power className="size-3" aria-hidden="true" /> Start step
                       </Button>
                     </span>
                   ) : null}
