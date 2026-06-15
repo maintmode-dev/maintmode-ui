@@ -1,0 +1,109 @@
+name: UI CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/ui-ci.yml"
+      - "src/**"
+      - "public/**"
+      - "scripts/**"
+      - "deployment/**"
+      - "package.json"
+      - "package-lock.json"
+      - "next.config.ts"
+      - "tsconfig.json"
+      - "eslint.config.mjs"
+      - "vitest*.config.ts"
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+
+jobs:
+  verify:
+    name: Lint, contracts, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      # `npm run format` (prettier --check) is intentionally NOT a gate yet —
+      # the tree has pre-existing style drift. Re-add once it's clean.
+      - run: npm run test:contracts
+      - run: npm run test:unit
+      # Build with the same placeholder build-time env the Dockerfile uses, so
+      # the page-data collection step (which initializes the NextAuth config
+      # and validates its env) passes. Real values come from --env-file at run.
+      - run: npm run build
+        env:
+          MAINTMODE_AUTH_SECRET: build-time-placeholder-secret-32chars-min
+          MAINTMODE_APP_BASE_URL: http://localhost:3000
+          MAINTMODE_GOOGLE_OAUTH_CLIENT_ID: build-time-placeholder
+          MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: build-time-placeholder
+
+  image:
+    name: Build image (ui)
+    runs-on: ubuntu-latest
+    # Publish only on main/tag pushes, not PRs (PRs just run verify above).
+    if: github.event_name != 'pull_request'
+    needs:
+      - verify
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}/ui
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/.build/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=ui
+          cache-to: type=gha,mode=max,scope=ui
+
+  # Notify the deploy repo to roll the dev VM with the freshly published image.
+  # Requires a repo secret DEPLOY_DISPATCH_TOKEN: a PAT with `repo` scope on
+  # the maintmode-deploy repo (the default GITHUB_TOKEN can't dispatch across
+  # repos). Skipped automatically if the secret is absent.
+  trigger-deploy:
+    name: Trigger dev deploy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - image
+    steps:
+      - name: repository_dispatch -> maintmode-deploy
+        env:
+          TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "DEPLOY_DISPATCH_TOKEN not set — skipping cross-repo deploy trigger."
+            exit 0
+          fi
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/ruko1202/maintmode-deploy/dispatches \
+            -d "{\"event_type\":\"deploy-dev\",\"client_payload\":{\"ui_tag\":\"sha-${GITHUB_SHA::7}\"}}"
