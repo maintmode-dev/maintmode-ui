@@ -83,27 +83,6 @@ jobs:
           cache-from: type=gha,scope=ui
           cache-to: type=gha,mode=max,scope=ui
 
-  # Notify the deploy repo to roll the dev VM with the freshly published image.
-  # Requires a repo secret DEPLOY_DISPATCH_TOKEN: a PAT with `repo` scope on
-  # the maintmode-deploy repo (the default GITHUB_TOKEN can't dispatch across
-  # repos). Skipped automatically if the secret is absent.
-  trigger-deploy:
-    name: Trigger dev deploy
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs:
-      - image
-    steps:
-      - name: repository_dispatch -> maintmode-deploy
-        env:
-          TOKEN: ${{ secrets.DEPLOY_DISPATCH_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "DEPLOY_DISPATCH_TOKEN not set — skipping cross-repo deploy trigger."
-            exit 0
-          fi
-          curl -fsSL -X POST \
-            -H "Authorization: Bearer ${TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            https://api.github.com/repos/maintmode-dev/maintmode-deploy/dispatches \
-            -d "{\"event_type\":\"deploy-dev\",\"client_payload\":{\"ui_tag\":\"sha-${GITHUB_SHA::7}\"}}"
+  # NOTE: deploys are manual only (maintmode-deploy → Actions → "Deploy dev",
+  # pick services). The UI CI just publishes the image to GHCR; it does not
+  # trigger a deploy.
