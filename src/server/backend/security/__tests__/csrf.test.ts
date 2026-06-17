@@ -43,4 +43,68 @@ describe("isSameOriginRequest", () => {
       isSameOriginRequest(mkRequest({ origin: "https://evil.test", referer: "https://ui.test/page" })),
     ).toBe(false);
   });
+
+  // Behind Caddy `reverse_proxy ui:3000`, request.url is the internal upstream
+  // (http://ui:3000) while the browser sends the public Origin. The forwarded
+  // headers carry the real client-facing origin.
+  describe("behind a reverse proxy (X-Forwarded-*)", () => {
+    const mkProxied = (headers: Record<string, string>) =>
+      new Request("http://ui:3000/api/resources", { method: "POST", headers });
+
+    it("accepts the public Origin reconstructed from X-Forwarded-Host/Proto", () => {
+      expect(
+        isSameOriginRequest(
+          mkProxied({
+            origin: "https://dev.maintmode.dev",
+            "x-forwarded-host": "dev.maintmode.dev",
+            "x-forwarded-proto": "https",
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("accepts the public Referer when Origin is absent", () => {
+      expect(
+        isSameOriginRequest(
+          mkProxied({
+            referer: "https://dev.maintmode.dev/resources",
+            "x-forwarded-host": "dev.maintmode.dev",
+            "x-forwarded-proto": "https",
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("defaults forwarded proto to https when only the host is forwarded", () => {
+      expect(
+        isSameOriginRequest(
+          mkProxied({ origin: "https://dev.maintmode.dev", "x-forwarded-host": "dev.maintmode.dev" }),
+        ),
+      ).toBe(true);
+    });
+
+    it("takes the first host from a comma-separated proxy chain", () => {
+      expect(
+        isSameOriginRequest(
+          mkProxied({
+            origin: "https://dev.maintmode.dev",
+            "x-forwarded-host": "dev.maintmode.dev, internal-lb",
+            "x-forwarded-proto": "https, http",
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("still rejects a cross-origin request even with a forwarded host", () => {
+      expect(
+        isSameOriginRequest(
+          mkProxied({
+            origin: "https://evil.test",
+            "x-forwarded-host": "dev.maintmode.dev",
+            "x-forwarded-proto": "https",
+          }),
+        ),
+      ).toBe(false);
+    });
+  });
 });
