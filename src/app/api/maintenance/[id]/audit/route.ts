@@ -15,10 +15,10 @@ const MAX_AUTH_LOG_LIMIT = 100;
  * GET /api/maintenance/{id}/audit — per-maintenance slice of the auth-service
  * audit log (`GET /api/v1/audit/log`, auth base).
  *
- * The auth endpoint has NO `entity_id`/`target_id` filter — it only supports
- * action/actor/created_at-range filters plus offset/limit pagination over the
- * *global* log. So per-maintenance scoping has to happen here: we fetch a page
- * of the global log and keep the rows whose `entity_id`/`target_id` matches.
+ * The auth endpoint has NO `entity_id` filter — it only supports action/actor/
+ * created_at-range filters plus offset/limit pagination over the *global* log.
+ * So per-maintenance scoping has to happen here: we fetch a page of the global
+ * log and keep the rows whose `entity_id` matches (entity_type `maintenance`).
  *
  * Consequence (until RUK-42 ships a real per-maintenance endpoint): the match
  * runs against a single global page, so we request the largest page the auth
@@ -52,9 +52,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       useAuthBase: true,
     });
 
-    const events = mapAuditLogResponse(dto).events.filter(
-      (event) => event.entity_id === id || event.target_id === id,
-    );
+    const events = mapAuditLogResponse(dto).events.filter((event) => event.entity_id === id);
 
     return NextResponse.json({ events });
   } catch (error) {

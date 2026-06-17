@@ -22,6 +22,7 @@ import { cn } from "@/shared/ui/lib/cn";
 import {
   type AuditAction,
   type AuditEvent,
+  type AuditFieldChange,
   auditActorFull,
   auditActorHandle,
 } from "@/domain/audit/audit-log";
@@ -353,7 +354,7 @@ function AuditRow({ event }: { event: AuditEvent }) {
 
 /**
  * Per-action expanded detail, driven by the structured `metadata` payload:
- * login → IP / User agent / Session (+ Failure reason on `login_failed`);
+ * login → IP / User agent / Session (+ Failure reason on `login.failed`);
  * logout → Session / Kind; role events → Target + a role diff (added/removed)
  * or the assigned role set. Falls back to the one-line `details` summary +
  * timestamp when no metadata is present.
@@ -375,18 +376,22 @@ function ExpandedDetail({ event }: { event: AuditEvent }) {
   // recorded no actor — RUK-174).
   rows.push({ label: "Actor", value: auditActorFull(event) });
 
-  if (event.action === "login_success" || event.action === "login_failed") {
+  if (event.action === "login.success" || event.action === "login.failed") {
     if (m?.ip) rows.push({ label: "IP", value: m.ip });
     if (m?.user_agent) rows.push({ label: "User agent", value: m.user_agent });
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
     if (m?.failure_reason)
       rows.push({ label: "Reason", value: <span className="text-destructive-fg">{m.failure_reason}</span> });
-  } else if (event.action === "logout_success") {
+  } else if (event.action === "logout.success") {
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
     if (m?.logout_kind) rows.push({ label: "Kind", value: m.logout_kind });
+  } else if (event.action.startsWith("maintenance")) {
+    // Maintenance / step lifecycle — title snapshot + per-field diff on update.
+    if (m?.maint_title) rows.push({ label: "Maintenance", value: m.maint_title });
+    if (m?.changes?.length) rows.push({ label: "Changes", value: <ChangeDiff changes={m.changes} /> });
   } else {
     // Role / block events — target identity as a single `name · email` line.
-    const target = joinNameEmail(m?.target_display_name, m?.target_email) || event.target_id;
+    const target = joinNameEmail(m?.target_display_name, m?.target_email) || event.entity_id;
     if (target) rows.push({ label: "Target", value: target });
     if (m?.roles_added?.length)
       rows.push({ label: "Added", value: <RoleDiff roles={m.roles_added} sign="+" /> });
@@ -432,6 +437,22 @@ function RoleDiff({ roles, sign }: { roles: string[]; sign?: "+" | "−" }) {
   );
 }
 
+/** Per-field before/after diff for `maintenance.updated` — `field: old → new`. */
+function ChangeDiff({ changes }: { changes: AuditFieldChange[] }) {
+  return (
+    <span className="flex flex-col gap-1">
+      {changes.map((c, i) => (
+        <span key={`${c.field}-${i}`} className="inline-flex flex-wrap items-center gap-1">
+          <span className="text-fg-dim">{c.field ?? "—"}:</span>
+          <span className="text-destructive-fg line-through">{c.old || "∅"}</span>
+          <span className="text-fg-dim">→</span>
+          <span className="text-[var(--status-completed-fg)]">{c.new || "∅"}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function ActionCell({ action }: { action: AuditAction }) {
   // Dot and label share the action's colour (per the mockup) — one token drives
   // both so they never drift apart.
@@ -458,17 +479,20 @@ function ActorCell({ event }: { event: AuditEvent }) {
 
 /**
  * Target cell — for role/block events the affected user (display name or
- * email); for login events the IP; otherwise the entity/target type or em-dash.
+ * email); for maintenance events the maintenance title; for login events the
+ * IP; otherwise the entity type or em-dash.
  */
 function TargetCell({ event }: { event: AuditEvent }) {
   const m = event.metadata;
   let value: string | undefined;
-  if (event.action === "login_success" || event.action === "login_failed") {
+  if (event.action === "login.success" || event.action === "login.failed") {
     value = m?.ip;
-  } else if (event.action === "logout_success") {
+  } else if (event.action === "logout.success") {
     value = undefined;
+  } else if (event.action.startsWith("maintenance")) {
+    value = m?.maint_title || event.entity_id;
   } else {
-    value = m?.target_display_name || m?.target_email || event.target_type || event.entity_type;
+    value = m?.target_display_name || m?.target_email || event.entity_type;
   }
   if (!value) return <span className="text-fg-dim">—</span>;
   return (

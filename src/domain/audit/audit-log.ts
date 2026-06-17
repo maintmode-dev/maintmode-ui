@@ -1,17 +1,32 @@
 /**
- * Audit actions per the auth service swagger. Flat snake_case wire values —
- * the previous dotted `maintenance.*`/`resource.*`/`user.*` scheme was an
- * invented FE shape and is gone.
+ * Audit actions per the auth service swagger (`entity.AuditAction`). Dotted
+ * lowercase wire values. The set was expanded in RUK-182 with the
+ * `maintenance.*` / `maintenance_step.*` lifecycle actions; the former flat
+ * snake_case scheme (`login_success`, `assigned`, …) is gone.
+ *
+ * Exported as a runtime tuple (not just a type) so consumers — and the
+ * presentation/exhaustiveness tests — can iterate every action; `AuditAction`
+ * is derived from it, keeping the two in lockstep.
  */
-export type AuditAction =
-  | "login_success"
-  | "login_failed"
-  | "logout_success"
-  | "assigned"
-  | "revoked"
-  | "replaced"
-  | "blocked"
-  | "unblocked";
+export const AUDIT_ACTIONS = [
+  "login.success",
+  "login.failed",
+  "logout.success",
+  "roles.changed",
+  "user.blocked",
+  "user.unblocked",
+  "maintenance.created",
+  "maintenance.updated",
+  "maintenance.approved",
+  "maintenance.started",
+  "maintenance.completed",
+  "maintenance.canceled",
+  "maintenance_step.started",
+  "maintenance_step.completed",
+  "maintenance_step.canceled",
+] as const;
+
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
 export interface AuditEvent {
   id: string;
@@ -22,22 +37,29 @@ export interface AuditEvent {
   actor_display_name?: string;
   actor_id?: string;
   action: AuditAction;
-  /** Entity the action targeted, e.g. "user" (backend `entity_type`/`target_type`). */
+  /** Entity the action targeted — `user` | `maintenance` (backend `entity_type`). */
   entity_type?: string;
   entity_id?: string;
-  target_type?: string;
-  target_id?: string;
   /** One-line human summary (fallback display). */
   details?: string;
   /** Structured per-action payload backing the expandable detail grid. */
   metadata?: AuditMetadata;
 }
 
+/** One before/after field diff (backend `AuditLogFieldChange`). */
+export interface AuditFieldChange {
+  field?: string;
+  old?: string;
+  new?: string;
+}
+
 /**
  * Structured per-action detail (backend `AuditLogMetadata`). Fields are
  * populated per action: login → ip/user_agent/session_id (+ failure_reason on
- * `login_failed`); logout → session_id/logout_kind; role events →
- * roles_added/roles_removed/roles + target_display_name/target_email.
+ * `login.failed`); logout → session_id/logout_kind; `roles.changed` /
+ * `user.blocked` / `user.unblocked` → roles_added/roles_removed/roles +
+ * target_display_name/target_email; `maintenance.*` / `maintenance_step.*` →
+ * maint_title (+ changes on `maintenance.updated`).
  */
 export interface AuditMetadata {
   ip?: string;
@@ -50,6 +72,10 @@ export interface AuditMetadata {
   roles_removed?: string[];
   target_display_name?: string;
   target_email?: string;
+  /** Maintenance title snapshot — `maintenance.*` / `maintenance_step.*`. */
+  maint_title?: string;
+  /** Per-field before/after diff — `maintenance.updated`. */
+  changes?: AuditFieldChange[];
 }
 
 /** Category facet counts over the current actor/date window. */
@@ -58,6 +84,7 @@ export interface AuditFacets {
   auth: number;
   roles: number;
   block: number;
+  maintenance: number;
 }
 
 /** One server-filtered page of the audit log. */

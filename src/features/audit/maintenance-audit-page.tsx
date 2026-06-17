@@ -9,6 +9,8 @@ import { AuditEmpty, AuditError, AuditLoading } from "@/shared/ui/states";
 import { formatRelative, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
+import { auditActionLabel } from "@/domain/audit/audit-presentation";
+
 import { useMaintenanceAuditQuery } from "./queries/use-audit-queries";
 import { useMaintenanceDetailQuery } from "@/features/maintenance/queries/use-maintenance-detail-query";
 
@@ -46,7 +48,11 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
         </Link>
         <div className="flex items-baseline gap-2">
           {reference ? <span className="font-mono text-sm text-brand">{reference}</span> : null}
-          {reference ? <span className="text-fg-dim" aria-hidden="true">·</span> : null}
+          {reference ? (
+            <span className="text-fg-dim" aria-hidden="true">
+              ·
+            </span>
+          ) : null}
           <h1 className="h1">{detail?.title ?? id}</h1>
         </div>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -105,8 +111,10 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
                         {formatUtc(e.created_at)}
                       </td>
                       <td className="px-3 py-2">{e.actor}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-fg-muted">{e.action}</td>
-                      <td className="px-3 py-2 text-fg-muted">{e.target_type ?? "—"}</td>
+                      <td className="px-3 py-2 text-xs text-fg-muted">{auditActionLabel(e.action)}</td>
+                      <td className="px-3 py-2 text-fg-muted">
+                        {e.metadata?.maint_title ?? e.entity_type ?? "—"}
+                      </td>
                       <td className="px-3 py-2 w-8">
                         {e.details ? (
                           <button

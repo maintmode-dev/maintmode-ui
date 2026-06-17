@@ -77,6 +77,7 @@ function mockAuditPage(params: AuditQueryParams): AuditPage {
     auth: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "auth")).length,
     roles: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "roles")).length,
     block: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "block")).length,
+    maintenance: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "maintenance")).length,
   };
   return {
     events: filtered.slice(params.offset, params.offset + params.limit),

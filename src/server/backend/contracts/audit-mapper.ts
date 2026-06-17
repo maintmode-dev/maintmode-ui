@@ -4,37 +4,37 @@
  * never sees the `apiauthmodels.AuditLog` wire shape.
  *
  * Reconciliation handled here:
- *  - action  : whitelisted against the flat `AuditAction` enum; unknown wire
+ *  - action  : whitelisted against the dotted `AuditAction` enum; unknown wire
  *              values are dropped (entry skipped) so the UI never renders an
  *              unmapped action label.
  *  - details : carried through as a free-text string (NOT a JSON object).
  *  - actor   : carried through; absent/blank yields `undefined`.
  */
 
+import { AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import type {
   AuditAction,
   AuditEvent,
   AuditFacets,
+  AuditFieldChange,
   AuditMetadata,
   AuditPage,
 } from "@/domain/audit/audit-log";
 
-import type { AuditLogDto, AuditLogMetadataDto, AuditLogResponseDto } from "./maintmode-dto";
+import type {
+  AuditLogDto,
+  AuditLogFieldChangeDto,
+  AuditLogMetadataDto,
+  AuditLogResponseDto,
+} from "./maintmode-dto";
 
-const AUDIT_ACTIONS = new Set<AuditAction>([
-  "login_success",
-  "login_failed",
-  "logout_success",
-  "assigned",
-  "revoked",
-  "replaced",
-  "blocked",
-  "unblocked",
-]);
+// Whitelist derived from the domain tuple — single source of truth, so a new
+// wire action can never be silently accepted without also being a known enum.
+const KNOWN_ACTIONS = new Set<AuditAction>(AUDIT_ACTIONS);
 
 /** Whitelist the wire action against the domain enum; unknown/missing → undefined. */
 export function mapAuditAction(action: string | undefined): AuditAction | undefined {
-  return action && AUDIT_ACTIONS.has(action as AuditAction) ? (action as AuditAction) : undefined;
+  return action && KNOWN_ACTIONS.has(action as AuditAction) ? (action as AuditAction) : undefined;
 }
 
 function trimmed(value: string | undefined): string | undefined {
@@ -45,6 +45,14 @@ function trimmed(value: string | undefined): string | undefined {
 /** Drop empty strings; keep a non-empty array, else undefined. */
 function trimmedList(value: string[] | undefined): string[] | undefined {
   const list = value?.map((v) => v.trim()).filter((v) => v.length > 0);
+  return list && list.length > 0 ? list : undefined;
+}
+
+/** Keep only field-changes that name a field; collapse to undefined when none. */
+function mapChanges(value: AuditLogFieldChangeDto[] | undefined): AuditFieldChange[] | undefined {
+  const list = value
+    ?.map((c): AuditFieldChange => ({ field: trimmed(c.field), old: trimmed(c.old), new: trimmed(c.new) }))
+    .filter((c) => c.field !== undefined);
   return list && list.length > 0 ? list : undefined;
 }
 
@@ -62,6 +70,8 @@ function mapAuditMetadata(dto: AuditLogMetadataDto | undefined): AuditMetadata |
     roles_removed: trimmedList(dto.roles_removed),
     target_display_name: trimmed(dto.target_display_name),
     target_email: trimmed(dto.target_email),
+    maint_title: trimmed(dto.maint_title),
+    changes: mapChanges(dto.changes),
   };
   // Collapse to undefined when every field is empty (login rows with no payload).
   return Object.values(metadata).some((v) => v !== undefined) ? metadata : undefined;
@@ -84,8 +94,6 @@ export function mapAuditLog(dto: AuditLogDto): AuditEvent | null {
     action,
     entity_type: trimmed(dto.entity_type),
     entity_id: trimmed(dto.entity_id),
-    target_type: trimmed(dto.target_type),
-    target_id: trimmed(dto.target_id),
     details: trimmed(dto.details),
     metadata: mapAuditMetadata(dto.metadata),
   };
@@ -97,6 +105,7 @@ function mapAuditFacets(dto: AuditLogResponseDto["facets"]): AuditFacets {
     auth: dto?.auth ?? 0,
     roles: dto?.roles ?? 0,
     block: dto?.block ?? 0,
+    maintenance: dto?.maintenance ?? 0,
   };
 }
 

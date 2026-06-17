@@ -315,33 +315,46 @@ export interface MaintenanceCancelReasonDto {
 }
 
 /**
- * `apiauthmodels.AuditLog` (auth service swagger). `action` is the flat
- * `entity.AuditAction` enum; `details` is a free-text string (NOT a JSON
- * object). Per-maintenance scoping rides on `entity_id`/`target_id`.
+ * `apiauthmodels.AuditLog` (auth service swagger). `action` is the dotted
+ * `entity.AuditAction` enum (e.g. `login.success`, `maintenance.created`);
+ * `details` is a free-text fallback string (NOT a JSON object). Per-maintenance
+ * scoping rides on `entity_id` (`entity_type` is `user` | `maintenance`).
  */
 export interface AuditLogDto {
   id?: string;
   action?: string;
   actor?: string;
   actor_id?: string;
-  /** Human display name of the actor (auth service resolves it). */
+  /** Human display name of the actor at event time (write-time snapshot). */
   actor_display_name?: string;
   created_at?: string;
-  /** One-line human summary (kept for fallback display). */
+  /** One-line human summary (legacy/fallback display). */
   details?: string;
+  /** `entity.AuditEntityType` — `user` | `maintenance`. */
   entity_type?: string;
   entity_id?: string;
-  target_type?: string;
-  target_id?: string;
   /** Structured per-action payload — present on the upgraded contract. */
   metadata?: AuditLogMetadataDto;
 }
 
 /**
+ * `apiauthmodels.AuditLogFieldChange` — one before/after diff entry, set on
+ * `maintenance.updated` (one per changed scalar field).
+ */
+export interface AuditLogFieldChangeDto {
+  field?: string;
+  old?: string;
+  new?: string;
+}
+
+/**
  * `apiauthmodels.AuditLogMetadata` — action-specific structured payload that
  * backs the expandable-row detail grids. Every field is optional; which ones
- * are populated depends on the action (login → ip/user_agent/session_id;
- * logout → session_id/logout_kind; role events → roles_added/removed/target_*).
+ * are populated depends on the action: login → ip/user_agent/session_id
+ * (+failure_reason on `login.failed`); logout → session_id/logout_kind;
+ * `roles.changed`/`user.blocked`/`user.unblocked` → roles_added/removed/roles
+ * + target_*; `maintenance.*`/`maintenance_step.*` → maint_title (+ changes on
+ * `maintenance.updated`).
  */
 export interface AuditLogMetadataDto {
   ip?: string;
@@ -354,6 +367,10 @@ export interface AuditLogMetadataDto {
   roles_removed?: string[];
   target_display_name?: string;
   target_email?: string;
+  /** Maintenance title snapshot — `maintenance.*` / `maintenance_step.*`. */
+  maint_title?: string;
+  /** Per-field before/after diff — `maintenance.updated`. */
+  changes?: AuditLogFieldChangeDto[];
 }
 
 /** `apiauthmodels.AuditFacets` — category counts over the actor/date window. */
@@ -362,6 +379,7 @@ export interface AuditFacetsDto {
   auth?: number;
   roles?: number;
   block?: number;
+  maintenance?: number;
 }
 
 /** `apiauthmodels.AuditLogResponse` — `{ logs, total, facets }`. */

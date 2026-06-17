@@ -6,22 +6,31 @@ import type { AuditAction } from "./audit-log";
  * audit-log snapshot "Action dot colors"): they are semantic signals, not
  * status badges. The `Action` column header + label disambiguate.
  *
- * `blocked` reuses `--impact-full-fg` (distinct red from `login_failed`'s
- * `--destructive-fg`). `unblocked` is not in the frozen table but exists on the
- * wire — given a neutral-positive green so the row reads as a recovery action.
+ * `user.blocked` reuses `--impact-full-fg` (distinct red from `login.failed`'s
+ * `--destructive-fg`). `user.unblocked` is given a neutral-positive green so the
+ * row reads as a recovery action. The `maintenance.*` / `maintenance_step.*`
+ * lifecycle (RUK-182) reuses the same status tokens the calendar/board use so
+ * the dot colour matches the maintenance status it records.
  */
 const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
-  login_success: { label: "Login success", token: "--status-completed-fg" },
-  login_failed: { label: "Login failed", token: "--destructive-fg" },
-  logout_success: { label: "Logout", token: "--fg-dim" },
-  assigned: { label: "Role assigned", token: "--status-planned-fg" },
-  revoked: { label: "Role revoked", token: "--conflict-fg" },
-  replaced: { label: "Roles replaced", token: "--status-in_progress-fg" },
-  blocked: { label: "User blocked", token: "--impact-full-fg" },
-  unblocked: { label: "User unblocked", token: "--status-completed-fg" },
+  "login.success": { label: "Login success", token: "--status-completed-fg" },
+  "login.failed": { label: "Login failed", token: "--destructive-fg" },
+  "logout.success": { label: "Logout", token: "--fg-dim" },
+  "roles.changed": { label: "Roles changed", token: "--status-planned-fg" },
+  "user.blocked": { label: "User blocked", token: "--impact-full-fg" },
+  "user.unblocked": { label: "User unblocked", token: "--status-completed-fg" },
+  "maintenance.created": { label: "Maintenance created", token: "--status-planned-fg" },
+  "maintenance.updated": { label: "Maintenance updated", token: "--status-planned-fg" },
+  "maintenance.approved": { label: "Maintenance approved", token: "--status-in_progress-fg" },
+  "maintenance.started": { label: "Maintenance started", token: "--status-in_progress-fg" },
+  "maintenance.completed": { label: "Maintenance completed", token: "--status-completed-fg" },
+  "maintenance.canceled": { label: "Maintenance canceled", token: "--conflict-fg" },
+  "maintenance_step.started": { label: "Step started", token: "--status-in_progress-fg" },
+  "maintenance_step.completed": { label: "Step completed", token: "--status-completed-fg" },
+  "maintenance_step.canceled": { label: "Step canceled", token: "--conflict-fg" },
 };
 
-/** Humanised action label, e.g. `login_success` → `Login success`. */
+/** Humanised action label, e.g. `login.success` → `Login success`. */
 export function auditActionLabel(action: AuditAction): string {
   return ACTION_META[action].label;
 }
@@ -37,20 +46,33 @@ export function auditActionDotToken(action: AuditAction): string {
  * each category covers a group of wire actions. The row dot-colour still
  * distinguishes the specific event inside the table.
  */
-export type AuditCategory = "all" | "auth" | "roles" | "block";
+export type AuditCategory = "all" | "auth" | "roles" | "block" | "maintenance";
 
 export const AUDIT_CATEGORIES: { id: AuditCategory; label: string }[] = [
   { id: "all", label: "All" },
   { id: "auth", label: "Auth" },
   { id: "roles", label: "Roles" },
   { id: "block", label: "Block" },
+  { id: "maintenance", label: "Maintenance" },
 ];
 
 const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditAction>> = {
-  auth: new Set<AuditAction>(["login_success", "login_failed", "logout_success"]),
-  roles: new Set<AuditAction>(["assigned", "revoked", "replaced"]),
-  // `unblocked` rides with `blocked` — both are user-block lifecycle events.
-  block: new Set<AuditAction>(["blocked", "unblocked"]),
+  auth: new Set<AuditAction>(["login.success", "login.failed", "logout.success"]),
+  roles: new Set<AuditAction>(["roles.changed"]),
+  // `user.unblocked` rides with `user.blocked` — both are user-block lifecycle events.
+  block: new Set<AuditAction>(["user.blocked", "user.unblocked"]),
+  // Maintenance + step lifecycle (RUK-182).
+  maintenance: new Set<AuditAction>([
+    "maintenance.created",
+    "maintenance.updated",
+    "maintenance.approved",
+    "maintenance.started",
+    "maintenance.completed",
+    "maintenance.canceled",
+    "maintenance_step.started",
+    "maintenance_step.completed",
+    "maintenance_step.canceled",
+  ]),
 };
 
 /** Whether an action belongs to the given category (`all` matches everything). */
@@ -61,7 +83,7 @@ export function auditActionInCategory(action: AuditAction, category: AuditCatego
 
 /**
  * Backend `action` filter values for a category — the CSV the server expects
- * (`action=login_success,login_failed,logout_success`). `all` returns an empty
+ * (`action=login.success,login.failed,logout.success`). `all` returns an empty
  * list (no filter). Used to translate a category chip into the wire param.
  */
 export function auditCategoryActions(category: AuditCategory): AuditAction[] {
