@@ -118,14 +118,22 @@ describe("mapAuditLog", () => {
         maint_title: "DB failover drill",
         changes: [
           { field: "title", old: "Old", new: "New" },
+          // kept: only one side set (a value was added / cleared).
+          { field: "description", old: "", new: "Added" },
           // dropped: no field name
           { old: "x", new: "y" },
+          // dropped: both sides blank — the backend emits these no-op entries
+          // for untouched fields; they must not become `∅ → ∅` diff rows.
+          { field: "steps", old: "", new: "  " },
         ],
       },
     });
     expect(event?.metadata).toEqual({
       maint_title: "DB failover drill",
-      changes: [{ field: "title", old: "Old", new: "New" }],
+      changes: [
+        { field: "title", old: "Old", new: "New" },
+        { field: "description", old: undefined, new: "Added" },
+      ],
     });
   });
 

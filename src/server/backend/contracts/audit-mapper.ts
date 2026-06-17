@@ -48,11 +48,17 @@ function trimmedList(value: string[] | undefined): string[] | undefined {
   return list && list.length > 0 ? list : undefined;
 }
 
-/** Keep only field-changes that name a field; collapse to undefined when none. */
+/**
+ * Keep only real field-changes; collapse to undefined when none. A change is
+ * dropped when it names no field, or when both `old` and `new` are blank — the
+ * backend emits such no-op entries for untouched fields on `maintenance.updated`
+ * (e.g. `steps`/`resources` with empty before/after), which would otherwise
+ * render as a meaningless `field: ∅ → ∅` row in the diff.
+ */
 function mapChanges(value: AuditLogFieldChangeDto[] | undefined): AuditFieldChange[] | undefined {
   const list = value
     ?.map((c): AuditFieldChange => ({ field: trimmed(c.field), old: trimmed(c.old), new: trimmed(c.new) }))
-    .filter((c) => c.field !== undefined);
+    .filter((c) => c.field !== undefined && (c.old !== undefined || c.new !== undefined));
   return list && list.length > 0 ? list : undefined;
 }
 

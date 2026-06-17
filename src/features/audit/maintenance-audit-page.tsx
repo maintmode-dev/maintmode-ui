@@ -1,16 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { AuditEmpty, AuditError, AuditLoading } from "@/shared/ui/states";
 import { formatRelative, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
-import { auditActionLabel } from "@/domain/audit/audit-presentation";
+import { auditActionDotToken, auditActionLabel } from "@/domain/audit/audit-presentation";
 
+import { AuditExpandedDetail } from "./audit-expanded-detail";
 import { useMaintenanceAuditQuery } from "./queries/use-audit-queries";
 import { useMaintenanceDetailQuery } from "@/features/maintenance/queries/use-maintenance-detail-query";
 
@@ -37,7 +38,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
   const lastActivity = events.length > 0 ? events[0].created_at : null;
 
   return (
-    <div className="mx-auto max-w-[1200px] p-6 space-y-4">
+    <div className="mx-auto max-w-[1040px] p-6 space-y-4">
       <header className="space-y-2">
         <Link
           href={`/maintenance/${id}`}
@@ -98,57 +99,73 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
             <tbody>
               {events.map((e) => {
                 const open = expanded.has(e.id);
+                const dotColor = `var(${auditActionDotToken(e.action)})`;
+                const toggle = () =>
+                  setExpanded((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(e.id)) next.delete(e.id);
+                    else next.add(e.id);
+                    return next;
+                  });
                 return (
-                  <>
+                  <Fragment key={e.id}>
+                    {/* Whole row toggles the detail block — matches the global
+                        audit log's click-anywhere affordance (the caret is just
+                        an indicator). Every row expands: the shared detail grid
+                        always shows at least Actor + Timestamp + metadata. */}
                     <tr
-                      key={e.id}
                       className={cn(
-                        "border-b border-border-subtle last:border-b-0",
+                        "border-b border-border-subtle last:border-b-0 cursor-pointer hover:bg-bg-row-hover",
                         open && "bg-bg-elev-2/50",
                       )}
+                      onClick={toggle}
+                      onKeyDown={(ev) => {
+                        if (ev.key === "Enter" || ev.key === " ") {
+                          ev.preventDefault();
+                          toggle();
+                        }
+                      }}
+                      tabIndex={0}
+                      role="button"
+                      aria-expanded={open}
                     >
-                      <td className="px-3 py-2 font-mono tabular-nums text-xs text-fg whitespace-nowrap">
+                      <td className="px-3 py-1.5 font-mono tabular-nums text-xs text-fg whitespace-nowrap">
                         {formatUtc(e.created_at)}
                       </td>
-                      <td className="px-3 py-2">{e.actor}</td>
-                      <td className="px-3 py-2 text-xs text-fg-muted">{auditActionLabel(e.action)}</td>
-                      <td className="px-3 py-2 text-fg-muted">
+                      <td className="px-3 py-1.5">{e.actor}</td>
+                      <td className="px-3 py-1.5">
+                        {/* Coloured dot + label, matching the global audit log's
+                            ActionCell — the dot drives quick colour-scan. */}
+                        <span
+                          className="inline-flex items-center gap-2 whitespace-nowrap text-xs"
+                          style={{ color: dotColor }}
+                        >
+                          <span
+                            className="size-2 rounded-full shrink-0"
+                            style={{ background: dotColor }}
+                            aria-hidden="true"
+                          />
+                          {auditActionLabel(e.action)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-fg-muted">
                         {e.metadata?.maint_title ?? e.entity_type ?? "—"}
                       </td>
-                      <td className="px-3 py-2 w-8">
-                        {e.details ? (
-                          <button
-                            type="button"
-                            aria-label={open ? "Collapse details" : "Expand details"}
-                            onClick={() =>
-                              setExpanded((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(e.id)) next.delete(e.id);
-                                else next.add(e.id);
-                                return next;
-                              })
-                            }
-                            className="text-fg-dim hover:text-fg"
-                          >
-                            {open ? (
-                              <ChevronDown className="size-3.5" aria-hidden="true" />
-                            ) : (
-                              <ChevronRight className="size-3.5" aria-hidden="true" />
-                            )}
-                          </button>
-                        ) : null}
+                      <td className="px-3 py-1.5 w-8">
+                        <ChevronRight
+                          className={cn("size-3.5 text-fg-dim transition-transform", open && "rotate-90")}
+                          aria-hidden="true"
+                        />
                       </td>
                     </tr>
-                    {open && e.details ? (
+                    {open ? (
                       <tr className="border-b border-border-subtle bg-bg-elev-2/40">
                         <td colSpan={5} className="px-6 py-3">
-                          <pre className="text-xs font-mono text-fg-muted whitespace-pre-wrap">
-                            {e.details}
-                          </pre>
+                          <AuditExpandedDetail event={e} />
                         </td>
                       </tr>
                     ) : null}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>
