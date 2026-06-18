@@ -19,31 +19,62 @@ import "server-only";
  *    they hit this route (otherwise they'll see a 403 with code
  *    `FORBIDDEN`, not a 401).
  *
- * Behind the reverse proxy (Caddy `reverse_proxy ui:3000`), `request.url`
- * is the *internal* upstream origin (`http://ui:3000`), NOT the public
- * origin the browser used (`https://dev.maintmode.dev`). The browser sends
- * the public origin in `Origin`, so a naive `Origin === request.url.origin`
- * check 403s every same-origin mutation in production. We therefore also
- * accept the public origin reconstructed from the `X-Forwarded-Host` /
- * `X-Forwarded-Proto` headers Caddy sets. This is safe in our single-ingress
- * topology: Caddy is the only path to the container and sets those headers,
- * and a spoofed forwarded host can only match an `Origin` the attacker
- * already controls — it can't make a victim's cross-site `Origin` pass.
+ * Expected origins, in order of trust:
+ *  1. `request.url`'s origin — the direct/local case (dev server on `:3000`,
+ *     or the internal upstream `http://ui:3000` behind the proxy).
+ *  2. The public origin, resolved from EITHER:
+ *     a. `MAINTMODE_APP_BASE_URL` — the configured public origin
+ *        (`https://dev.maintmode.dev`). Authoritative: it comes from server
+ *        config, not request headers, so an attacker cannot influence it. When
+ *        set, the forwarded-header path below is NOT consulted at all.
+ *     b. (fallback, only when 2a is unset) the `X-Forwarded-Host` /
+ *        `X-Forwarded-Proto` reconstruction. Behind Caddy (`reverse_proxy
+ *        ui:3000`) `request.url` is the internal `http://ui:3000`, not the
+ *        public origin the browser sent, so without this a same-origin
+ *        mutation 403s.
+ *
+ * Preferring the configured origin and dropping the forwarded fallback once it
+ * is set removes the dependency on edge header hygiene: a spoofed
+ * `X-Forwarded-Host` can never widen the allow-list in a configured
+ * deployment. The fallback remains safe in our single-ingress topology anyway —
+ * Caddy is the only path to the container and overwrites client-supplied
+ * `X-Forwarded-*` (no `trusted_proxies`) — but configuring 2a is the belt to
+ * that suspenders.
  */
+function configuredPublicOrigin(): string | undefined {
+  const raw = process.env.MAINTMODE_APP_BASE_URL;
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `https`/`http` only — reject anything else (don't silently coerce garbage). */
+function normalizeForwardedProto(value: string | null): "http" | "https" {
+  const proto = value?.split(",")[0].trim().toLowerCase();
+  return proto === "http" ? "http" : "https";
+}
+
+/** Public origin from `X-Forwarded-Host`/`X-Forwarded-Proto`, or undefined. */
+function forwardedOrigin(request: Request): string | undefined {
+  const fwdHost = request.headers.get("x-forwarded-host");
+  if (!fwdHost) return undefined;
+  // X-Forwarded-Host may be a comma-separated list (proxy chain); the first
+  // entry is the original client-facing host.
+  const host = fwdHost.split(",")[0].trim();
+  if (!host) return undefined;
+  return `${normalizeForwardedProto(request.headers.get("x-forwarded-proto"))}://${host}`;
+}
+
 function expectedOrigins(request: Request): string[] {
   const origins = [new URL(request.url).origin];
 
-  const fwdHost = request.headers.get("x-forwarded-host");
-  if (fwdHost) {
-    // X-Forwarded-Host may be a comma-separated list (proxy chain); the first
-    // entry is the original client-facing host.
-    const host = fwdHost.split(",")[0].trim();
-    const proto = (request.headers.get("x-forwarded-proto")?.split(",")[0].trim() || "https").replace(
-      /[^a-z]/gi,
-      "",
-    );
-    if (host) origins.push(`${proto}://${host}`);
-  }
+  // The configured origin is authoritative; only fall back to the (header-
+  // derived, therefore lower-trust) forwarded origin when it is absent.
+  const publicOrigin = configuredPublicOrigin() ?? forwardedOrigin(request);
+  if (publicOrigin) origins.push(publicOrigin);
 
   return origins;
 }

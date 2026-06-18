@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { isSameOriginRequest } from "../csrf";
 
@@ -9,6 +9,17 @@ function mkRequest(headers: Record<string, string>): Request {
 }
 
 describe("isSameOriginRequest", () => {
+  // The base cases below assume no configured public origin, so the check
+  // derives its allow-list from request.url + forwarded headers only.
+  const savedBaseUrl = process.env.MAINTMODE_APP_BASE_URL;
+  beforeEach(() => {
+    delete process.env.MAINTMODE_APP_BASE_URL;
+  });
+  afterEach(() => {
+    if (savedBaseUrl === undefined) delete process.env.MAINTMODE_APP_BASE_URL;
+    else process.env.MAINTMODE_APP_BASE_URL = savedBaseUrl;
+  });
+
   it("accepts same-origin Origin header", () => {
     expect(isSameOriginRequest(mkRequest({ origin: "https://ui.test" }))).toBe(true);
   });
@@ -105,6 +116,70 @@ describe("isSameOriginRequest", () => {
           }),
         ),
       ).toBe(false);
+    });
+
+    it("ignores a blank X-Forwarded-Host and falls back to the direct origin", () => {
+      // Blank forwarded host must NOT produce a bare `https://` allow entry.
+      expect(isSameOriginRequest(mkProxied({ origin: "http://ui:3000", "x-forwarded-host": "   " }))).toBe(
+        true,
+      );
+      expect(isSameOriginRequest(mkProxied({ origin: "https://evil.test", "x-forwarded-host": "   " }))).toBe(
+        false,
+      );
+    });
+
+    it("rejects a forwarded same-host request whose Origin scheme is http", () => {
+      // proto defaults to https, so an http Origin for the same host mismatches.
+      expect(
+        isSameOriginRequest(
+          mkProxied({ origin: "http://dev.maintmode.dev", "x-forwarded-host": "dev.maintmode.dev" }),
+        ),
+      ).toBe(false);
+    });
+
+    it("normalizes an uppercase X-Forwarded-Proto to a valid scheme", () => {
+      expect(
+        isSameOriginRequest(
+          mkProxied({
+            origin: "https://dev.maintmode.dev",
+            "x-forwarded-host": "dev.maintmode.dev",
+            "x-forwarded-proto": "HTTPS",
+          }),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  // The configured public origin (MAINTMODE_APP_BASE_URL) is the authoritative
+  // allow value — it comes from server config, not request headers, so the
+  // check no longer depends on the edge stripping client X-Forwarded-* headers.
+  describe("with a configured public origin (MAINTMODE_APP_BASE_URL)", () => {
+    const mkInternal = (headers: Record<string, string>) =>
+      new Request("http://ui:3000/api/resources", { method: "POST", headers });
+
+    beforeEach(() => {
+      process.env.MAINTMODE_APP_BASE_URL = "https://dev.maintmode.dev";
+    });
+
+    it("accepts the public Origin even with NO forwarded headers", () => {
+      // This is the case the topological fallback could not cover: the configured
+      // origin is trusted directly, no X-Forwarded-Host needed.
+      expect(isSameOriginRequest(mkInternal({ origin: "https://dev.maintmode.dev" }))).toBe(true);
+    });
+
+    it("still rejects a hostile Origin that a spoofed forwarded host tries to whitelist", () => {
+      // Even if an attacker could inject X-Forwarded-Host=evil.test, the browser
+      // sends the victim's real Origin — which is never evil.test. And a hostile
+      // Origin is rejected regardless of the forwarded host.
+      expect(
+        isSameOriginRequest(mkInternal({ origin: "https://evil.test", "x-forwarded-host": "evil.test" })),
+      ).toBe(false);
+    });
+
+    it("ignores a malformed MAINTMODE_APP_BASE_URL (falls back to other origins)", () => {
+      process.env.MAINTMODE_APP_BASE_URL = "not a url";
+      expect(isSameOriginRequest(mkInternal({ origin: "http://ui:3000" }))).toBe(true);
+      expect(isSameOriginRequest(mkInternal({ origin: "https://dev.maintmode.dev" }))).toBe(false);
     });
   });
 });
