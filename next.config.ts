@@ -27,9 +27,10 @@ const nextConfig: NextConfig = {
         // `no-store` on the document keeps the browser/edge from ever reusing a
         // stale HTML→chunk mapping. Static assets under /_next/static keep their
         // own `immutable` year cache (their hashed names make that safe) and are
-        // excluded by the negative lookahead below, as are /_next/image, /api
-        // (BFF handlers own their own cache contract), and hashed static files.
-        source: "/((?!_next/static|_next/image|api/|favicon.ico|.*\\.[\\w]+$).*)",
+        // excluded by the negative lookahead below, as are /_next/image, /api/
+        // (BFF handlers own their own cache contract), and any path ending in a
+        // file extension (`.*\.[\w]+$` — covers favicon.ico and hashed assets).
+        source: "/((?!_next/static|_next/image|api/|.*\\.[\\w]+$).*)",
         headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
       },
     ];
