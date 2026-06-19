@@ -3,48 +3,41 @@
  * day range to fetch, the header period title, anchor snapping, and per-view
  * chevron stepping. Extracted from the page component so the per-view cadence
  * (±1 day / ±7 days / ±1 month) is unit-testable without mounting React.
+ *
+ * Everything here works in **UTC**, never the process/browser timezone. The
+ * whole calendar is UTC (FullCalendar `timeZone:"UTC"`, all formatters pinned to
+ * UTC). Critically, the anchor and its rendered title must be timezone-stable so
+ * that the SSR pass (UTC container) and the first client render (operator's
+ * local TZ) produce identical text — reading `getDate()`/`getDay()` (local) off
+ * an anchor seeded from `new Date()` diverged across the UTC↔local midnight
+ * boundary and tripped a React hydration mismatch (#418) in the Day-view `<h1>`.
  */
 
 export type CalendarView = "day" | "week" | "month";
 
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export function startOfDay(d: Date): Date {
-  const out = new Date(d);
-  out.setHours(0, 0, 0, 0);
-  return out;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
 export function startOfWeek(d: Date): Date {
   const out = startOfDay(d);
-  const day = (out.getDay() + 6) % 7; // Monday start
-  out.setDate(out.getDate() - day);
+  const day = (out.getUTCDay() + 6) % 7; // Monday start
+  out.setUTCDate(out.getUTCDate() - day);
   return out;
 }
 
 /**
- * Local calendar date as `YYYY-MM-DD` (the format the backend's `from`/`to`
- * params require). Uses local Y/M/D components rather than `toISOString()`,
- * which would shift the date across the UTC boundary in non-UTC timezones.
+ * UTC calendar date as `YYYY-MM-DD` (the format the backend's `from`/`to`
+ * params require). Reads UTC components so the param matches the UTC anchor and
+ * the UTC grid — the whole calendar reasons in UTC, so "today" is the UTC day.
  */
 export function toDateParam(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
@@ -55,17 +48,17 @@ export function viewRange(view: CalendarView, anchor: Date): { from: Date; to: D
   }
   if (view === "week") {
     const to = new Date(anchor);
-    to.setDate(to.getDate() + 6);
+    to.setUTCDate(to.getUTCDate() + 6);
     return { from: anchor, to };
   }
   // month: the visible grid runs from the Monday before the 1st to the Sunday
   // after the last day (6 weeks max).
-  const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
-  const dow = (first.getDay() + 6) % 7;
+  const first = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+  const dow = (first.getUTCDay() + 6) % 7;
   const from = new Date(first);
-  from.setDate(from.getDate() - dow);
+  from.setUTCDate(from.getUTCDate() - dow);
   const to = new Date(from);
-  to.setDate(to.getDate() + 41);
+  to.setUTCDate(to.getUTCDate() + 41);
   return { from, to };
 }
 
@@ -77,28 +70,30 @@ export function viewRange(view: CalendarView, anchor: Date): { from: Date; to: D
  */
 export function periodTitle(view: CalendarView, anchor: Date, nowUtc?: Date): string {
   if (view === "day") {
-    const base = `${WEEKDAYS[anchor.getDay()]} ${MONTHS[anchor.getMonth()]} ${anchor.getDate()}, ${anchor.getFullYear()}`;
+    const base = `${WEEKDAYS[anchor.getUTCDay()]} ${MONTHS[anchor.getUTCMonth()]} ${anchor.getUTCDate()}, ${anchor.getUTCFullYear()}`;
     if (!nowUtc) return base;
     const hh = String(nowUtc.getUTCHours()).padStart(2, "0");
     const mm = String(nowUtc.getUTCMinutes()).padStart(2, "0");
     return `${base} · ${hh}:${mm} UTC`;
   }
   if (view === "month") {
-    return `${MONTHS[anchor.getMonth()]} ${anchor.getFullYear()}`;
+    return `${MONTHS[anchor.getUTCMonth()]} ${anchor.getUTCFullYear()}`;
   }
   const end = new Date(anchor);
-  end.setDate(end.getDate() + 6);
-  const left = `${MONTHS[anchor.getMonth()]} ${anchor.getDate()}`;
+  end.setUTCDate(end.getUTCDate() + 6);
+  const left = `${MONTHS[anchor.getUTCMonth()]} ${anchor.getUTCDate()}`;
   const right =
-    anchor.getMonth() === end.getMonth() ? `${end.getDate()}` : `${MONTHS[end.getMonth()]} ${end.getDate()}`;
-  return `${left} — ${right}, ${end.getFullYear()}`;
+    anchor.getUTCMonth() === end.getUTCMonth()
+      ? `${end.getUTCDate()}`
+      : `${MONTHS[end.getUTCMonth()]} ${end.getUTCDate()}`;
+  return `${left} — ${right}, ${end.getUTCFullYear()}`;
 }
 
-/** Snap an arbitrary date to the canonical anchor for a view. */
+/** Snap an arbitrary date to the canonical (UTC) anchor for a view. */
 export function anchorFor(view: CalendarView, d: Date): Date {
   if (view === "day") return startOfDay(d);
   if (view === "week") return startOfWeek(d);
-  return new Date(d.getFullYear(), d.getMonth(), 1);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
 }
 
 /**
@@ -128,8 +123,8 @@ export function anchorOnViewSwitch(
 /** Step the anchor by one unit in the view's natural cadence. */
 export function stepAnchor(view: CalendarView, anchor: Date, dir: 1 | -1): Date {
   const d = new Date(anchor);
-  if (view === "day") d.setDate(d.getDate() + dir);
-  else if (view === "week") d.setDate(d.getDate() + dir * 7);
-  else d.setMonth(d.getMonth() + dir);
+  if (view === "day") d.setUTCDate(d.getUTCDate() + dir);
+  else if (view === "week") d.setUTCDate(d.getUTCDate() + dir * 7);
+  else d.setUTCMonth(d.getUTCMonth() + dir);
   return d;
 }

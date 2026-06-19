@@ -11,7 +11,13 @@ import { cn } from "@/shared/ui/lib/cn";
 
 import { CalendarGrid } from "./calendar-grid";
 import { CalendarSidebar } from "./calendar-sidebar";
-import { applyCalendarFilters, defaultFilterState } from "./calendar-filters";
+import {
+  applyCalendarFilters,
+  defaultFilterState,
+  readStoredFilters,
+  serializeFilters,
+  FILTERS_STORAGE_KEY,
+} from "./calendar-filters";
 import { useCalendarQuery } from "./queries/use-calendar-query";
 import { MaintenanceQuickSheet } from "@/features/maintenance/maintenance-quick-sheet";
 import {
@@ -46,14 +52,17 @@ export function CalendarPage() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    // Mount-time read of a client-only value (localStorage) — the canonical
+    // Mount-time read of client-only values (localStorage) — the canonical
     // hydration-safe pattern, so the synchronous setState here is intentional.
+    // SSR + the first client render both use the defaults (view + filters), then
+    // we adopt the stored selections here once, after mount.
     /* eslint-disable react-hooks/set-state-in-effect */
     const stored = readStoredView();
     if (stored !== DEFAULT_VIEW) {
       setView(stored);
       setAnchor((cur) => anchorFor(stored, cur));
     }
+    setFilters(readStoredFilters());
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
@@ -63,6 +72,15 @@ export function CalendarPage() {
   useEffect(() => {
     if (hydrated) window.localStorage.setItem(VIEW_STORAGE_KEY, view);
   }, [view, hydrated]);
+
+  // Persist the status/scope filters (after hydration) so a refresh restores
+  // them instead of snapping back to the Planned+In-progress default. Resource
+  // selections are intentionally not persisted (see readStoredFilters).
+  useEffect(() => {
+    if (hydrated) {
+      window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(serializeFilters(filters)));
+    }
+  }, [filters, hydrated]);
   // Live UTC clock for the Day-view title suffix (` · HH:mm UTC`). Only the Day
   // title consumes it; tick once a minute so the suffix stays current.
   const [now, setNow] = useState(() => new Date());
