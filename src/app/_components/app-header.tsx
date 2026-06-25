@@ -8,6 +8,7 @@ import { useSyncExternalStore } from "react";
 
 import { signOutAction } from "@/server/auth/auth-actions";
 import { cn } from "@/shared/ui/lib/cn";
+import { MaintMark } from "@/shared/ui/icons/brand-icons";
 import { Button } from "@/shared/ui/shadcn/button";
 import {
   DropdownMenu,
@@ -40,9 +41,11 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
       <div className="mx-auto max-w-[1400px] h-full px-6 flex items-center gap-6">
         <Link href="/" className="flex items-center gap-2 text-fg-strong font-semibold">
           <span
-            className="size-6 rounded-sm bg-accent-soft border border-[var(--accent)]/40"
+            className="flex size-6 items-center justify-center text-[var(--accent-fg)]"
             aria-hidden="true"
-          />
+          >
+            <MaintMark size={20} />
+          </span>
           <span>MaintMode</span>
         </Link>
         <nav className="flex items-center gap-1 text-sm">

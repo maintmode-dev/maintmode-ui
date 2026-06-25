@@ -12,6 +12,7 @@ import { Combobox } from "@/shared/ui/domain/combobox";
 import { DateTimePicker } from "@/shared/ui/domain/date-time-picker";
 import { MultiSelect, type MultiSelectOption } from "@/shared/ui/domain/multi-select";
 import { ResourceChip } from "@/shared/ui/domain/resource-chip";
+import { SectionCard } from "@/shared/ui/domain/section-card";
 import { formatDateTime } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 import type {
@@ -122,9 +123,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // channels already attached (mirrors `resourceIds` above). Without this the
   // picker opened empty and Save was blocked by the "≥1 channel" rule even
   // though the draft had a channel — risking a silent loss of the binding.
-  const [channelIds, setChannelIds] = useState<string[]>(
-    () => detail?.notify_targets.map((c) => c.id) ?? [],
-  );
+  const [channelIds, setChannelIds] = useState<string[]>(() => detail?.notify_targets.map((c) => c.id) ?? []);
   const [steps, setSteps] = useState<StepDraft[]>(() => detailToSteps(detail));
   const [submitted, setSubmitted] = useState(false);
 
@@ -232,6 +231,8 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
 
   return (
     <form className="space-y-5" onSubmit={handleSubmit} noValidate>
+      {/* Title leads, above the cards — mirrors the detail page where the title
+          sits in the header. */}
       <Field label="Title" htmlFor="m-title" error={show("title")}>
         <Input
           id="m-title"
@@ -241,128 +242,141 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
           aria-invalid={Boolean(show("title"))}
         />
       </Field>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Planned start" htmlFor="m-start" error={show("start")}>
-          <DateTimePicker
-            id="m-start"
-            value={start}
-            onChange={setStart}
-            aria-invalid={Boolean(show("start"))}
-            aria-label="Planned start"
+
+      {/* Fields grouped into the same 3 semantic cards as the read-only detail
+          page (Overview / Impact & targets / Plan) so create and view read as
+          one screen in two modes. */}
+      <SectionCard label="Overview">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Planned start" htmlFor="m-start" error={show("start")}>
+            <DateTimePicker
+              id="m-start"
+              value={start}
+              onChange={setStart}
+              aria-invalid={Boolean(show("start"))}
+              aria-label="Planned start"
+            />
+          </Field>
+          <Field label="Planned end" hint="Computed from start + step durations">
+            {/* Derived server-side from the start + step durations; read-only here. */}
+            <div className="flex h-9 items-center rounded-sm border border-border-subtle bg-bg-elev-2 px-3 text-sm text-fg-dim tabular-nums">
+              {detail ? formatDateTime(detail.planned_period.end) : "Calculated on save"}
+            </div>
+          </Field>
+        </div>
+        <Field label="Approver" error={show("approver")}>
+          <Combobox
+            options={approverOptions}
+            value={approverId}
+            onChange={setApproverId}
+            placeholder={detail?.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
+            searchPlaceholder="Search people…"
+            emptyText={assignable.isPending ? "Loading…" : "No people found."}
+            ariaLabel="Approver"
           />
         </Field>
-        <Field label="Planned end" hint="Computed from start + step durations">
-          {/* Derived server-side from the start + step durations; read-only here. */}
-          <div className="flex h-9 items-center rounded-sm border border-border-subtle bg-bg-elev-2 px-3 text-sm text-fg-dim tabular-nums">
-            {detail ? formatDateTime(detail.planned_period.end) : "Calculated on save"}
-          </div>
-        </Field>
-      </div>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="Impact" htmlFor="m-impact">
-          <Select value={impact} onValueChange={(v) => setImpact(v as MaintenanceImpact)}>
-            <SelectTrigger id="m-impact">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No outage</SelectItem>
-              <SelectItem value="partial_outage">Partial outage</SelectItem>
-              <SelectItem value="full_outage">Full outage</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="Scope" htmlFor="m-scope">
-          <Select value={scope} onValueChange={(v) => setScope(v as MaintenanceScope)}>
-            <SelectTrigger id="m-scope">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="global">Global</SelectItem>
-              <SelectItem value="resource">Resource</SelectItem>
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      <Field label="Approver" error={show("approver")}>
-        <Combobox
-          options={approverOptions}
-          value={approverId}
-          onChange={setApproverId}
-          placeholder={detail?.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
-          searchPlaceholder="Search people…"
-          emptyText={assignable.isPending ? "Loading…" : "No people found."}
-          ariaLabel="Approver"
-        />
-      </Field>
-      <Field label="Description" htmlFor="m-desc" error={show("description")}>
-        <Textarea
-          id="m-desc"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          rows={4}
-          placeholder="What's happening and why"
-          aria-invalid={Boolean(show("description"))}
-        />
-      </Field>
-      {scope === "resource" ? (
-        <Field label="Resources" error={show("resources")}>
+      </SectionCard>
+
+      <SectionCard label="Impact & targets">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Scope" htmlFor="m-scope">
+            <Select value={scope} onValueChange={(v) => setScope(v as MaintenanceScope)}>
+              <SelectTrigger id="m-scope">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="global">Global</SelectItem>
+                <SelectItem value="resource">Resource</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Impact" htmlFor="m-impact">
+            <Select value={impact} onValueChange={(v) => setImpact(v as MaintenanceImpact)}>
+              <SelectTrigger id="m-impact">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No outage</SelectItem>
+                <SelectItem value="partial_outage">Partial outage</SelectItem>
+                <SelectItem value="full_outage">Full outage</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+        </div>
+        {scope === "resource" ? (
+          <Field label="Resources" error={show("resources")}>
+            <MultiSelect
+              options={resourceOptions}
+              value={resourceIds}
+              onChange={setResourceIds}
+              placeholder="Select resources…"
+              searchPlaceholder="Search resources…"
+              emptyText={resourcesQuery.isPending ? "Loading…" : "No resources found."}
+              ariaLabel="Resources"
+            />
+            {selectedResources.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {selectedResources.map((r) => (
+                  <ResourceChip
+                    key={r.id}
+                    name={r.name}
+                    onRemove={() => setResourceIds((ids) => ids.filter((id) => id !== r.id))}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </Field>
+        ) : null}
+        <Field label="Notify channels" hint={`At least one, up to ${MAX_CHANNELS}`} error={show("channels")}>
           <MultiSelect
-            options={resourceOptions}
-            value={resourceIds}
-            onChange={setResourceIds}
-            placeholder="Select resources…"
-            searchPlaceholder="Search resources…"
-            emptyText={resourcesQuery.isPending ? "Loading…" : "No resources found."}
-            ariaLabel="Resources"
+            options={channelOptions}
+            value={channelIds}
+            onChange={setChannelIds}
+            placeholder="Select channels…"
+            searchPlaceholder="Search channels…"
+            emptyText={channelsQuery.isPending ? "Loading…" : "No channels configured."}
+            ariaLabel="Notify channels"
           />
-          {selectedResources.length > 0 ? (
+          {selectedChannels.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {selectedResources.map((r) => (
-                <ResourceChip
-                  key={r.id}
-                  name={r.name}
-                  onRemove={() => setResourceIds((ids) => ids.filter((id) => id !== r.id))}
-                />
+              {selectedChannels.map((c) => (
+                <span
+                  key={c.id}
+                  className="inline-flex items-center gap-1.5 rounded-sm border border-border-subtle bg-bg-elev-3 px-2 py-[3px] text-xs text-fg"
+                >
+                  <span className="text-fg-muted">{c.transport}</span>
+                  <span className="font-medium">{c.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setChannelIds((ids) => ids.filter((id) => id !== c.id))}
+                    aria-label={`Remove ${c.name}`}
+                    className="ml-0.5 text-fg-muted hover:text-fg"
+                  >
+                    ✕
+                  </button>
+                </span>
               ))}
             </div>
           ) : null}
         </Field>
-      ) : null}
-      <Field label="Steps" hint="At least one, each ≥ 5 min with a rollback plan" error={show("steps")}>
-        <MaintenanceStepEditor steps={steps} onChange={setSteps} disabled={pending} />
-      </Field>
-      <Field label="Notify channels" hint={`At least one, up to ${MAX_CHANNELS}`} error={show("channels")}>
-        <MultiSelect
-          options={channelOptions}
-          value={channelIds}
-          onChange={setChannelIds}
-          placeholder="Select channels…"
-          searchPlaceholder="Search channels…"
-          emptyText={channelsQuery.isPending ? "Loading…" : "No channels configured."}
-          ariaLabel="Notify channels"
-        />
-        {selectedChannels.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {selectedChannels.map((c) => (
-              <span
-                key={c.id}
-                className="inline-flex items-center gap-1.5 rounded-sm border border-border-subtle bg-bg-elev-3 px-2 py-[3px] text-xs text-fg"
-              >
-                <span className="text-fg-muted">{c.transport}</span>
-                <span className="font-medium">{c.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setChannelIds((ids) => ids.filter((id) => id !== c.id))}
-                  aria-label={`Remove ${c.name}`}
-                  className="ml-0.5 text-fg-muted hover:text-fg"
-                >
-                  ✕
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </Field>
+      </SectionCard>
+
+      <SectionCard label="Plan">
+        <Field label="Description" htmlFor="m-desc" error={show("description")}>
+          <Textarea
+            id="m-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={4}
+            placeholder="What's happening and why"
+            aria-invalid={Boolean(show("description"))}
+          />
+        </Field>
+        <Field label="Steps" hint="At least one, each ≥ 5 min with a rollback plan" error={show("steps")}>
+          <MaintenanceStepEditor steps={steps} onChange={setSteps} disabled={pending} />
+        </Field>
+      </SectionCard>
+
       <footer className="flex items-center gap-2 pt-2 border-t border-border-subtle">
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={pending}>
           {creating ? "Cancel" : "Discard"}

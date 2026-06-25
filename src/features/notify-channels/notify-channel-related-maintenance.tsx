@@ -44,11 +44,7 @@ function toIsoDate(d: Date): string {
 }
 
 /** Active = not-yet-finished (draft / planned / in_progress). Past = terminal. */
-const ACTIVE_STATUSES: ReadonlySet<MaintenanceStatus> = new Set([
-  "draft",
-  "planned",
-  "in_progress",
-]);
+const ACTIVE_STATUSES: ReadonlySet<MaintenanceStatus> = new Set(["draft", "planned", "in_progress"]);
 
 function isActive(m: Maintenance): boolean {
   return ACTIVE_STATUSES.has(m.status);
@@ -95,8 +91,7 @@ export function NotifyChannelRelatedMaintenance({ channelId }: { channelId: stri
             this is a bounded view, not the channel's full history. Surface the
             exact range so `N total` reads as "N in this window", not "N ever". */}
         <p className="text-xs text-fg-dim">
-          Showing maintenance from{" "}
-          <span className="font-mono tabular-nums">{from}</span> to{" "}
+          Showing maintenance from <span className="font-mono tabular-nums">{from}</span> to{" "}
           <span className="font-mono tabular-nums">{to}</span> (UTC)
         </p>
       </div>
@@ -122,9 +117,7 @@ export function NotifyChannelRelatedMaintenance({ channelId }: { channelId: stri
       ) : rows.length === 0 ? (
         <Stack
           icon={<History aria-hidden="true" />}
-          title={
-            tab === "active" ? "No active maintenance for this channel" : "No past maintenance yet"
-          }
+          title={tab === "active" ? "No active maintenance for this channel" : "No past maintenance yet"}
           caption={
             tab === "active"
               ? "Maintenance windows that notify this channel will appear here."

@@ -68,9 +68,7 @@ export function ResourceCreateModal({ open, onOpenChange }: ResourceCreateModalP
       <SheetContent side="right" className="sm:max-w-[560px] flex flex-col gap-0 p-0">
         <SheetHeader className="px-6 pt-6 pb-3 gap-1">
           <SheetTitle className="h2">New resource</SheetTitle>
-          <SheetDescription>
-            Add a service, database, or cluster MaintMode should track.
-          </SheetDescription>
+          <SheetDescription>Add a service, database, or cluster MaintMode should track.</SheetDescription>
         </SheetHeader>
         <Separator />
         <form className="flex flex-1 flex-col overflow-hidden" onSubmit={submit}>

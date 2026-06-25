@@ -69,7 +69,9 @@ export function useStepAction() {
           return;
         }
         if (error.status === 404) {
-          toast.error(`Couldn't ${VERB[action]} step: the step or maintenance no longer exists. Refresh and try again.`);
+          toast.error(
+            `Couldn't ${VERB[action]} step: the step or maintenance no longer exists. Refresh and try again.`,
+          );
           queryClient.invalidateQueries({ queryKey: maintenanceDetailKey(maintenanceId) });
           return;
         }

@@ -14,11 +14,7 @@ import type { ComponentProps } from "react";
  * icon (`fill: none; stroke: currentColor`) so it sits flush with the Send /
  * Bell transport glyphs in the same pill.
  */
-export function SlackGlyph({
-  className,
-  "aria-hidden": ariaHidden = true,
-  ...props
-}: ComponentProps<"svg">) {
+export function SlackGlyph({ className, "aria-hidden": ariaHidden = true, ...props }: ComponentProps<"svg">) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"

@@ -45,7 +45,7 @@ const SCOPE_OPTIONS: { value: ScopeFilter; label: string }[] = [
 ];
 
 export interface CalendarSidebarProps {
-  /** The full (unfiltered) window of maintenances — drives resource options + Up next. */
+  /** The status-filtered window of maintenances (status is server-filtered) — drives resource options + Up next. */
   items: Maintenance[];
   filters: CalendarFilterState;
   onFiltersChange: (next: CalendarFilterState) => void;
@@ -72,7 +72,17 @@ export function CalendarSidebar({ items, filters, onFiltersChange, now, onSelect
 
   const upNext = useMemo(() => upcomingItems(items, now), [items, now]);
 
+  // The single remaining active status can't be cleared: an empty set sends no
+  // `statuses` param, which the backend reads as "all statuses" — so deselecting
+  // everything would paradoxically show MORE, not an empty calendar. Keeping ≥1
+  // active mirrors `readStoredFilters`, which likewise rejects an empty persisted
+  // set. One derived predicate so the guard (toggleStatus) and the affordance
+  // (disabled chip) can't drift.
+  const isLastActiveStatus = (status: MaintenanceStatus) =>
+    filters.statuses.has(status) && filters.statuses.size === 1;
+
   const toggleStatus = (status: MaintenanceStatus) => {
+    if (isLastActiveStatus(status)) return;
     const next = new Set(filters.statuses);
     if (next.has(status)) next.delete(status);
     else next.add(status);
@@ -101,17 +111,23 @@ export function CalendarSidebar({ items, filters, onFiltersChange, now, onSelect
         <div className="flex flex-wrap gap-1.5">
           {STATUS_ORDER.map((status) => {
             const active = filters.statuses.has(status);
+            // Disable the last active chip so the no-clear rule is visible, not a
+            // silent no-op click.
+            const isLastActive = isLastActiveStatus(status);
             return (
               <button
                 key={status}
                 type="button"
                 onClick={() => toggleStatus(status)}
                 aria-pressed={active}
+                disabled={isLastActive}
+                title={isLastActive ? "At least one status must stay selected" : undefined}
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
                   active
                     ? STATUS_CHIP_ON[status]
                     : "border-border-subtle bg-transparent text-fg-dim hover:text-fg-muted hover:border-border",
+                  isLastActive && "cursor-not-allowed opacity-60",
                 )}
               >
                 <span

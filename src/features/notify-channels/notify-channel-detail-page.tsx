@@ -125,7 +125,10 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
             <DT>{descriptor.channelIdLabel}</DT>
             <DD>
               {channel.transportChannelId ? (
-                <CopyField value={channel.transportChannelId} label={`Copy ${descriptor.channelIdLabel.toLowerCase()}`} />
+                <CopyField
+                  value={channel.transportChannelId}
+                  label={`Copy ${descriptor.channelIdLabel.toLowerCase()}`}
+                />
               ) : (
                 "—"
               )}

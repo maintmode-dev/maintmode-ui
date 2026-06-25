@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
@@ -24,6 +24,15 @@ export interface CalendarQueryParams {
    * ResourceDetailPage "Related maintenance" section. Omit for the full calendar.
    */
   resourceIds?: string[];
+  /**
+   * Statuses to keep (backend `statuses`, repeated). The backend filters by
+   * status server-side (verified), so the calendar sends its active status set
+   * here instead of filtering client-side — that keeps `items` equal to what the
+   * grid shows on the status axis. Omit (or pass empty) for all statuses.
+   * NOTE: `scope` is intentionally NOT a query param — the backend ignores it,
+   * so scope stays a client-side filter (see calendar-filters.ts).
+   */
+  statuses?: string[];
 }
 
 interface CalendarResponse {
@@ -35,7 +44,14 @@ export function calendarKey(p: CalendarQueryParams) {
     "calendar",
     p.from,
     p.to,
-    { channelIds: p.channelIds ?? [], resourceIds: p.resourceIds ?? [] },
+    {
+      channelIds: p.channelIds ?? [],
+      resourceIds: p.resourceIds ?? [],
+      // Sort so the key is stable regardless of the status set's insertion order
+      // (toggling chips builds the array in different orders) — equivalent
+      // filters must share a cache entry instead of refetching.
+      statuses: [...(p.statuses ?? [])].sort(),
+    },
   ] as const;
 }
 
@@ -53,10 +69,18 @@ export function useCalendarQuery(params: CalendarQueryParams) {
       for (const resourceId of params.resourceIds ?? []) {
         if (resourceId) search.append("resource_ids", resourceId);
       }
+      for (const status of params.statuses ?? []) {
+        if (status) search.append("statuses", status);
+      }
       const data = await bffFetch<CalendarResponse>(`/api/calendar?${search.toString()}`);
       return data.items;
     },
     staleTime: 30_000,
+    // Keep the previous window's data on screen while the next one loads, so
+    // stepping prev/next (or switching view) doesn't unmount the grid and flash
+    // the `CalendarLoading` skeleton ("Day 1/2/3…") on every navigation. The
+    // full skeleton then only shows on the very first load (no prior data).
+    placeholderData: keepPreviousData,
     // Don't hammer the backend on auth/permission failures: a 401 means the
     // session is dead (bffFetch already redirects to /login), and a 403 is
     // terminal. Retrying those just amplifies a bad state.

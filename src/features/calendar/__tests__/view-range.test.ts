@@ -48,10 +48,55 @@ describe("anchorOnViewSwitch", () => {
     expect(anchorFor("month", a).getUTCMonth()).not.toBe(5); // not June (today's month)
   });
 
-  it("falls back to the generic snap for non-Day targets (Day → Week)", () => {
+  it("lands on today's week when switching Month → Week and today is in the visible month", () => {
+    // Regression: this used to jump to the FIRST week of the month (anchor = the
+    // 1st → its week), ignoring today even though it was in view.
+    const monthAnchor = anchorFor("month", today); // Jun 1
+    const a = anchorOnViewSwitch("month", "week", monthAnchor, today);
+    expect(a.getUTCDate()).toBe(8); // Monday of today's week (Jun 8–14), not Jun 1
+    expect(a.getUTCMonth()).toBe(5);
+  });
+
+  it("keeps the period's week when switching Month → Week and today is OUT of view", () => {
+    const awayMonth = anchorFor("month", new Date(Date.UTC(2026, 8, 15))); // Sep 1
+    const a = anchorOnViewSwitch("month", "week", awayMonth, today);
+    // Falls back to the week of the away-month's first visible day, NOT today's.
+    expect(a.getUTCMonth()).not.toBe(5); // not June
+  });
+
+  it("falls back to the generic snap when WIDENING (Day → Week)", () => {
+    // Day → Week is widening, so the land-on-today rule does not apply.
     const dayAnchor = anchorFor("day", today);
     const a = anchorOnViewSwitch("day", "week", dayAnchor, today);
     expect(a.getUTCDate()).toBe(8); // Monday of the week — same as anchorFor
+  });
+
+  it("lands on today when today is the LAST visible day of the month grid (inclusive edge)", () => {
+    // Pin the `t <= startOfDay(to)` inclusive upper edge. The June 2026 grid runs
+    // Mon Jun 1 … Sun Jul 5; pick a `today` on that last visible day (Jul 5) while
+    // the anchor is still June, switching Month → Week. It must land on Jul 5's
+    // week, not fall through to the period's first week.
+    const julyFifth = new Date(Date.UTC(2026, 6, 5)); // Sun Jul 5, in June's 6-week grid
+    const a = anchorOnViewSwitch("month", "week", anchorFor("month", wed), julyFifth);
+    // startOfWeek(Jul 5) = Mon Jun 29.
+    expect(a.getUTCMonth()).toBe(5); // June
+    expect(a.getUTCDate()).toBe(29);
+  });
+
+  it("ignores today when WIDENING Week → Month (generic snap)", () => {
+    // Week → Month is widening (a distinct WIDTH comparison from Day → Week).
+    const weekAnchor = anchorFor("week", today);
+    const a = anchorOnViewSwitch("week", "month", weekAnchor, today);
+    // Snaps to the month's 1st, regardless of today.
+    expect(a.getUTCDate()).toBe(1);
+    expect(a.getUTCMonth()).toBe(5);
+  });
+
+  it("treats a same-view switch as the generic snap (Day → Day)", () => {
+    // narrowing is false (WIDTH equal), so it returns anchorFor(toView, anchor).
+    const dayAnchor = anchorFor("day", wed);
+    const a = anchorOnViewSwitch("day", "day", dayAnchor, today);
+    expect(a.getUTCDate()).toBe(10);
   });
 });
 

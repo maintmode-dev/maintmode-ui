@@ -82,12 +82,24 @@
   box-shadow: none;
 }
 
-/* "+N more" link — pill matching the legacy overflow chip. */
+/* "+N more" link — pill matching the legacy overflow chip (month/day-grid). */
 .fc .fc-daygrid-more-link {
   color: var(--fg-muted);
   font-size: var(--text-2xs);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+/* Bound the "+N more" popover so a day with hundreds of events scrolls INSIDE
+   the popover instead of growing to the full list height (which overflowed the
+   viewport and got clipped). FullCalendar doesn't cap the popover body itself.
+   A fixed 22rem is deliberate over a vh fraction: the popover lives inside FC's
+   own internal scroller (not just our wrapper), which CSS can't reliably stop
+   from clipping, so a vh-based height still got cut on shorter viewports. 22rem
+   is the conservative cap that clears the grid's visible area on typical screens. */
+.fc .fc-popover-body {
+  max-height: 22rem;
+  overflow-y: auto;
 }
 
 /* Now-indicator dot/line already use --fc-now-indicator-color. Keep the arrow subtle. */

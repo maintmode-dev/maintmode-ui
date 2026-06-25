@@ -1,7 +1,8 @@
 /**
- * Pure client-side filter model for the calendar sidebar. The calendar query
- * returns the full `Maintenance[]` for the visible window; the sidebar narrows
- * that set by status, scope, and touched resources before the grids render it.
+ * Pure client-side filter model for the calendar sidebar. Status is filtered
+ * SERVER-SIDE (the query sends the active `statuses`), so the `Maintenance[]`
+ * the page receives is already status-narrowed; this client predicate narrows
+ * it further by scope + touched resources before the grids render it.
  *
  * Kept free of React so the predicate is unit-testable without mounting the
  * sidebar — the page owns the `CalendarFilterState` and passes the result of
@@ -9,6 +10,7 @@
  */
 
 import type { Maintenance, MaintenanceScope, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import { startOfDay } from "./view-range";
 
 /**
  * The scope filter values, in display order. Single source of truth: the
@@ -116,9 +118,16 @@ export function readStoredFilters(): CalendarFilterState {
   }
 }
 
-/** True when a maintenance passes every active filter dimension. */
+/**
+ * True when a maintenance passes the CLIENT filter dimensions: scope + resource.
+ *
+ * Status is deliberately NOT checked here — the backend filters by status
+ * server-side (the calendar query sends the active `statuses`), so `items`
+ * already only contains the selected statuses. Re-checking status on the client
+ * would double-filter and reintroduce the very `items`-vs-rendered drift this
+ * split removes. Scope stays client-side because the backend ignores `scope`.
+ */
 export function matchesFilters(m: Maintenance, f: CalendarFilterState): boolean {
-  if (!f.statuses.has(m.status)) return false;
   if (f.scope !== "all" && m.scope !== f.scope) return false;
   if (f.resourceIds.size > 0) {
     const touches = m.resources.some((r) => f.resourceIds.has(r.id));
@@ -153,18 +162,34 @@ export function resourceOptions(items: Maintenance[]): ResourceOption[] {
 }
 
 /**
- * The next upcoming maintenances for the "Up next" panel: anything not yet
- * finished (in_progress, or starting at/after `now`), soonest first. In-progress
- * sorts first; the rest by planned start. Excludes draft/completed/canceled —
- * the panel is an operational "what's next" list, not an archive.
+ * The next upcoming maintenances for the "Up next" panel — a tight, today-scoped
+ * operational list (not a window-wide one): a maintenance qualifies when its
+ * status is `in_progress`/`planned` (drafts/completed/canceled excluded) AND it
+ * is relevant *now*, meaning one of:
+ *   - running at this moment (`start ≤ now ≤ end`), or
+ *   - starting today (UTC), or
+ *   - starting tomorrow (UTC).
+ *
+ * Scoping to today/tomorrow keeps the panel a "what's happening / what's next"
+ * list even on Week/Month views, where the full window would otherwise dump
+ * every in-progress item (including ones whose planned end is long past) into
+ * the rail. In-progress sorts first; the rest by planned start.
  */
 export function upcomingItems(items: Maintenance[], now: Date, limit = 5): Maintenance[] {
   const nowMs = now.getTime();
+  const today = startOfDay(now).getTime();
+  const dayAfterTomorrow = today + 2 * 24 * 60 * 60 * 1000; // exclusive upper bound
+
   const candidates = items.filter((m) => {
-    if (m.status === "in_progress") return true;
-    if (m.status !== "planned") return false;
+    if (m.status !== "in_progress" && m.status !== "planned") return false;
+    const start = new Date(m.planned_period.start).getTime();
     const end = new Date(m.planned_period.end).getTime();
-    return Number.isNaN(end) || end >= nowMs;
+    // Running right now (covers multi-day windows that started earlier).
+    if (!Number.isNaN(start) && !Number.isNaN(end) && start <= nowMs && nowMs <= end) {
+      return true;
+    }
+    // Otherwise it must START today or tomorrow (UTC).
+    return !Number.isNaN(start) && start >= today && start < dayAfterTomorrow;
   });
   candidates.sort((a, b) => {
     // In-progress always leads.

@@ -99,23 +99,37 @@ export function anchorFor(view: CalendarView, d: Date): Date {
 /**
  * Anchor to use when switching FROM `fromView` INTO `toView`, given the current
  * anchor and "today". The general rule keeps the user at the same point in time
- * (`anchorFor(toView, anchor)`). The one special case: switching into **Day**
- * from Week/Month — if the period currently in view contains today, land on
- * today (Day then opens on the current day and scrolls to "now") instead of
- * snapping to the first day of the week/month. When today is out of view (the
- * user paged to another week/month), fall back to the period's first day so the
- * user stays where they were looking.
+ * (`anchorFor(toView, anchor)`). The special case: when narrowing into **Day or
+ * Week** from a wider view — if the period currently in view contains today,
+ * land on today (so the narrower view opens on the current day/week, scrolling
+ * to "now" in Day) instead of snapping to the first day of the wider period.
+ *
+ * Without this, Month→Week always jumped to the *first* week of the month
+ * (anchor = the 1st → its week), ignoring today even though it was in view. When
+ * today is out of view (the user paged to another month/week), fall back to the
+ * period's first day so the user stays where they were looking.
  */
+/** View "width" — month is wider than week is wider than day. Drives the
+ * narrowing check in `anchorOnViewSwitch`. */
+const VIEW_WIDTH: Record<CalendarView, number> = { day: 0, week: 1, month: 2 };
+
 export function anchorOnViewSwitch(
   fromView: CalendarView,
   toView: CalendarView,
   anchor: Date,
   today: Date,
 ): Date {
-  if (toView === "day" && fromView !== "day") {
+  // Only "narrowing" switches (e.g. month→week, month→day, week→day) get the
+  // land-on-today treatment; widening (day→month) just uses the general rule.
+  const narrowing = VIEW_WIDTH[toView] < VIEW_WIDTH[fromView];
+  if ((toView === "day" || toView === "week") && narrowing) {
     const t = startOfDay(today);
     const { from, to } = viewRange(fromView, anchor);
-    if (t >= startOfDay(from) && t <= startOfDay(to)) return t;
+    if (t >= startOfDay(from) && t <= startOfDay(to)) {
+      // Snap today to the target view's anchor (its own day for Day, the start
+      // of its week for Week) so the period lines up cleanly.
+      return anchorFor(toView, t);
+    }
   }
   return anchorFor(toView, anchor);
 }

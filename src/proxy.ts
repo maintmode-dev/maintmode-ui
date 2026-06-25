@@ -5,7 +5,10 @@ import { auth } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|assets|fonts).*)"],
+  // `icon.svg` is the App-Router-generated favicon (src/app/icon.svg); exclude
+  // it like favicon.ico so the auth middleware doesn't rewrite the icon request
+  // to the page shell (which left the browser's favicon fetch 404-ing).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|assets|fonts).*)"],
 };
 
 /**

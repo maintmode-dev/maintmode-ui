@@ -75,8 +75,7 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
         </div>
         {/* Single meta line: who scheduled it + when, per the contract. */}
         <div className="text-xs text-fg-dim">
-          Scheduled by{" "}
-          <span className="text-fg-muted">{detail.created_by ?? "Unknown user"}</span>
+          Scheduled by <span className="text-fg-muted">{detail.created_by ?? "Unknown user"}</span>
           {detail.created_at ? (
             <>
               {" · "}
@@ -138,8 +137,7 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
         <section
           className={cn(
             "space-y-2",
-            detail.conflicts.length > 0 &&
-              "border-l-[3px] border-[var(--conflict-fg)] pl-3 -ml-3",
+            detail.conflicts.length > 0 && "border-l-[3px] border-[var(--conflict-fg)] pl-3 -ml-3",
           )}
         >
           <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim flex items-center gap-1.5">

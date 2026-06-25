@@ -39,10 +39,7 @@ function step(over: Partial<MaintenanceStep> & { id: string; status: StepStatus 
   };
 }
 
-function detail(over: {
-  status: MaintenanceStatus;
-  steps: MaintenanceStep[];
-}): MaintenanceDetail {
+function detail(over: { status: MaintenanceStatus; steps: MaintenanceStep[] }): MaintenanceDetail {
   return {
     id: "m-1",
     title: "Test maintenance",
@@ -107,10 +104,7 @@ describe("StepsView — step lifecycle controls (TC-STEP-01)", () => {
       <StepsView
         detail={detail({
           status: "in_progress",
-          steps: [
-            step({ id: "s1", status: "in_progress" }),
-            step({ id: "s2", status: "pending" }),
-          ],
+          steps: [step({ id: "s1", status: "in_progress" }), step({ id: "s2", status: "pending" })],
         })}
         pending={false}
         onStepAction={vi.fn()}
@@ -142,9 +136,6 @@ describe("StepsView — step lifecycle controls (TC-STEP-01)", () => {
         onStepAction={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: exact("Start step") })).toHaveProperty(
-      "disabled",
-      true,
-    );
+    expect(screen.getByRole("button", { name: exact("Start step") })).toHaveProperty("disabled", true);
   });
 });

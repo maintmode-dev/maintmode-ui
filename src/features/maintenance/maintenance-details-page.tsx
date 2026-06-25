@@ -25,6 +25,7 @@ import { ResourceChip } from "@/shared/ui/domain/resource-chip";
 import { ChannelChip } from "@/shared/ui/domain/channel-chip";
 import { StepRow } from "@/shared/ui/domain/step-row";
 import { ConflictCard, ConflictGridItem } from "@/shared/ui/domain/conflict-card";
+import { SectionCard } from "@/shared/ui/domain/section-card";
 import { DetailsError, DetailsForbidden, DetailsLoading, DetailsNotFound } from "@/shared/ui/states";
 import { formatRange, formatDuration, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
@@ -175,7 +176,7 @@ function MaintenanceDetailView({ id }: { id: string }) {
                 lives in Overview. */}
 
             {/* ── CARD 1 · OVERVIEW (time + approver) ── */}
-            <Card label="Overview">
+            <SectionCard label="Overview">
               <div className="grid grid-cols-2 gap-4">
                 <Section label="Time" className="col-span-2">
                   <div className="flex flex-wrap items-center gap-3">
@@ -202,10 +203,10 @@ function MaintenanceDetailView({ id }: { id: string }) {
                   )}
                 </Section>
               </div>
-            </Card>
+            </SectionCard>
 
             {/* ── CARD 2 · IMPACT & TARGETS ── */}
-            <Card label="Impact & targets">
+            <SectionCard label="Impact & targets">
               <div className="grid grid-cols-2 gap-4">
                 <Section label="Scope">
                   <span className="capitalize">{detail.scope}</span>
@@ -238,10 +239,10 @@ function MaintenanceDetailView({ id }: { id: string }) {
                   )}
                 </Section>
               </div>
-            </Card>
+            </SectionCard>
 
             {/* ── CARD 3 · PLAN (description + steps) ── */}
-            <Card label="Plan">
+            <SectionCard label="Plan">
               {detail.description ? (
                 <Section label="Description">
                   <p className="text-fg leading-relaxed m-0">{detail.description}</p>
@@ -256,7 +257,7 @@ function MaintenanceDetailView({ id }: { id: string }) {
                   }
                 />
               </Section>
-            </Card>
+            </SectionCard>
 
             {/* METADATA — collapsed note below the cards. Carries Author
                 (created_by) + rev + created_at. Snapshot id isn't on the read
@@ -364,19 +365,6 @@ function Section({
       <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">{label}</div>
       <div className="text-sm text-fg">{children}</div>
     </section>
-  );
-}
-
-/**
- * Bordered semantic card grouping a set of fields under an uppercase label.
- * `--bg-elev-2` + `--border` + `--radius-lg`, per the regroup contract.
- */
-function Card({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-border bg-bg-elev-2 p-5 space-y-4">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">{label}</div>
-      {children}
-    </div>
   );
 }
 

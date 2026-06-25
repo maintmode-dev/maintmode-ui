@@ -57,20 +57,35 @@ export function CalendarGrid({ view, anchor, items, onSelect }: CalendarGridProp
   // Push external view/anchor into the FullCalendar API. changeView + gotoDate
   // are idempotent, so re-running on either change keeps the grid in sync with
   // the page without remounting (which would lose scroll position).
+  //
+  // Deferred to a microtask so the imperative FullCalendar mutation runs AFTER
+  // React's commit phase, not inside it. FullCalendar re-renders its events
+  // synchronously and its React adapter calls `flushSync` for our JSX
+  // `eventContent`; doing that during the effect's commit triggers React's
+  // "flushSync was called from inside a lifecycle method" warning. The microtask
+  // is the standard escape hatch. `cancelled` guards a unmount/re-run that lands
+  // before the microtask fires, so we never touch a stale API.
   useEffect(() => {
-    const api = ref.current?.getApi();
-    if (!api) return;
-    const fcView = VIEW_TO_FC[view];
-    if (api.view.type !== fcView) api.changeView(fcView);
-    api.gotoDate(fcDate);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const api = ref.current?.getApi();
+      if (!api) return;
+      const fcView = VIEW_TO_FC[view];
+      if (api.view.type !== fcView) api.changeView(fcView);
+      api.gotoDate(fcDate);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [view, fcDate]);
 
   // Reuses the shared CalendarEventBar so status colours/markup match the rest
   // of the app. Returning JSX from `eventContent` makes FullCalendar's React
-  // adapter call `flushSync`, which logs a dev-only "flushSync was called from
-  // inside a lifecycle method" warning — expected and accepted (the only way to
-  // silence it is to drop the shared component for a raw DOM string). Harmless:
-  // dev-only, and not a render loop.
+  // adapter call `flushSync` on re-render; the navigation effect above defers
+  // its API calls to a microtask so that flushSync never runs inside React's
+  // commit phase (which is what would log the "flushSync from inside a lifecycle
+  // method" warning).
   const renderEvent = (arg: EventContentArg) => {
     const { status } = arg.event.extendedProps as CalendarEventProps;
     return (
@@ -104,6 +119,11 @@ export function CalendarGrid({ view, anchor, items, onSelect }: CalendarGridProp
         nowIndicator
         scrollTime={scrollTime}
         allDaySlot={false}
+        // Month (dayGrid) caps rows and shows a native "+N more" popover.
+        // Day/Week (timegrid) do NOT cap stacking: capping there silently hid
+        // events with no usable overflow affordance (FC's timegrid popover can't
+        // be cleanly themed/positioned for hundreds of overlaps), which is worse
+        // than letting a busy slot pack tightly. So no eventMaxStack here.
         dayMaxEventRows={5}
         moreLinkClick="popover"
         // Spanning (multi-day) events sort above timed single-day ones, per the
@@ -114,7 +134,12 @@ export function CalendarGrid({ view, anchor, items, onSelect }: CalendarGridProp
         // + deterministic-layout rules).
         eventOrder="-duration,start,title"
         eventOrderStrict
-        height="auto"
+        // Bound the grid to the viewport (minus the app bar + page header/toolbar
+        // chrome) so FullCalendar renders its OWN internal scroller instead of
+        // growing to full content height and scrolling the whole page. A CSS
+        // string with viewport units works without the parent needing a defined
+        // height. `expandRows` still fills the box when content is short.
+        height="calc(100vh - 13rem)"
         expandRows
         events={events}
         eventContent={renderEvent}
