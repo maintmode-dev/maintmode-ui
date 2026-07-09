@@ -101,3 +101,70 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
     </svg>
   );
 }
+
+/**
+ * Notification-transport brand marks for the integrations registry (screen 19).
+ * Slack/Telegram keep their vendor colours; email is a neutral mail glyph.
+ * Source: maintmode-docs/design-snapshots/integrations-settings/project/icons.jsx
+ */
+export type IntegrationBrand = "slack" | "telegram" | "email";
+
+export function IntegrationBrandIcon({
+  name,
+  size = 20,
+  className,
+}: {
+  name: IntegrationBrand;
+  size?: number;
+  className?: string;
+}) {
+  const wrap = { width: size, height: size, className, "aria-hidden": true as const };
+  switch (name) {
+    case "slack":
+      return (
+        <svg {...wrap} viewBox="0 0 24 24">
+          <path
+            fill="#E01E5A"
+            d="M5.04 15.16a2.02 2.02 0 0 1-2.02 2.02A2.02 2.02 0 0 1 1 15.16c0-1.11.9-2.02 2.02-2.02h2.02v2.02zM6.06 15.16c0-1.11.9-2.02 2.02-2.02s2.02.9 2.02 2.02v5.06c0 1.11-.9 2.02-2.02 2.02a2.02 2.02 0 0 1-2.02-2.02v-5.06z"
+          />
+          <path
+            fill="#36C5F0"
+            d="M8.08 5.04a2.02 2.02 0 0 1-2.02-2.02C6.06 1.9 6.97 1 8.08 1s2.02.9 2.02 2.02v2.02H8.08zM8.08 6.06c1.11 0 2.02.9 2.02 2.02s-.9 2.02-2.02 2.02H3.02A2.02 2.02 0 0 1 1 8.08c0-1.11.9-2.02 2.02-2.02h5.06z"
+          />
+          <path
+            fill="#2EB67D"
+            d="M18.2 8.08c0-1.11.9-2.02 2.02-2.02 1.11 0 2.02.9 2.02 2.02s-.9 2.02-2.02 2.02H18.2V8.08zM17.18 8.08c0 1.11-.9 2.02-2.02 2.02a2.02 2.02 0 0 1-2.02-2.02V3.02c0-1.11.9-2.02 2.02-2.02s2.02.9 2.02 2.02v5.06z"
+          />
+          <path
+            fill="#ECB22E"
+            d="M15.16 18.2c1.11 0 2.02.9 2.02 2.02 0 1.11-.9 2.02-2.02 2.02a2.02 2.02 0 0 1-2.02-2.02V18.2h2.02zM15.16 17.18a2.02 2.02 0 0 1-2.02-2.02c0-1.11.9-2.02 2.02-2.02h5.06c1.11 0 2.02.9 2.02 2.02s-.9 2.02-2.02 2.02h-5.06z"
+          />
+        </svg>
+      );
+    case "telegram":
+      return (
+        <svg {...wrap} viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="11" fill="#29A9EB" />
+          <path
+            fill="#fff"
+            d="M17.44 7.11 15.6 16.7c-.14.63-.5.78-1.02.49l-2.82-2.08-1.36 1.31c-.15.15-.28.28-.57.28l.2-2.87 5.23-4.72c.23-.2-.05-.31-.35-.11l-6.46 4.07-2.78-.87c-.6-.19-.62-.6.13-.9l10.87-4.19c.5-.18.94.12.77 1z"
+          />
+        </svg>
+      );
+    case "email":
+      return (
+        <svg
+          {...wrap}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#52525B"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect width="20" height="16" x="2" y="4" rx="2" />
+          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+        </svg>
+      );
+  }
+}
