@@ -18,7 +18,6 @@ import {
   SheetTitle,
 } from "@/shared/ui/shadcn/sheet";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
-import { Label } from "@/shared/ui/shadcn/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
 import { Chip } from "@/shared/ui/domain/chip";
 import { SemanticPill, type SemanticTone } from "@/shared/ui/domain/semantic-pill";
@@ -30,34 +29,20 @@ import {
   useAssignRole,
   useBlockUser,
   useInvitationsQuery,
-  useInviteUser,
   useResendInvitation,
   useRevokeInvitation,
   useRevokeRole,
-  useRolesQuery,
   useUnblockUser,
   useUsersQuery,
 } from "./queries/use-users-queries";
+import { InviteUserDialog } from "./invite-user-dialog";
+import { Field, ROLE_DESCRIPTIONS, ROLE_ORDER, sortRoles } from "./roles-ui";
 import type { InvitationStatus } from "@/domain/admin/user";
 import { inviterHandle, isUserBlocked } from "@/domain/admin/user";
 import type { Invitation, User } from "@/domain/admin/user";
 import type { Role } from "@/domain/auth/permissions";
 
 const PAGE_SIZE = 50;
-
-/** Roles sorted admin-first for chip display + the checkbox list, per contract. */
-const ROLE_ORDER: Role[] = ["admin", "reviewer", "editor", "guest"];
-function sortRoles(roles: Role[]): Role[] {
-  return [...roles].sort((a, b) => ROLE_ORDER.indexOf(a) - ROLE_ORDER.indexOf(b));
-}
-
-/** One-line role descriptions for the checkbox lists (user + invite sheets). */
-const ROLE_DESCRIPTIONS: Record<Role, string> = {
-  admin: "Full access — manage users, roles, and every maintenance.",
-  reviewer: "Approve maintenance windows and review changes.",
-  editor: "Create and edit maintenance, resources, and channels.",
-  guest: "Read-only access to the calendar and catalogs.",
-};
 
 export function UsersManagementPage() {
   const [tab, setTab] = useState<"users" | "invitations">("users");
@@ -208,7 +193,7 @@ export function UsersManagementPage() {
           open={activeUser !== null}
           onOpenChange={(o) => !o && setActiveUserId(null)}
         />
-        <InviteUserSheet open={inviteOpen} onOpenChange={setInviteOpen} />
+        <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
       </div>
     </TooltipProvider>
   );
@@ -759,123 +744,5 @@ function RolesEditor({
         <p className="caption mt-1.5 text-fg-dim">You can&apos;t remove your own roles.</p>
       ) : null}
     </Field>
-  );
-}
-
-function InviteUserSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
-  const rolesQuery = useRolesQuery();
-  const assignable = rolesQuery.data ?? ROLE_ORDER;
-  const invite = useInviteUser();
-
-  const [email, setEmail] = useState("");
-  const [roles, setRoles] = useState<Role[]>(["editor"]);
-
-  const reset = () => {
-    setEmail("");
-    setRoles(["editor"]);
-  };
-
-  const close = () => {
-    reset();
-    onOpenChange(false);
-  };
-
-  const canSubmit = email.trim().length > 0 && roles.length > 0 && !invite.isPending;
-
-  // NOTE: the contract's optional "Message" field is intentionally omitted —
-  // the backend invite contract is `{ email, roles }` only (no message on the
-  // wire yet). Tracked as a backend task; add the field once it's supported.
-
-  return (
-    <Sheet
-      open={open}
-      onOpenChange={(o) => {
-        if (!o) reset();
-        onOpenChange(o);
-      }}
-    >
-      <SheetContent aria-modal="true" className="sm:max-w-[560px] bg-bg-elev-1 p-0">
-        <form
-          className="flex h-full flex-col"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const trimmed = email.trim();
-            if (!trimmed || roles.length === 0) return;
-            invite.mutate({ email: trimmed, roles }, { onSuccess: close });
-          }}
-        >
-          <SheetHeader className="px-6 pt-6 pb-0">
-            <SheetTitle>Invite a user</SheetTitle>
-            <SheetDescription className="body-sm">
-              They&apos;ll receive an email with a sign-in link.
-            </SheetDescription>
-          </SheetHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-            <Field label="Email" htmlFor="invite-email">
-              <Input
-                id="invite-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                aria-required="true"
-                placeholder="name@maintmode"
-                className="font-mono"
-              />
-              <p className="text-xs text-fg-dim">They&apos;ll sign in with the email they receive.</p>
-            </Field>
-
-            <Field label="Roles">
-              <div className="rounded-md border border-border-subtle divide-y divide-border-subtle">
-                {sortRoles(assignable).map((role) => {
-                  const checked = roles.includes(role);
-                  const id = `invite-role-${role}`;
-                  return (
-                    <div key={role} className="flex items-start gap-3 p-3">
-                      <Checkbox
-                        id={id}
-                        checked={checked}
-                        onCheckedChange={(c) =>
-                          setRoles((cur) => (c === true ? [...cur, role] : cur.filter((r) => r !== role)))
-                        }
-                        className="mt-0.5"
-                      />
-                      <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">
-                        <span className="block text-sm font-medium capitalize text-fg">{role}</span>
-                        <span className="block text-xs text-fg-dim">{ROLE_DESCRIPTIONS[role]}</span>
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-            </Field>
-          </div>
-
-          <SheetFooter className="flex-row items-center justify-between border-t border-border-subtle px-6 py-4">
-            <p className="text-xs text-fg-dim">Invitations expire in 7 days.</p>
-            <div className="flex gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={close} disabled={invite.isPending}>
-                Cancel
-              </Button>
-              <Button type="submit" size="sm" disabled={!canSubmit}>
-                {invite.isPending ? "Sending…" : "Send invitation"}
-              </Button>
-            </div>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function Field({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1.5">
-      <Label htmlFor={htmlFor} className="text-2xs font-semibold uppercase tracking-[0.08em] text-fg-dim">
-        {label}
-      </Label>
-      {children}
-    </div>
   );
 }

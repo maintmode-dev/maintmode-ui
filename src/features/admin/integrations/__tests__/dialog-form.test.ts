@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { INTEGRATION_KIND_META } from "../integration-kinds";
-import { buildConfig, hasMissingRequired } from "../sheet-form";
+import { buildConfig, hasMissingRequired } from "../dialog-form";
 import type { SecretFieldState } from "../secret-patch";
 
 const slack = INTEGRATION_KIND_META.slack;

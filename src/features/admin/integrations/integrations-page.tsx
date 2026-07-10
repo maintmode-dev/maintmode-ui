@@ -12,7 +12,7 @@ import { formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
 import { INTEGRATION_KIND_META } from "./integration-kinds";
-import { IntegrationSheet } from "./integration-sheet";
+import { IntegrationDialog } from "./integration-dialog";
 import {
   useIntegrationsQuery,
   usePendingToggleKinds,
@@ -80,7 +80,7 @@ export function IntegrationsPage() {
         )}
       </section>
 
-      <IntegrationSheet
+      <IntegrationDialog
         kind={openKind}
         integration={openKind ? (byKind.get(openKind) ?? null) : null}
         open={openKind !== null}

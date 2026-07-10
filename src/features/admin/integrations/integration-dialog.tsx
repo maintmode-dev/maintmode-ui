@@ -9,31 +9,24 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Switch } from "@/shared/ui/shadcn/switch";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui/shadcn/sheet";
+import { CreateDialog, CreateDialogBody, CreateDialogFooter } from "@/shared/ui/domain/create-dialog";
 import { Separator } from "@/shared/ui/shadcn/separator";
 import { formatUtc } from "@/shared/ui/lib/format";
 
 import { INTEGRATION_KIND_META, type ConfigFieldMeta, type SecretMeta } from "./integration-kinds";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
-import { buildConfig, hasMissingRequired } from "./sheet-form";
+import { buildConfig, hasMissingRequired } from "./dialog-form";
 import { useCreateIntegration, useUpdateIntegration } from "./queries/use-integrations-queries";
 
 /**
- * Create ↔ edit sheet for one integration kind (Grafana-OAuth-style form,
+ * Create ↔ edit dialog for one integration kind (Grafana-OAuth-style form,
  * frozen in `design-snapshots/integrations-settings/`).
  *
  * Secrets are write-only: a stored secret renders as a locked "Configured"
  * plate with Replace (and Clear where the secret is optional). Untouched
  * secrets never enter the payload — see `secret-patch.ts` for the intent map.
  */
-export function IntegrationSheet({
+export function IntegrationDialog({
   kind,
   integration,
   open,
@@ -45,26 +38,40 @@ export function IntegrationSheet({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const meta = kind ? INTEGRATION_KIND_META[kind] : null;
+  const isEdit = integration !== null;
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent aria-modal="true" className="sm:max-w-[560px] bg-bg-elev-1 p-0 flex flex-col gap-0">
-        {/* The body unmounts the moment the sheet closes (before the exit
-            animation finishes) — deliberate: typed secret drafts must be
-            destroyed on close, and that outweighs the brief empty flash. */}
-        {kind ? (
-          <IntegrationSheetBody
-            key={`${kind}-${integration?.updated_at ?? "create"}`}
-            kind={kind}
-            integration={integration}
-            onClose={() => onOpenChange(false)}
-          />
-        ) : null}
-      </SheetContent>
-    </Sheet>
+    <CreateDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={meta ? (isEdit ? `Configure ${meta.label}` : `Set up ${meta.label}`) : ""}
+      description={
+        meta
+          ? isEdit
+            ? `Updated ${formatUtc(integration.updated_at)}${
+                integration.updated_by ? ` by ${integration.updated_by}` : ""
+              }`
+            : meta.description
+          : undefined
+      }
+    >
+      {/* The body unmounts the moment the dialog closes (before the exit
+          animation finishes) — deliberate: typed secret drafts must be
+          destroyed on close, and that outweighs the brief empty flash. */}
+      {kind ? (
+        <IntegrationDialogBody
+          key={`${kind}-${integration?.updated_at ?? "create"}`}
+          kind={kind}
+          integration={integration}
+          onClose={() => onOpenChange(false)}
+        />
+      ) : null}
+    </CreateDialog>
   );
 }
 
-function IntegrationSheetBody({
+function IntegrationDialogBody({
   kind,
   integration,
   onClose,
@@ -137,18 +144,7 @@ function IntegrationSheetBody({
 
   return (
     <>
-      <SheetHeader className="border-b border-border-subtle px-5 py-4">
-        <SheetTitle>{isEdit ? `Configure ${meta.label}` : `Set up ${meta.label}`}</SheetTitle>
-        <SheetDescription>
-          {isEdit
-            ? `Updated ${formatUtc(integration.updated_at)}${
-                integration.updated_by ? ` by ${integration.updated_by}` : ""
-              }`
-            : meta.description}
-        </SheetDescription>
-      </SheetHeader>
-
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+      <CreateDialogBody className="space-y-5">
         {error ? (
           <div
             role="alert"
@@ -205,19 +201,16 @@ function IntegrationSheetBody({
             onChange={(value) => setConfig((cur) => ({ ...cur, [field.name]: value }))}
           />
         ))}
-      </div>
+      </CreateDialogBody>
 
-      <SheetFooter className="border-t border-border-subtle px-5 py-3 flex-row items-center gap-3">
-        <span className="flex-1 min-w-0 text-xs text-fg-dim">
-          Secrets are encrypted before they&apos;re stored.
-        </span>
-        <Button variant="outline" size="sm" disabled={submitting} onClick={onClose}>
+      <CreateDialogFooter hint="Secrets are encrypted before they're stored.">
+        <Button variant="outline" disabled={submitting} onClick={onClose}>
           Cancel
         </Button>
-        <Button size="sm" disabled={submitting || missingRequired} onClick={save}>
+        <Button disabled={submitting || missingRequired} onClick={save}>
           {submitting ? "Saving…" : isEdit ? "Save changes" : "Connect"}
         </Button>
-      </SheetFooter>
+      </CreateDialogFooter>
     </>
   );
 }

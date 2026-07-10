@@ -17,7 +17,7 @@ import { CalendarError } from "@/shared/ui/states";
 import { formatUtc } from "@/shared/ui/lib/format";
 
 import { useNotifyChannelsQuery } from "./queries/use-notify-channels-query";
-import { NotifyChannelCreateModal } from "./notify-channel-create-modal";
+import { NotifyChannelCreateDialog } from "./notify-channel-create-dialog";
 
 /**
  * Channels catalog (`/channels`) — verbatim sibling of the resources list, with
@@ -210,7 +210,7 @@ export function NotifyChannelsListPage() {
         </div>
       )}
 
-      <NotifyChannelCreateModal open={createOpen} onOpenChange={setCreateOpen} />
+      <NotifyChannelCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }

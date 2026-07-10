@@ -14,7 +14,7 @@ import { Stack } from "@/shared/ui/domain/stack";
 import { formatUtc } from "@/shared/ui/lib/format";
 
 import { useResourcesQuery } from "./queries/use-resources-query";
-import { ResourceCreateModal } from "./resource-create-modal";
+import { ResourceCreateDialog } from "./resource-create-dialog";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { CalendarError } from "@/shared/ui/states";
 
@@ -210,7 +210,7 @@ export function ResourcesListPage() {
         </>
       )}
 
-      <ResourceCreateModal open={createOpen} onOpenChange={setCreateOpen} />
+      <ResourceCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }
