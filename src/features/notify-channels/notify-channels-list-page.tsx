@@ -12,12 +12,14 @@ import { Switch } from "@/shared/ui/shadcn/switch";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Stack } from "@/shared/ui/domain/stack";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
+import { SemanticPill } from "@/shared/ui/domain/semantic-pill";
 import { TransportPill } from "@/shared/ui/domain/transport-pill";
 import { CalendarError } from "@/shared/ui/states";
 import { formatUtc } from "@/shared/ui/lib/format";
 
 import { useNotifyChannelsQuery } from "./queries/use-notify-channels-query";
 import { NotifyChannelCreateDialog } from "./notify-channel-create-dialog";
+import { transportStatusCopy } from "./transports";
 
 /**
  * Channels catalog (`/channels`) — verbatim sibling of the resources list, with
@@ -152,6 +154,9 @@ export function NotifyChannelsListPage() {
             <tbody>
               {filtered.map((c) => {
                 const archived = isNotifyChannelArchived(c);
+                // null for "ok"; disabled / not_configured / unknown statuses
+                // all yield a warning badge (fail-visible, RUK-199).
+                const statusCopy = transportStatusCopy(c.transportStatus);
                 const href = `/channels/${c.id}`;
                 const navigate = () => router.push(href);
                 return (
@@ -178,6 +183,11 @@ export function NotifyChannelsListPage() {
                           <span className="inline-flex items-center rounded-full border border-border-subtle bg-bg-elev-3 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.06em] text-fg-muted">
                             Archived
                           </span>
+                        ) : null}
+                        {statusCopy ? (
+                          <SemanticPill tone="warning" className="normal-case tracking-normal">
+                            {statusCopy.badge}
+                          </SemanticPill>
                         ) : null}
                       </div>
                       {c.description ? <div className="text-xs text-fg-dim">{c.description}</div> : null}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Archive, ArchiveRestore, ArrowLeft, Lock } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Lock, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -37,7 +37,7 @@ import {
 } from "./queries/use-notify-channels-query";
 import { NotifyChannelField } from "./notify-channel-field";
 import { NotifyChannelRelatedMaintenance } from "./notify-channel-related-maintenance";
-import { transportDescriptor } from "./transports";
+import { transportDescriptor, transportDisplayTitle, transportStatusCopy } from "./transports";
 
 /**
  * Channel detail (`/channels/[id]`) — sibling of the resource detail page.
@@ -81,6 +81,9 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
 
   const archived = isNotifyChannelArchived(channel);
   const descriptor = transportDescriptor(channel.transport);
+  // null for "ok"; anything else — disabled / not_configured / an unknown
+  // status — renders the delivery warning below the header (RUK-199).
+  const statusCopy = transportStatusCopy(channel.transportStatus);
 
   return (
     <div className="mx-auto max-w-[1100px] p-6 space-y-5">
@@ -104,6 +107,30 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
             identifier (transport channel id, Created/Updated · @handle) is a
             labelled cell in the Identity grid below. */}
       </header>
+
+      {/* Delivery warning (RUK-199): the transport↔integration binding is weak,
+          so a channel on a disabled / unconfigured integration exists happily
+          while its notifications are silently dropped. This callout is the
+          admin's only signal. Inline hand-rolled block — the project has no
+          banner primitive (AlertDialog is modal-only) and this is the first
+          surface needing one. Copy pending design review (SPEC.md). */}
+      {statusCopy ? (
+        // role="status", not "alert": the callout is statically present on load
+        // (screen readers announce alerts only when they appear dynamically).
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-lg border border-[var(--impact-partial-border)] bg-[var(--impact-partial-bg)] px-4 py-3 text-sm text-fg"
+        >
+          <TriangleAlert
+            className="mt-0.5 size-4 shrink-0 text-[var(--impact-partial-fg)]"
+            aria-hidden="true"
+          />
+          <div className="space-y-0.5">
+            <div className="font-medium">{statusCopy.badge}</div>
+            <div className="text-fg-muted">{statusCopy.detail(transportDisplayTitle(channel.transport))}</div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Identity card: identity-only grid (or the edit form) + a muted
           provenance footer. Created / Last updated are demoted from grid cells

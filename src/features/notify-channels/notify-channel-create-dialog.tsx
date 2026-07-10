@@ -1,7 +1,9 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
+import type { NotifyTransportStatus } from "@/domain/notify-channel/notify-channel";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { CreateDialog, CreateDialogBody, CreateDialogFooter } from "@/shared/ui/domain/create-dialog";
 import { Combobox, type ComboboxOption } from "@/shared/ui/domain/combobox";
@@ -11,7 +13,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { useCreateNotifyChannel } from "./queries/use-notify-channels-query";
 import { useTransportsQuery } from "./queries/use-transports-query";
 import { NotifyChannelField } from "./notify-channel-field";
-import { FALLBACK_TRANSPORTS, transportDescriptor } from "./transports";
+import { FALLBACK_TRANSPORTS, transportDescriptor, transportStatusCopy } from "./transports";
 
 export interface NotifyChannelCreateDialogProps {
   open: boolean;
@@ -36,29 +38,44 @@ export function NotifyChannelCreateDialog({ open, onOpenChange }: NotifyChannelC
 
   const transportsQuery = useTransportsQuery();
   // Fall back to the hardcoded transports while the catalog loads or if it
-  // errors — a channel can still be created against a known transport.
-  const transports = transportsQuery.data ?? FALLBACK_TRANSPORTS;
+  // errors — a channel can still be created against a known transport. The
+  // fallback entries carry no `transportStatus` (no catalog data = no signal),
+  // so the picker only decorates statuses it actually received (RUK-199).
+  const transports: { id: string; title: string; transportStatus?: NotifyTransportStatus }[] =
+    transportsQuery.data ?? FALLBACK_TRANSPORTS;
   const createChannel = useCreateNotifyChannel();
 
   const descriptor = transport ? transportDescriptor(transport) : null;
+  // Delivery warning for the SELECTED transport (RUK-199). The binding is
+  // weak — a non-ok transport stays selectable (the admin may configure the
+  // integration later) — but the silent-drop consequence must be visible.
+  const selected = transport ? transports.find((t) => t.id === transport) : undefined;
+  const selectedStatusCopy =
+    selected?.transportStatus != null ? transportStatusCopy(selected.transportStatus) : null;
 
   // Each option renders glyph + title + a one-line description, matching the
   // channel-create snapshot's reason-picker-style popover (and inheriting the
   // Combobox's autofocus search + `No results` empty state). `searchValue`
   // keeps both the id and title filterable as the catalog grows (BE-11).
+  // Non-ok transports render dimmed with the status as their description —
+  // marked but selectable (weak binding, RUK-199).
   const transportOptions: ComboboxOption[] = transports.map((t) => {
     const d = transportDescriptor(t.id);
     const Glyph = d.icon;
+    const statusCopy = t.transportStatus != null ? transportStatusCopy(t.transportStatus) : null;
     return {
       value: t.id,
       searchValue: `${t.title} ${t.id}`,
       label: (
-        <span className="flex items-center gap-2">
+        <span className={`flex items-center gap-2 ${statusCopy ? "text-fg-muted" : ""}`}>
           <Glyph className="size-3.5 shrink-0 text-fg-muted" aria-hidden={true} />
           {t.title}
+          {statusCopy ? (
+            <TriangleAlert className="size-3 shrink-0 text-[var(--impact-partial-fg)]" aria-hidden={true} />
+          ) : null}
         </span>
       ),
-      description: d.channelIdLabel,
+      description: statusCopy ? statusCopy.badge : d.channelIdLabel,
     };
   });
 
@@ -176,6 +193,18 @@ export function NotifyChannelCreateDialog({ open, onOpenChange }: NotifyChannelC
             emptyText="No transports match your search."
             ariaLabel="Select a transport"
           />
+          {selectedStatusCopy ? (
+            <div
+              role="alert"
+              className="mt-2 flex items-start gap-2 rounded-md border border-[var(--impact-partial-border)] bg-[var(--impact-partial-bg)] px-3 py-2 text-xs"
+            >
+              <TriangleAlert
+                className="mt-px size-3.5 shrink-0 text-[var(--impact-partial-fg)]"
+                aria-hidden="true"
+              />
+              <span className="text-fg-muted">{selectedStatusCopy.detail(selected?.title ?? transport)}</span>
+            </div>
+          ) : null}
         </NotifyChannelField>
 
         <NotifyChannelField

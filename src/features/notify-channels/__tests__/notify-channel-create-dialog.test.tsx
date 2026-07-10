@@ -31,12 +31,18 @@ vi.mock("@/features/_shared/api/bff-fetch", async (importOriginal) => {
 // Toasts fire from the mutation hooks; irrelevant here.
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-function renderDialog() {
+function renderDialog(
+  // BFF shape: the transports route maps the catalog to camelCase domain form.
+  transports: { id: string; title: string; transportStatus?: string }[] | "error" = [
+    { id: "slack", title: "Slack", transportStatus: "ok" },
+  ],
+) {
   // Transports catalog resolves from the mock; retries off so a 409 rejects
   // immediately instead of retrying.
   bffFetchMock.mockImplementation(async (path: string) => {
     if (typeof path === "string" && path.includes("transports")) {
-      return { transports: [{ id: "slack", title: "Slack" }] };
+      if (transports === "error") throw new Error("catalog unavailable");
+      return { transports };
     }
     throw new Error(`unexpected bffFetch: ${path}`);
   });
@@ -117,5 +123,77 @@ describe("NotifyChannelCreateDialog", () => {
 
     expect(screen.queryByText("A channel with this name already exists.")).toBeNull();
     expect((screen.getByLabelText(/^Name/) as HTMLInputElement).value).toBe("");
+  });
+
+  // RUK-199: transport_status in the picker. Non-ok transports stay selectable
+  // (weak binding) but are marked in the row and warn after selection.
+  describe("transport_status highlighting", () => {
+    it("marks non-ok options in the picker but keeps them selectable", async () => {
+      renderDialog([
+        { id: "slack", title: "Slack", transportStatus: "ok" },
+        { id: "telegram", title: "Telegram", transportStatus: "disabled" },
+      ]);
+      fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
+      await waitFor(() => {
+        expect(screen.getByText("Integration disabled")).toBeTruthy();
+      });
+
+      // Still selectable: choosing it fills the transport and shows the warning.
+      fireEvent.click(screen.getByRole("option", { name: /Telegram/ }));
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeTruthy();
+      });
+      expect(screen.getByText(/Telegram integration is disabled/)).toBeTruthy();
+      expect(screen.getByText(/silently dropped/)).toBeTruthy();
+    });
+
+    it("shows the not_configured warning after selecting an unconfigured transport", async () => {
+      renderDialog([{ id: "email", title: "Email", transportStatus: "not_configured" }]);
+      fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
+      fireEvent.click(await screen.findByRole("option", { name: /Email/ }));
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeTruthy();
+      });
+      expect(screen.getByText(/No Email integration is configured/)).toBeTruthy();
+    });
+
+    it("shows no warning for an ok transport", async () => {
+      renderDialog();
+      fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
+      fireEvent.click(await screen.findByRole("option", { name: /Slack/ }));
+      // Confirm the selection actually landed before the negative assertion.
+      await waitFor(() => {
+        expect(screen.getByRole("combobox", { name: "Select a transport" }).textContent).toContain("Slack");
+      });
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("warns fail-visibly when the catalog omits the status", async () => {
+      // Backend older than RUK-198 (or a dropped field) → not_configured, never ok.
+      renderDialog([{ id: "slack", title: "Slack" }]);
+      fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
+      fireEvent.click(await screen.findByRole("option", { name: /Slack/ }));
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeTruthy();
+      });
+      expect(screen.getByText(/No Slack integration is configured/)).toBeTruthy();
+    });
+
+    it("does not decorate fallback transports when the catalog fails (no data = no signal)", async () => {
+      // The inverse of fail-visible: FALLBACK_TRANSPORTS carry no status, so
+      // the picker must not accuse integrations it has no data about.
+      renderDialog("error");
+      fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
+      const slack = await screen.findByRole("option", { name: /Slack/ });
+      expect(screen.getByRole("option", { name: /Telegram/ })).toBeTruthy();
+      expect(screen.getByRole("option", { name: /Email/ })).toBeTruthy();
+      expect(screen.queryByText(/^Integration (disabled|not configured|unavailable)$/)).toBeNull();
+
+      fireEvent.click(slack);
+      await waitFor(() => {
+        expect(screen.getByRole("combobox", { name: "Select a transport" }).textContent).toContain("Slack");
+      });
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
   });
 });

@@ -18,6 +18,8 @@ export interface NotifyChannel {
   description?: string;
   /** Open-string transport key, e.g. "slack" / "telegram" / "email". */
   transport: string;
+  /** Delivery health of the channel's transport integration (RUK-199). */
+  transportStatus: NotifyTransportStatus;
   /** Channel/chat id within the transport (e.g. Slack `C0123…`). Not a secret. */
   transportChannelId: string;
   /** ISO-8601 archive stamp; absent/empty while the channel is active. */
@@ -42,4 +44,29 @@ export interface NotifyChannelActor {
  */
 export function isNotifyChannelArchived(channel: Pick<NotifyChannel, "archivedAt">): boolean {
   return typeof channel.archivedAt === "string" && channel.archivedAt.trim() !== "";
+}
+
+/**
+ * Delivery health of a transport integration (backend `transport_status`,
+ * RUK-198/RUK-199). Deliberately an OPEN string union: the enum is expected to
+ * grow (RUK-200 floats `unreadable`), and the UI must render any value it
+ * doesn't know as a warning — fail-visible — rather than swallow it as healthy.
+ *
+ * - `ok` — an enabled integration exists; the channel will deliver.
+ * - `disabled` — the integration exists but is switched off; notifications
+ *   are silently dropped.
+ * - `not_configured` — no integration exists for the transport at all.
+ */
+export type NotifyTransportStatus = "ok" | "disabled" | "not_configured" | (string & {});
+
+/**
+ * Wire `transport_status` → domain. A missing/blank value defaults to
+ * `not_configured` (fail-visible — never assume "ok"); any other value passes
+ * through so unknown future statuses surface as warnings. Capped at 64 chars —
+ * the raw value is quoted in user-visible warning copy, and an unbounded
+ * backend string must not reach the DOM verbatim.
+ */
+export function normalizeTransportStatus(raw: string | undefined | null): NotifyTransportStatus {
+  const value = raw?.trim().slice(0, 64);
+  return value ? value : "not_configured";
 }

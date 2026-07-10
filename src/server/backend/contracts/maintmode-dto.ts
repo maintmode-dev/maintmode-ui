@@ -187,6 +187,12 @@ export interface ChannelDto {
   description?: string;
   transport?: string;
   transport_channel_id?: string;
+  /**
+   * Delivery health of the transport's integration (RUK-198): `ok` /
+   * `disabled` / `not_configured`, open-ended. Semantically required, but the
+   * swagger style leaves it optional on the wire.
+   */
+  transport_status?: string;
   /** Present (date-time) only when the channel is archived. */
   archived_at?: string;
   created_at?: string;
@@ -223,6 +229,8 @@ export interface UpdateChannelRequestDto {
 export interface TransportDto {
   id?: string;
   title?: string;
+  /** Delivery health of the transport's integration (RUK-198); see `ChannelDto`. */
+  transport_status?: string;
 }
 
 /** `apimodels.TransportsResponse` — `{ transports: Transport[] }`. */
