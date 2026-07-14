@@ -8,9 +8,10 @@ import type { NotifyChannel } from "@/domain/notify-channel/notify-channel";
 import { NotifyChannelsListPage } from "../notify-channels-list-page";
 import { NotifyChannelDetailPage } from "../notify-channel-detail-page";
 
-// RUK-199: transport_status highlighting on the list and detail surfaces.
-// `ok` renders zero chrome; disabled / not_configured get distinct copy; an
-// unknown status falls back to the generic warning (fail-visible).
+// RUK-199 / RUK-200: transport_status highlighting on the list and detail
+// surfaces. `ok` renders zero chrome; disabled / not_configured / unreadable get
+// distinct dedicated copy; a genuinely unknown future status falls back to the
+// generic warning (fail-visible).
 
 afterEach(() => {
   cleanup();
@@ -59,7 +60,9 @@ describe("NotifyChannelsListPage transport-status badges", () => {
   it("renders no status badge for an ok channel", async () => {
     renderList([channel({ transportStatus: "ok" })]);
     await waitFor(() => expect(screen.getByText("Ops alerts")).toBeTruthy());
-    expect(screen.queryByText(/^Integration (disabled|not configured|unavailable)$/)).toBeNull();
+    expect(
+      screen.queryByText(/^Integration (disabled|not configured|unreadable|unavailable)$/),
+    ).toBeNull();
   });
 
   it("renders distinct badges for disabled and not_configured channels", async () => {
@@ -72,8 +75,16 @@ describe("NotifyChannelsListPage transport-status badges", () => {
     expect(screen.getByText("Integration not configured")).toBeTruthy();
   });
 
-  it("renders the generic warning badge for an unknown status (fail-visible)", async () => {
+  it("renders the dedicated badge for an unreadable channel (RUK-200)", async () => {
     renderList([channel({ transportStatus: "unreadable" })]);
+    await waitFor(() => expect(screen.getByText("Ops alerts")).toBeTruthy());
+    expect(screen.getByText("Integration unreadable")).toBeTruthy();
+    // Never mislabelled as the wrong (toggle-based) fix.
+    expect(screen.queryByText(/^Integration (disabled|not configured|unavailable)$/)).toBeNull();
+  });
+
+  it("renders the generic warning badge for a genuinely unknown status (fail-visible)", async () => {
+    renderList([channel({ transportStatus: "quux" })]);
     await waitFor(() => expect(screen.getByText("Ops alerts")).toBeTruthy());
     expect(screen.getByText("Integration unavailable")).toBeTruthy();
   });
@@ -123,11 +134,22 @@ describe("NotifyChannelDetailPage transport-status alert", () => {
     expect(screen.getByText(/Configure the integration/)).toBeTruthy();
   });
 
-  it("shows the generic callout for an unknown status, quoting the raw value", async () => {
+  it("shows the dedicated unreadable callout pointing at the secret, not the toggle (RUK-200)", async () => {
     renderDetail({ transportStatus: "unreadable" });
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    expect(screen.getByText("Integration unreadable")).toBeTruthy();
+    expect(screen.getByText(/credentials can't be read/)).toBeTruthy();
+    expect(screen.getByText(/Re-check the integration secret/)).toBeTruthy();
+    // Must not send the admin to the wrong fix, nor leak the raw token as the explanation.
+    expect(screen.queryByText(/is disabled/)).toBeNull();
+    expect(screen.queryByText(/status: unreadable/)).toBeNull();
+  });
+
+  it("shows the generic callout for a genuinely unknown status, quoting the raw value", async () => {
+    renderDetail({ transportStatus: "quux" });
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
     expect(screen.getByText("Integration unavailable")).toBeTruthy();
-    expect(screen.getByText(/status: unreadable/)).toBeTruthy();
+    expect(screen.getByText(/status: quux/)).toBeTruthy();
   });
 
   it("falls back to the raw id in copy for an unmodeled transport", async () => {

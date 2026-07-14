@@ -100,10 +100,11 @@ export const FALLBACK_TRANSPORTS: { id: string; title: string }[] = [
 ];
 
 /**
- * Warning copy per transport status (RUK-199). `ok` maps to `null` — a healthy
- * integration renders zero chrome. Unknown statuses (the enum is open-ended;
- * RUK-200 floats `unreadable`) get generic fail-visible copy rather than being
- * swallowed as healthy. Wording pending design review (see SPEC.md).
+ * Warning copy per transport status (RUK-199, RUK-200). `ok` maps to `null` — a
+ * healthy integration renders zero chrome. Every other known status gets bespoke,
+ * actionable copy; any *future* unknown status still falls through to the generic
+ * fail-visible `default` rather than being swallowed as healthy. Wording pending
+ * design review (see SPEC.md).
  */
 export interface TransportStatusCopy {
   /** Short badge/row label, e.g. "Integration disabled". */
@@ -116,6 +117,17 @@ export function transportStatusCopy(status: NotifyTransportStatus): TransportSta
   switch (status) {
     case "ok":
       return null;
+    case "unreadable":
+      // The integration is enabled and looks configured, but its secret can't be
+      // decrypted on the delivery path (rolled-back KEK, corrupt/rotated key,
+      // missing DEK) — dispatch fails. The sneakiest state: the admin's toggles
+      // all read healthy, so the copy must point at the credential, not the toggle
+      // (never "disabled"/"not configured", which send them to the wrong fix).
+      return {
+        badge: "Integration unreadable",
+        detail: (t) =>
+          `The ${t} integration is enabled but its credentials can't be read (a broken or rotated encryption key). Notifications will fail to send. Re-check the integration secret in Settings → Integrations.`,
+      };
     case "disabled":
       return {
         badge: "Integration disabled",

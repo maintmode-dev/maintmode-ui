@@ -9,6 +9,7 @@ import {
   type NotifyChannel,
   type NotifyChannelActor,
 } from "@/domain/notify-channel/notify-channel";
+import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/shadcn/alert";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Stack } from "@/shared/ui/domain/stack";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
@@ -109,27 +110,20 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
       </header>
 
       {/* Delivery warning (RUK-199): the transport↔integration binding is weak,
-          so a channel on a disabled / unconfigured integration exists happily
-          while its notifications are silently dropped. This callout is the
-          admin's only signal. Inline hand-rolled block — the project has no
-          banner primitive (AlertDialog is modal-only) and this is the first
-          surface needing one. Copy pending design review (SPEC.md). */}
+          so a channel on a disabled / unconfigured / unreadable integration
+          exists happily while its notifications are silently dropped. This
+          callout is the admin's only signal. Copy pending design review
+          (SPEC.md). role="status", not the Alert default "alert": the callout is
+          statically present on load (screen readers announce alerts only when
+          they appear dynamically). */}
       {statusCopy ? (
-        // role="status", not "alert": the callout is statically present on load
-        // (screen readers announce alerts only when they appear dynamically).
-        <div
-          role="status"
-          className="flex items-start gap-3 rounded-lg border border-[var(--impact-partial-border)] bg-[var(--impact-partial-bg)] px-4 py-3 text-sm text-fg"
-        >
-          <TriangleAlert
-            className="mt-0.5 size-4 shrink-0 text-[var(--impact-partial-fg)]"
-            aria-hidden="true"
-          />
-          <div className="space-y-0.5">
-            <div className="font-medium">{statusCopy.badge}</div>
-            <div className="text-fg-muted">{statusCopy.detail(transportDisplayTitle(channel.transport))}</div>
-          </div>
-        </div>
+        <Alert variant="warning" role="status">
+          <TriangleAlert aria-hidden="true" />
+          <AlertTitle>{statusCopy.badge}</AlertTitle>
+          <AlertDescription>
+            {statusCopy.detail(transportDisplayTitle(channel.transport))}
+          </AlertDescription>
+        </Alert>
       ) : null}
 
       {/* Identity card: identity-only grid (or the edit form) + a muted

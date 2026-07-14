@@ -7,6 +7,7 @@ import type { NotifyTransportStatus } from "@/domain/notify-channel/notify-chann
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { CreateDialog, CreateDialogBody, CreateDialogFooter } from "@/shared/ui/domain/create-dialog";
 import { Combobox, type ComboboxOption } from "@/shared/ui/domain/combobox";
+import { Alert, AlertDescription } from "@/shared/ui/shadcn/alert";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 
@@ -194,16 +195,16 @@ export function NotifyChannelCreateDialog({ open, onOpenChange }: NotifyChannelC
             ariaLabel="Select a transport"
           />
           {selectedStatusCopy ? (
-            <div
-              role="alert"
-              className="mt-2 flex items-start gap-2 rounded-md border border-[var(--impact-partial-border)] bg-[var(--impact-partial-bg)] px-3 py-2 text-xs"
-            >
-              <TriangleAlert
-                className="mt-px size-3.5 shrink-0 text-[var(--impact-partial-fg)]"
-                aria-hidden="true"
-              />
-              <span className="text-fg-muted">{selectedStatusCopy.detail(selected?.title ?? transport)}</span>
-            </div>
+            // Compact inline warning under the picker. Alert's default role="alert"
+            // is correct here — it appears dynamically on selection, so screen
+            // readers should announce it. Detail-only (no title); tightened to the
+            // form's xs scale.
+            <Alert variant="warning" className="mt-2 px-3 py-2 text-xs [&>svg]:size-3.5">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription className="text-xs">
+                {selectedStatusCopy.detail(selected?.title ?? transport)}
+              </AlertDescription>
+            </Alert>
           ) : null}
         </NotifyChannelField>
 

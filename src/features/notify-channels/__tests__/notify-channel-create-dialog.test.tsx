@@ -157,6 +157,21 @@ describe("NotifyChannelCreateDialog", () => {
       expect(screen.getByText(/No Email integration is configured/)).toBeTruthy();
     });
 
+    it("shows the unreadable warning after selecting an unreadable transport (RUK-200)", async () => {
+      renderDialog([{ id: "slack", title: "Slack", transportStatus: "unreadable" }]);
+      fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
+      await waitFor(() => {
+        expect(screen.getByText("Integration unreadable")).toBeTruthy();
+      });
+      fireEvent.click(await screen.findByRole("option", { name: /Slack/ }));
+      await waitFor(() => {
+        expect(screen.getByRole("alert")).toBeTruthy();
+      });
+      expect(screen.getByText(/credentials can't be read/)).toBeTruthy();
+      // Points at the secret, not the (healthy-looking) enable toggle.
+      expect(screen.queryByText(/is disabled/)).toBeNull();
+    });
+
     it("shows no warning for an ok transport", async () => {
       renderDialog();
       fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));

@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, FolderPlus, Search } from "lucide-react";
+import { Box, FolderPlus, Search, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -19,7 +19,9 @@ import {
   type MaintenanceStatus,
   type ImpactLevel,
 } from "@/shared/ui/domain";
+import { transportStatusCopy } from "@/features/notify-channels/transports";
 import { Combobox } from "@/shared/ui/domain/combobox";
+import { Alert, AlertDescription, AlertTitle } from "@/shared/ui/shadcn/alert";
 import { Button } from "@/shared/ui/shadcn/button";
 import {
   Dialog,
@@ -240,6 +242,23 @@ export default function ShowcaseClient() {
             <p className="px-6 body-sm">Side panel for maintenance quick view (Phase 4).</p>
           </SheetContent>
         </Sheet>
+      </Section>
+
+      <Section title="Alert (transport_status warnings — RUK-199/RUK-200)">
+        {/* Driven by the real transportStatusCopy() so the demo can't drift from
+            production copy. Covers the RUK-200 `unreadable` case + the generic
+            fallback. `ok` renders nothing, so it is omitted. */}
+        {(["unreadable", "disabled", "not_configured", "quux"] as const).map((status) => {
+          const copy = transportStatusCopy(status);
+          if (!copy) return null;
+          return (
+            <Alert key={status} variant="warning" role="status" className="max-w-[520px]">
+              <TriangleAlert aria-hidden="true" />
+              <AlertTitle>{copy.badge}</AlertTitle>
+              <AlertDescription>{copy.detail("Slack")}</AlertDescription>
+            </Alert>
+          );
+        })}
       </Section>
     </main>
   );

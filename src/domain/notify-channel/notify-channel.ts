@@ -48,16 +48,24 @@ export function isNotifyChannelArchived(channel: Pick<NotifyChannel, "archivedAt
 
 /**
  * Delivery health of a transport integration (backend `transport_status`,
- * RUK-198/RUK-199). Deliberately an OPEN string union: the enum is expected to
- * grow (RUK-200 floats `unreadable`), and the UI must render any value it
- * doesn't know as a warning — fail-visible — rather than swallow it as healthy.
+ * RUK-198/RUK-199/RUK-200). Deliberately an OPEN string union: the enum may
+ * still grow, and the UI must render any value it doesn't know as a warning —
+ * fail-visible — rather than swallow it as healthy.
  *
- * - `ok` — an enabled integration exists; the channel will deliver.
+ * - `ok` — an enabled integration exists and its secret resolves; will deliver.
+ * - `unreadable` — an enabled integration exists but its secret can't be
+ *   decrypted on the delivery path (rolled-back KEK, corrupt/rotated key,
+ *   missing DEK); dispatch fails. Looks configured but isn't (RUK-200).
  * - `disabled` — the integration exists but is switched off; notifications
  *   are silently dropped.
  * - `not_configured` — no integration exists for the transport at all.
  */
-export type NotifyTransportStatus = "ok" | "disabled" | "not_configured" | (string & {});
+export type NotifyTransportStatus =
+  | "ok"
+  | "unreadable"
+  | "disabled"
+  | "not_configured"
+  | (string & {});
 
 /**
  * Wire `transport_status` → domain. A missing/blank value defaults to
