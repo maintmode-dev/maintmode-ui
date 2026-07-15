@@ -1,8 +1,10 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
+import { Alert, AlertDescription } from "@/shared/ui/shadcn/alert";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
@@ -24,6 +26,10 @@ import type {
 
 import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
 import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
+import {
+  transportDisplayTitle,
+  transportStatusCopy,
+} from "@/features/notify-channels/transports";
 import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
 import { useCreateMaintenance, useUpdateMaintenance } from "./queries/use-maintenance-draft";
 import {
@@ -142,12 +148,32 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     description: r.external_id,
     searchValue: `${r.name} ${r.external_id ?? ""}`,
   }));
-  const channelOptions: MultiSelectOption[] = (channelsQuery.data ?? []).map((c) => ({
-    value: c.id,
-    label: c.name,
-    description: c.transportChannelId ? `${c.transport} · ${c.transportChannelId}` : c.transport,
-    searchValue: `${c.name} ${c.transport} ${c.transportChannelId ?? ""}`,
-  }));
+  // A channel whose transport integration is disabled / not configured /
+  // unreadable will silently not deliver (RUK-199/RUK-200). Mark those options
+  // dimmed + warning icon, with the status badge as the description in place of
+  // the channel id — but keep them selectable (weak binding, mirrors the
+  // channel-create picker). A concrete non-ok binding is warned about inline
+  // below the picker once selected.
+  const channelOptions: MultiSelectOption[] = (channelsQuery.data ?? []).map((c) => {
+    const statusCopy = transportStatusCopy(c.transportStatus);
+    const idLine = c.transportChannelId ? `${c.transport} · ${c.transportChannelId}` : c.transport;
+    return {
+      value: c.id,
+      label: (
+        <span className={cn("flex items-center gap-1.5", statusCopy && "text-fg-muted")}>
+          {c.name}
+          {statusCopy ? (
+            <TriangleAlert
+              className="size-3 shrink-0 text-[var(--impact-partial-fg)]"
+              aria-hidden={true}
+            />
+          ) : null}
+        </span>
+      ),
+      description: statusCopy ? statusCopy.badge : idLine,
+      searchValue: `${c.name} ${c.transport} ${c.transportChannelId ?? ""}`,
+    };
+  });
 
   const selectedResources = resourceIds.map((id) => {
     const fromCatalog = resourcesQuery.data?.resources.find((r) => r.id === id);
@@ -157,6 +183,13 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   const selectedChannels = useMemo(
     () => (channelsQuery.data ?? []).filter((c) => channelIds.includes(c.id)),
     [channelsQuery.data, channelIds],
+  );
+  // Selected channels whose integration won't deliver — surfaced inline so the
+  // operator sees the risk after the picker closes, not only inside it. Weak
+  // binding: this warns, it doesn't block save (RUK-198/199/200).
+  const undeliverableChannels = useMemo(
+    () => selectedChannels.filter((c) => transportStatusCopy(c.transportStatus) != null),
+    [selectedChannels],
   );
 
   const errors = useMemo<Record<string, string>>(() => {
@@ -357,6 +390,23 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
                 </span>
               ))}
             </div>
+          ) : null}
+          {undeliverableChannels.length > 0 ? (
+            <Alert variant="warning" role="status" className="mt-2 px-3 py-2 text-xs [&>svg]:size-3.5">
+              <TriangleAlert aria-hidden={true} />
+              <AlertDescription className="gap-1.5 text-xs">
+                {undeliverableChannels.map((c) => {
+                  const copy = transportStatusCopy(c.transportStatus);
+                  if (!copy) return null;
+                  return (
+                    <span key={c.id}>
+                      <span className="font-medium text-fg">{c.name}</span>{" "}
+                      {copy.detail(transportDisplayTitle(c.transport))}
+                    </span>
+                  );
+                })}
+              </AlertDescription>
+            </Alert>
           ) : null}
         </Field>
       </SectionCard>
