@@ -8,7 +8,7 @@ import { SlackGlyph } from "@/shared/ui/icons/slack-glyph";
  * UI descriptors for notification transports.
  *
  * The backend `GET /api/v1/notifications/transports` catalog carries
- * `{ id, title, transport_status }` (since RUK-198) but no field copy, so the
+ * `{ id, title, transport_status }` but no field copy, so the
  * channel-create form sources the `transport_channel_id` label / placeholder /
  * help text from this table, keyed by transport id. A transport the backend
  * reports but we have no descriptor for falls back to `UNKNOWN_TRANSPORT` —
@@ -89,7 +89,7 @@ export function transportDisplayTitle(transport: string): string {
 
 /**
  * Hardcoded transport fallback used until the backend catalog loads (or if it
- * fails). Matches the transports the backend supports per RUK-141/RUK-144.
+ * fails). Matches the transports the backend supports.
  * Carries NO `transportStatus`: absence of catalog data means "no signal", so
  * the picker doesn't decorate options with warnings it can't substantiate.
  */
@@ -100,7 +100,7 @@ export const FALLBACK_TRANSPORTS: { id: string; title: string }[] = [
 ];
 
 /**
- * Warning copy per transport status (RUK-199, RUK-200). `ok` maps to `null` — a
+ * Warning copy per transport status. `ok` maps to `null` — a
  * healthy integration renders zero chrome. Every other known status gets bespoke,
  * actionable copy; any *future* unknown status still falls through to the generic
  * fail-visible `default` rather than being swallowed as healthy. Wording pending

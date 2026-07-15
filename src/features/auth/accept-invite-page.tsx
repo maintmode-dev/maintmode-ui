@@ -68,8 +68,8 @@ function ValidInvite({
   suggestedProvider?: SuggestedProvider;
   acceptAction: (token: string) => Promise<void>;
 }) {
-  // MVP wires Google only (RUK-92 adds the rest). The backend currently always
-  // returns null for suggested_provider, so this defaults to Google.
+  // MVP wires Google only; other providers ship later. The backend currently
+  // always returns null for suggested_provider, so this defaults to Google.
   const provider = suggestedProvider ?? "google";
   const label = provider === "github" ? "Continue with GitHub" : "Continue with Google";
   const googleOnly = provider !== "google";
@@ -100,7 +100,7 @@ function ValidInvite({
           {label}
         </Button>
       </form>
-      {googleOnly ? <p className="caption">Other providers ship with RUK-92. Use Google for now.</p> : null}
+      {googleOnly ? <p className="caption">Other providers are coming soon. Use Google for now.</p> : null}
     </div>
   );
 }

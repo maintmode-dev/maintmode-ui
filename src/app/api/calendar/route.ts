@@ -11,8 +11,8 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
  * The backend requires `from`/`to` as `YYYY-MM-DD` dates (not ISO datetimes),
  * as an inclusive day range (`to` is expanded to end-of-day server-side), and
  * optionally accepts repeated `statuses` / `resource_ids` / `channel_ids`
- * filters (the last powers the ChannelDetailPage "Related maintenance" section —
- * backend RUK-167). It
+ * filters (the last powers the ChannelDetailPage "Related maintenance" section,
+ * matched server-side by channel). It
  * answers with `uimodels.CalendarViewResponse` (`{ events, meta }`), which the
  * `mapCalendarResponse` adapter projects into the domain `Maintenance[]` the
  * UI's `useCalendarQuery` expects under `{ items }`.

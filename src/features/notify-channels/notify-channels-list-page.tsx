@@ -155,7 +155,7 @@ export function NotifyChannelsListPage() {
               {filtered.map((c) => {
                 const archived = isNotifyChannelArchived(c);
                 // null for "ok"; disabled / not_configured / unknown statuses
-                // all yield a warning badge (fail-visible, RUK-199).
+                // all yield a warning badge (fail-visible).
                 const statusCopy = transportStatusCopy(c.transportStatus);
                 const href = `/channels/${c.id}`;
                 const navigate = () => router.push(href);

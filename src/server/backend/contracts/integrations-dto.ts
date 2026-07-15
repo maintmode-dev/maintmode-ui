@@ -1,7 +1,7 @@
 /**
- * Backend wire contracts for the integrations registry admin endpoints
- * (RUK-196), mirroring `apimodels.*` in the maintmode swagger (Integrations
- * tag). Base URL = maintmode service (default `apiBaseUrl`).
+ * Backend wire contracts for the integrations registry admin endpoints,
+ * mirroring `apimodels.*` in the maintmode swagger (Integrations tag). Base
+ * URL = maintmode service (default `apiBaseUrl`).
  *
  * SERVER-ONLY: consumed by `./integrations-mapper.ts` and the admin BFF
  * routes; the browser sees only `src/domain/admin/integration.ts`.

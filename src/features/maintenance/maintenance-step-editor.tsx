@@ -26,7 +26,7 @@ export function emptyStep(): StepDraft {
   return { description: "", rollback_description: "", duration_minutes: "" };
 }
 
-/** Minimum step duration the backend enforces (TC-MAINT-02 #9). */
+/** Minimum step duration the backend enforces. */
 export const MIN_STEP_MINUTES = 5;
 
 export interface MaintenanceStepEditorProps {
@@ -36,7 +36,7 @@ export interface MaintenanceStepEditorProps {
 }
 
 /**
- * Add/remove/edit ordered maintenance steps (RUK-42 / RUK-163). Each step
+ * Add/remove/edit ordered maintenance steps. Each step
  * carries a description, a rollback plan, and a duration in minutes — all
  * required by the backend, with a 5-minute floor. Order is implicit (row
  * position, 1-based); the form assigns `order` at submit.

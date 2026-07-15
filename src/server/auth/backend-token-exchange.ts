@@ -11,7 +11,7 @@ const LOGOUT_ALL_PATH = "/api/v1/logout/all";
 const ME_PATH = "/api/v1/me";
 
 /**
- * BFF-owned OAuth (RUK-35).
+ * BFF-owned OAuth.
  *
  * The frontend runs the standard NextAuth Google provider. After Google's
  * `code` ↔ token exchange, NextAuth holds the Google `id_token`. We forward
@@ -35,7 +35,7 @@ export async function exchangeGoogleIdToken(idToken: string): Promise<BackendTok
 }
 
 /**
- * Public invitation accept (RUK-160).
+ * Public invitation accept.
  *
  * Completes an invitation by handing the backend the raw invitation token plus
  * the OAuth payload (provider + signed `id_token`). The backend verifies the

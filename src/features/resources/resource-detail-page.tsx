@@ -122,7 +122,7 @@ export function ResourceDetailPage({ id }: { id: string }) {
           <ResourceEditForm resource={resource} onClose={() => setMode("view")} />
         )}
 
-        {/* Provenance footer with authorship (RUK-169). `@handle` is appended
+        {/* Provenance footer with authorship. `@handle` is appended
             only when the backend resolved an actor; it degrades gracefully to
             the bare timestamp otherwise (e.g. an unresolvable author). */}
         <p className="border-t border-border-subtle pt-3 font-mono text-[10px] text-fg-dim">

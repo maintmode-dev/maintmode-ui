@@ -83,7 +83,7 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
   const archived = isNotifyChannelArchived(channel);
   const descriptor = transportDescriptor(channel.transport);
   // null for "ok"; anything else — disabled / not_configured / an unknown
-  // status — renders the delivery warning below the header (RUK-199).
+  // status — renders the delivery warning below the header.
   const statusCopy = transportStatusCopy(channel.transportStatus);
 
   return (
@@ -109,11 +109,10 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
             labelled cell in the Identity grid below. */}
       </header>
 
-      {/* Delivery warning (RUK-199): the transport↔integration binding is weak,
+      {/* Delivery warning: the transport↔integration binding is weak,
           so a channel on a disabled / unconfigured / unreadable integration
           exists happily while its notifications are silently dropped. This
-          callout is the admin's only signal. Copy pending design review
-          (SPEC.md). role="status", not the Alert default "alert": the callout is
+          callout is the admin's only signal. role="status", not the Alert default "alert": the callout is
           statically present on load (screen readers announce alerts only when
           they appear dynamically). */}
       {statusCopy ? (

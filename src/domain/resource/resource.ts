@@ -4,7 +4,7 @@
  * The backend dropped the invented `type` / `owner` / `archived` fields the
  * Phase-4 UI used: it carries `external_id` and a free-text `status` instead,
  * and archival is a state (`status`) toggled via dedicated endpoints, not a
- * boolean. The resource screens consume this shape directly (RUK-158).
+ * boolean. The resource screens consume this shape directly.
  */
 export interface Resource {
   id: string;
@@ -20,7 +20,7 @@ export interface Resource {
   updated_by?: ResourceActor;
 }
 
-/** Authorship summary resolved from the auth service (RUK-169); may degrade to "Unknown user". */
+/** Authorship summary resolved from the auth service; may degrade to "Unknown user". */
 export interface ResourceActor {
   id?: string;
   email?: string;

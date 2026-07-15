@@ -13,7 +13,7 @@ export interface CalendarQueryParams {
   /** Inclusive window end as `YYYY-MM-DD` (backend `to`, expanded to end-of-day). */
   to: string;
   /**
-   * Notify-channel ids to filter by (backend `channel_ids`, RUK-167). Returns
+   * Notify-channel ids to filter by (backend `channel_ids`). Returns
    * only maintenances that notify at least one of these channels — powers the
    * ChannelDetailPage "Related maintenance" section. Omit for the full calendar.
    */

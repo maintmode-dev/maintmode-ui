@@ -244,9 +244,9 @@ export default function ShowcaseClient() {
         </Sheet>
       </Section>
 
-      <Section title="Alert (transport_status warnings — RUK-199/RUK-200)">
+      <Section title="Alert (transport_status warnings)">
         {/* Driven by the real transportStatusCopy() so the demo can't drift from
-            production copy. Covers the RUK-200 `unreadable` case + the generic
+            production copy. Covers the `unreadable` case + the generic
             fallback. `ok` renders nothing, so it is omitted. */}
         {(["unreadable", "disabled", "not_configured", "quux"] as const).map((status) => {
           const copy = transportStatusCopy(status);

@@ -23,8 +23,8 @@ const PROVIDERS: { id: BrandProvider; label: string; enabled: boolean }[] = [
   { id: "github", label: "Continue with GitHub", enabled: false },
 ];
 
-/** Disabled providers are gated behind BE-7 / RUK-92. */
-const COMING_SOON_TOOLTIP = "Coming soon — additional providers track BE-7 / RUK-92";
+/** Disabled providers are gated until backend support ships. */
+const COMING_SOON_TOOLTIP = "Coming soon — additional providers are on the way";
 
 export function LoginPage({ error, signInAction }: LoginPageProps) {
   return (

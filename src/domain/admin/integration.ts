@@ -1,5 +1,5 @@
 /**
- * Domain types for the notification-integrations registry (RUK-196).
+ * Domain types for the notification-integrations registry.
  *
  * The registry is a closed list of three kinds; secrets are write-only — the
  * read view carries `secrets_set` (key → is-configured) and never a value.

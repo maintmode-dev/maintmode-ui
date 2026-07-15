@@ -1,8 +1,8 @@
 /**
  * Audit actions per the auth service swagger (`entity.AuditAction`). Dotted
- * lowercase wire values. The set was expanded in RUK-182 with the
- * `maintenance.*` / `maintenance_step.*` lifecycle actions; the former flat
- * snake_case scheme (`login_success`, `assigned`, …) is gone.
+ * lowercase wire values. The set includes the `maintenance.*` /
+ * `maintenance_step.*` lifecycle actions; the former flat snake_case scheme
+ * (`login_success`, `assigned`, …) is gone.
  *
  * Exported as a runtime tuple (not just a type) so consumers — and the
  * presentation/exhaustiveness tests — can iterate every action; `AuditAction`
@@ -111,7 +111,7 @@ export function auditActorHandle(event: Pick<AuditEvent, "actor_display_name" | 
 /**
  * Full actor label for the detail view: `name · email` when both are known,
  * otherwise whichever single value exists, or "Unknown" when neither does (the
- * backend omits the actor on some role events — RUK-174). Avoids a `name · name`
+ * backend omits the actor on some role events). Avoids a `name · name`
  * echo when the display name already equals the actor string.
  */
 export function auditActorFull(event: Pick<AuditEvent, "actor_display_name" | "actor">): string {

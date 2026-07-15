@@ -31,7 +31,7 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
 
   // Who performed the action — always first, as a single `name · email` line
   // (one or the other when only one is known; "Unknown" when the backend
-  // recorded no actor — RUK-174).
+  // recorded no actor).
   rows.push({ label: "Actor", value: auditActorFull(event) });
 
   if (event.action === "login.success" || event.action === "login.failed") {

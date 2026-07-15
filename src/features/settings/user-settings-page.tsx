@@ -159,7 +159,7 @@ export function UserSettingsPage() {
                       size="xs"
                       variant="default"
                       disabled={!supportedNow}
-                      title={supportedNow ? undefined : "Coming with RUK-92"}
+                      title={supportedNow ? undefined : "Coming soon"}
                     >
                       <Plug className="size-3.5" aria-hidden="true" /> Connect
                     </Button>

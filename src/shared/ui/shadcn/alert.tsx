@@ -12,8 +12,8 @@ const alertVariants = cva(
         destructive:
           "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
         // Project warning tone on the shared --impact-partial tokens (same tone as
-        // SemanticPill tone="warning"). Used for transport_status delivery warnings
-        // (RUK-199/RUK-200). Title stays --impact-partial-fg; description dims to
+        // SemanticPill tone="warning"). Used for transport_status delivery
+        // warnings. Title stays --impact-partial-fg; description dims to
         // fg-muted, matching the hand-rolled callouts this replaced.
         warning:
           "border-[var(--impact-partial-border)] bg-[var(--impact-partial-bg)] text-fg *:data-[slot=alert-title]:text-[var(--impact-partial-fg)] *:data-[slot=alert-description]:text-fg-muted [&>svg]:text-[var(--impact-partial-fg)]",

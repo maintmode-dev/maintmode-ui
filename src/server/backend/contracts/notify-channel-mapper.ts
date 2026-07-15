@@ -1,8 +1,8 @@
 /**
- * Backend → domain mappers for the notification-channel read paths (RUK-164).
+ * Backend → domain mappers for the notification-channel read paths.
  * Pure, server-only: the BFF routes call these so the browser only ever sees
  * the domain `NotifyChannel`, never the wire shapes in `./maintmode-dto.ts`
- * (D-2: all BE↔UI mapping lives in `src/server/backend/**`).
+ * (all BE↔UI mapping lives in `src/server/backend/**`).
  *
  * `apimodels.Channel` is close to the domain shape; this layer renames the
  * snake_case wire fields to the domain's camelCase and fills swagger-optional
@@ -37,8 +37,8 @@ export function mapNotifyChannel(dto: ChannelDto): NotifyChannel {
     name: dto.name ?? "",
     description: dto.description,
     transport: dto.transport ?? "",
-    // Fail-visible default: a missing status reads "not_configured", never "ok"
-    // (RUK-199); unknown values pass through so the UI can warn about them.
+    // Fail-visible default: a missing status reads "not_configured", never "ok";
+    // unknown values pass through so the UI can warn about them.
     transportStatus: normalizeTransportStatus(dto.transport_status),
     transportChannelId: dto.transport_channel_id ?? "",
     // Carried through verbatim: a present, non-empty value marks the channel
@@ -69,10 +69,10 @@ export interface NotifyTransport {
 }
 
 /**
- * `GET /api/v1/notifications/transports` → domain list (RUK-199). Entries
+ * `GET /api/v1/notifications/transports` → domain list. Entries
  * without an id are dropped; `title` falls back to the id; `transport_status`
  * is normalized with the fail-visible default. Keeps the wire shape out of the
- * client (D-2) now that the catalog carries semantics, not just labels.
+ * client now that the catalog carries semantics, not just labels.
  */
 export function mapTransports(dto: TransportsResponseDto): NotifyTransport[] {
   return (dto.transports ?? [])

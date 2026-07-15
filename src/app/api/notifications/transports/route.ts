@@ -10,7 +10,7 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
  *
  * Returns the catalog of transports a channel can be created on as
  * `{ transports: [{ id, title, transportStatus }] }`, mapped to domain shape
- * here (D-2) — since RUK-198 the catalog carries delivery-health semantics
+ * here — the catalog carries delivery-health semantics
  * (`transport_status`), not just labels. Per-transport channel-id field copy
  * still comes from the UI descriptor table keyed by `id`.
  */

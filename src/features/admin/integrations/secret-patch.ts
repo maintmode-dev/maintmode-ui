@@ -1,6 +1,6 @@
 /**
  * Pure helpers translating the sheet's per-secret UI state into the PATCH
- * `secrets` intent map. The backend contract (RUK-196) reads each key as:
+ * `secrets` intent map. The backend contract reads each key as:
  * key absent → keep the stored secret, non-empty string → replace, null →
  * clear. Getting this right is the core of "edit without re-typing the
  * token", so it lives here as data-in/data-out and is unit-tested.

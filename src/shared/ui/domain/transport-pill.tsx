@@ -5,7 +5,7 @@ import { SlackGlyph } from "@/shared/ui/icons/slack-glyph";
 import { cn } from "@/shared/ui/lib/cn";
 
 /**
- * Transport pill for notification channels (RUK-164). `transport` is an open
+ * Transport pill for notification channels. `transport` is an open
  * string from the backend catalog, so an unrecognised value still renders — it
  * just gets the neutral fallback styling and a generic bell icon.
  *

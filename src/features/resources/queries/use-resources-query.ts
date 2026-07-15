@@ -7,11 +7,11 @@ import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import type { Resource } from "@/domain/resource/resource";
 
 /**
- * Resource directory + detail + CRUD, wired BFF-only (RUK-158; no mock branch).
+ * Resource directory + detail + CRUD, wired BFF-only (no mock branch).
  * The list reads the backend's paginated `{ resources, limit, offset, total }`
  * window verbatim so callers can page through `total` rather than assume the
- * response holds every resource (EC-2). Archive/unarchive are idempotent and
- * reconcile the UI through query invalidation (EC-3).
+ * response holds every resource. Archive/unarchive are idempotent and
+ * reconcile the UI through query invalidation.
  */
 
 export interface ResourceListPage {

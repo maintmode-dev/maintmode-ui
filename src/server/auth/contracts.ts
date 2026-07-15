@@ -1,7 +1,7 @@
 /**
  * Server-side auth contracts.
  *
- * These types model the production-ready backend OAuth contract finalized in RUK-34
+ * These types model the production-ready backend OAuth contract
  * (`docs/swagger.yaml`: `apiauthmodels.OAuthCallbackJSONResponse`,
  * `apiauthmodels.TokenPairResponse`, `apiauthmodels.MeResponse`). They are used only
  * inside `src/server/auth/**` and `src/app/api/auth/**`; browser code must not import them.

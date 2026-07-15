@@ -141,7 +141,7 @@ export interface ResourceDto {
   external_id?: string;
   status?: string;
   created_at?: string;
-  /** Authorship summary (RUK-169); null until the auth service resolves it. */
+  /** Authorship summary; null until the auth service resolves it. */
   created_by?: UserSummaryDto;
   updated_at?: string;
   updated_by?: UserSummaryDto;
@@ -173,7 +173,7 @@ export interface UpdateResourceRequestDto {
 }
 
 // ---------------------------------------------------------------------------
-// Notification channels (`apimodels.*`) — the notify-target catalog (RUK-164).
+// Notification channels (`apimodels.*`) — the notify-target catalog.
 // ---------------------------------------------------------------------------
 
 /**
@@ -188,7 +188,7 @@ export interface ChannelDto {
   transport?: string;
   transport_channel_id?: string;
   /**
-   * Delivery health of the transport's integration (RUK-198): `ok` /
+   * Delivery health of the transport's integration: `ok` /
    * `disabled` / `not_configured`, open-ended. Semantically required, but the
    * swagger style leaves it optional on the wire.
    */
@@ -229,7 +229,7 @@ export interface UpdateChannelRequestDto {
 export interface TransportDto {
   id?: string;
   title?: string;
-  /** Delivery health of the transport's integration (RUK-198); see `ChannelDto`. */
+  /** Delivery health of the transport's integration; see `ChannelDto`. */
   transport_status?: string;
 }
 

@@ -11,7 +11,7 @@ import type { MaintenanceCancelReason } from "@/domain/maintenance/maintenance";
  * `GET /api/v1/maintenances/cancel-reasons`.
  *
  * Replaces the hardcoded reason enum in the cancel dialog with the
- * backend-supplied title/description text (RUK-62). The endpoint returns an
+ * backend-supplied title/description text. The endpoint returns an
  * array of `uimodels.MaintenanceCancelReason`; `mapCancelReasonView` validates
  * each `value` against the known enum and drops any the UI can't submit, so
  * the dialog never renders an unselectable reason.

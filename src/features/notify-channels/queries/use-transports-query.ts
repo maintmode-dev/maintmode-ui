@@ -10,16 +10,16 @@ import { bffFetch } from "@/features/_shared/api/bff-fetch";
 export interface TransportOption {
   id: string;
   title: string;
-  /** Delivery health of the transport's integration (RUK-199), fail-visible default. */
+  /** Delivery health of the transport's integration, fail-visible default. */
   transportStatus: NotifyTransportStatus;
 }
 
 /**
- * Supported notification transports for the channel-create picker (RUK-164).
+ * Supported notification transports for the channel-create picker.
  * The catalog is a stable reference list, so it is cached generously. Callers
  * fall back to `FALLBACK_TRANSPORTS` while this is loading or if it errors —
  * the field copy (label/placeholder/help) still comes from the UI transport
- * descriptors keyed by id. Wire→domain mapping happens in the BFF route (D-2);
+ * descriptors keyed by id. Wire→domain mapping happens in the BFF route;
  * the normalize here is a defensive re-apply (idempotent) so a stale or
  * hand-rolled BFF response can never smuggle a missing status past the UI.
  */

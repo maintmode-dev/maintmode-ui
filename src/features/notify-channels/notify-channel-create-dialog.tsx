@@ -41,13 +41,13 @@ export function NotifyChannelCreateDialog({ open, onOpenChange }: NotifyChannelC
   // Fall back to the hardcoded transports while the catalog loads or if it
   // errors — a channel can still be created against a known transport. The
   // fallback entries carry no `transportStatus` (no catalog data = no signal),
-  // so the picker only decorates statuses it actually received (RUK-199).
+  // so the picker only decorates statuses it actually received.
   const transports: { id: string; title: string; transportStatus?: NotifyTransportStatus }[] =
     transportsQuery.data ?? FALLBACK_TRANSPORTS;
   const createChannel = useCreateNotifyChannel();
 
   const descriptor = transport ? transportDescriptor(transport) : null;
-  // Delivery warning for the SELECTED transport (RUK-199). The binding is
+  // Delivery warning for the SELECTED transport. The binding is
   // weak — a non-ok transport stays selectable (the admin may configure the
   // integration later) — but the silent-drop consequence must be visible.
   const selected = transport ? transports.find((t) => t.id === transport) : undefined;
@@ -57,9 +57,9 @@ export function NotifyChannelCreateDialog({ open, onOpenChange }: NotifyChannelC
   // Each option renders glyph + title + a one-line description, matching the
   // channel-create snapshot's reason-picker-style popover (and inheriting the
   // Combobox's autofocus search + `No results` empty state). `searchValue`
-  // keeps both the id and title filterable as the catalog grows (BE-11).
+  // keeps both the id and title filterable as the catalog grows.
   // Non-ok transports render dimmed with the status as their description —
-  // marked but selectable (weak binding, RUK-199).
+  // marked but selectable (weak binding).
   const transportOptions: ComboboxOption[] = transports.map((t) => {
     const d = transportDescriptor(t.id);
     const Glyph = d.icon;

@@ -16,7 +16,7 @@ import { formatUtc } from "@/shared/ui/lib/format";
  * "Related maintenance" section of ChannelDetailPage — the maintenances that
  * notify this channel (`notify_targets.channel_ids[]`), split into Active /
  * Past tabs. Data comes from the calendar feed filtered server-side by
- * `channel_ids` (backend RUK-167; forwarded through the `/api/calendar` BFF and
+ * `channel_ids` (forwarded through the `/api/calendar` BFF and
  * `useCalendarQuery`).
  *
  * Source intent: maintmode-docs/design-snapshots/channel-detail (Section 2).
@@ -34,7 +34,7 @@ import { formatUtc } from "@/shared/ui/lib/format";
  *
  * NOTE: this is a bounded view, not "all maintenance ever for this channel".
  * A wider history would need either a paginated channel-maintenances endpoint
- * or multiple stitched ≤89-day calendar calls (see RUK-167 variant (b)).
+ * or multiple stitched ≤89-day calendar calls.
  */
 const PAST_WINDOW_DAYS = 59;
 const FUTURE_WINDOW_DAYS = 30;
@@ -81,7 +81,7 @@ export function NotifyChannelRelatedMaintenance({ channelId }: { channelId: stri
       {/* NOTE: the contract's "View all in calendar →" deep-link is intentionally
           omitted until the Calendar page consumes `channel_ids` from the URL —
           otherwise the link lands on an unfiltered calendar (dead affordance).
-          Tracked in Linear; restore the link once that wiring ships. */}
+          Restore the link once that wiring ships. */}
       <div className="space-y-0.5">
         <h2 className="text-2xs font-semibold uppercase tracking-[0.08em] text-fg-dim">
           Related maintenance

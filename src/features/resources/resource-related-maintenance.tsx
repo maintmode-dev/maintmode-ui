@@ -72,8 +72,8 @@ export function ResourceRelatedMaintenance({ resourceId }: { resourceId: string 
   return (
     <section className="space-y-3">
       {/* NOTE: the contract's "View all in calendar →" deep-link is intentionally
-          omitted until the Calendar page consumes `resource_ids` from the URL
-          (RUK-168) — otherwise it lands on an unfiltered calendar. Same call as
+          omitted until the Calendar page consumes `resource_ids` from the URL —
+          otherwise it lands on an unfiltered calendar. Same call as
           channel-detail; restore the link once that wiring ships. */}
       <div className="space-y-0.5">
         <h2 className="text-2xs font-semibold uppercase tracking-[0.08em] text-fg-dim">

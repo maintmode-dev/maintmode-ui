@@ -20,8 +20,8 @@ const MAX_AUTH_LOG_LIMIT = 100;
  * So per-maintenance scoping has to happen here: we fetch a page of the global
  * log and keep the rows whose `entity_id` matches (entity_type `maintenance`).
  *
- * Consequence (until RUK-42 ships a real per-maintenance endpoint): the match
- * runs against a single global page, so we request the largest page the auth
+ * Consequence (until the backend ships a real per-maintenance audit endpoint):
+ * the match runs against a single global page, so we request the largest page the auth
  * service allows (`limit=100`) to maximize coverage and we DROP the caller's
  * `limit`/`offset` — paginating a post-filtered subset against an unfiltered,
  * globally-paginated source would silently skip matching rows. Pass-through is

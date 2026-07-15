@@ -96,7 +96,7 @@ export const config = {
         if (!idToken) {
           throw new BackendExchangeError(AUTH_ERROR_CODES.invalidIdToken);
         }
-        // Public accept-invite flow (RUK-160): when an invitation token is
+        // Public accept-invite flow: when an invitation token is
         // pending in the httpOnly cookie, this sign-in is claiming an invite,
         // not a normal login. Consume the cookie (single-use) and exchange via
         // the backend accept endpoint instead of the plain login exchange.
@@ -221,7 +221,7 @@ async function runBackendExchange(
 }
 
 /**
- * Accept-invite counterpart of `runBackendExchange` (RUK-160). Trades the
+ * Accept-invite counterpart of `runBackendExchange`. Trades the
  * invitation token + provider `id_token` for a backend token pair via the
  * public accept endpoint, then loads the freshly-created user's profile. The
  * resulting tokens are attached to the NextAuth account exactly like a normal

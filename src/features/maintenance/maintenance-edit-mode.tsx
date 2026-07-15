@@ -39,7 +39,7 @@ import {
   type StepDraft,
 } from "./maintenance-step-editor";
 
-/** Backend cap on notify targets (TC-MAINT-02 #12). */
+/** Backend cap on notify targets. */
 const MAX_CHANNELS = 10;
 
 export interface MaintenanceEditModeProps {
@@ -106,7 +106,7 @@ function durationToMinutes(duration: string | undefined): string {
  * `detail`, or in the `creating` state (empty fields, "Create draft" footer)
  * launched from `/maintenance/new`.
  *
- * Per RUK-163 the form collects a notify-channel picker (min 1, max 10) and an
+ * The form collects a notify-channel picker (min 1, max 10) and an
  * inline step editor (min 1 step, each ≥ 5 min with a rollback plan) — both
  * required by the backend — and validates client-side before submitting so the
  * obvious gaps surface inline rather than as a server 400. Channels also unblock
@@ -149,7 +149,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     searchValue: `${r.name} ${r.external_id ?? ""}`,
   }));
   // A channel whose transport integration is disabled / not configured /
-  // unreadable will silently not deliver (RUK-199/RUK-200). Mark those options
+  // unreadable will silently not deliver. Mark those options
   // dimmed + warning icon, with the status badge as the description in place of
   // the channel id — but keep them selectable (weak binding, mirrors the
   // channel-create picker). A concrete non-ok binding is warned about inline
@@ -186,7 +186,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   );
   // Selected channels whose integration won't deliver — surfaced inline so the
   // operator sees the risk after the picker closes, not only inside it. Weak
-  // binding: this warns, it doesn't block save (RUK-198/199/200).
+  // binding: this warns, it doesn't block save.
   const undeliverableChannels = useMemo(
     () => selectedChannels.filter((c) => transportStatusCopy(c.transportStatus) != null),
     [selectedChannels],

@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 
 /**
  * Short-lived, httpOnly cookie that carries the raw invitation token across the
- * OAuth round-trip on the public `/accept-invite` flow (RUK-160).
+ * OAuth round-trip on the public `/accept-invite` flow.
  *
  * Why a cookie: the accept endpoint needs BOTH the invitation token AND a fresh
  * provider `id_token`. The `id_token` only materializes after NextAuth finishes

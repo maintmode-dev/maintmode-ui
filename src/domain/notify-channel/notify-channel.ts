@@ -1,16 +1,16 @@
 /**
- * Notification channel domain model, shaped per swagger `apimodels.Channel`
- * (RUK-164 / backend RUK-141). A channel is one delivery target in the catalog
- * that maintenance `notify_targets` subscribe to.
+ * Notification channel domain model, shaped per swagger `apimodels.Channel`.
+ * A channel is one delivery target in the catalog that maintenance
+ * `notify_targets` subscribe to.
  *
  * `transport` is a free-text key (slack / telegram / email / …) — the backend
  * catalog is open-ended, so the UI must tolerate transports it doesn't have a
  * dedicated pill for. `transport_channel_id` is the channel/chat id, NOT a
- * secret token (those live behind the integration settings, RUK-90).
+ * secret token (those live behind the integration settings).
  *
  * Archival is carried as `archived_at`: a date-time stamp when the channel was
  * soft-archived, absent/empty while active — there is no boolean flag and no
- * free-text status (contrast `Resource`, RUK-158).
+ * free-text status (contrast `Resource`).
  */
 export interface NotifyChannel {
   id: string;
@@ -18,7 +18,7 @@ export interface NotifyChannel {
   description?: string;
   /** Open-string transport key, e.g. "slack" / "telegram" / "email". */
   transport: string;
-  /** Delivery health of the channel's transport integration (RUK-199). */
+  /** Delivery health of the channel's transport integration. */
   transportStatus: NotifyTransportStatus;
   /** Channel/chat id within the transport (e.g. Slack `C0123…`). Not a secret. */
   transportChannelId: string;
@@ -47,15 +47,15 @@ export function isNotifyChannelArchived(channel: Pick<NotifyChannel, "archivedAt
 }
 
 /**
- * Delivery health of a transport integration (backend `transport_status`,
- * RUK-198/RUK-199/RUK-200). Deliberately an OPEN string union: the enum may
- * still grow, and the UI must render any value it doesn't know as a warning —
- * fail-visible — rather than swallow it as healthy.
+ * Delivery health of a transport integration (backend `transport_status`).
+ * Deliberately an OPEN string union: the enum may still grow, and the UI must
+ * render any value it doesn't know as a warning — fail-visible — rather than
+ * swallow it as healthy.
  *
  * - `ok` — an enabled integration exists and its secret resolves; will deliver.
  * - `unreadable` — an enabled integration exists but its secret can't be
  *   decrypted on the delivery path (rolled-back KEK, corrupt/rotated key,
- *   missing DEK); dispatch fails. Looks configured but isn't (RUK-200).
+ *   missing DEK); dispatch fails. Looks configured but isn't.
  * - `disabled` — the integration exists but is switched off; notifications
  *   are silently dropped.
  * - `not_configured` — no integration exists for the transport at all.

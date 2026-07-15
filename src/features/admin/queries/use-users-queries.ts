@@ -77,8 +77,8 @@ export function useRolesQuery() {
 }
 
 /**
- * Admin invitations list. Wired to the auth BFF (RUK-160): the route proxies
- * `GET /api/v1/users/invitations` and returns the BE-shaped
+ * Admin invitations list. Wired to the auth BFF: the route proxies
+ * `GET /api/v1/users/invitations` and returns the backend-shaped
  * `{ invitations: Invitation[] }` directly.
  */
 export function useInvitationsQuery() {

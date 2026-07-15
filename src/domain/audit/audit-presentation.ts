@@ -9,8 +9,8 @@ import type { AuditAction } from "./audit-log";
  * `user.blocked` reuses `--impact-full-fg` (distinct red from `login.failed`'s
  * `--destructive-fg`). `user.unblocked` is given a neutral-positive green so the
  * row reads as a recovery action. The `maintenance.*` / `maintenance_step.*`
- * lifecycle (RUK-182) reuses the same status tokens the calendar/board use so
- * the dot colour matches the maintenance status it records.
+ * lifecycle reuses the same status tokens the calendar/board use so the dot
+ * colour matches the maintenance status it records.
  */
 const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
   "login.success": { label: "Login success", token: "--status-completed-fg" },
@@ -61,7 +61,7 @@ const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditA
   roles: new Set<AuditAction>(["roles.changed"]),
   // `user.unblocked` rides with `user.blocked` — both are user-block lifecycle events.
   block: new Set<AuditAction>(["user.blocked", "user.unblocked"]),
-  // Maintenance + step lifecycle (RUK-182).
+  // Maintenance + step lifecycle.
   maintenance: new Set<AuditAction>([
     "maintenance.created",
     "maintenance.updated",

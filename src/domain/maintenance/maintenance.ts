@@ -164,7 +164,7 @@ export interface MaintenanceDraftInput {
    * Notification channel ids the maintenance broadcasts to. Required by the
    * backend (`notify_targets: { channel_ids }`, min 1) — a blank list is
    * rejected with `notify_targets: cannot be blank` on BOTH create and edit.
-   * Channel ids come from the catalog (`@/domain/notify-channel`, RUK-164).
+   * Channel ids come from the catalog (`@/domain/notify-channel`).
    */
   notify_target_channel_ids: string[];
 }

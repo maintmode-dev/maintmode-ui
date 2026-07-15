@@ -4,7 +4,7 @@ const iso = (offsetMin: number) => new Date(Date.now() - offsetMin * 60_000).toI
 
 // Mock fixtures kept for tests / mock-backed screens. Actions use the
 // reconciled backend `AuditAction` values (dotted) and `details` is a free-text
-// string. Per-maintenance audit is on bff (RUK-162); only the global audit
+// string. Per-maintenance audit is on bff; only the global audit
 // fixture survives, for the still-mock-capable `globalAudit` flag.
 export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
   {

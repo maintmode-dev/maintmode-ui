@@ -7,8 +7,8 @@ import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import type { NotifyChannel } from "@/domain/notify-channel/notify-channel";
 
 /**
- * Notification-channel catalog + detail + CRUD, wired BFF-only (RUK-164; no
- * mock branch). The list endpoint answers a plain `{ channels }` envelope with
+ * Notification-channel catalog + detail + CRUD, wired BFF-only (no mock
+ * branch). The list endpoint answers a plain `{ channels }` envelope with
  * no pagination window — the catalog is small and returned whole, sorted
  * newest-first by the backend. Archive/unarchive are idempotent and reconcile
  * the UI through query invalidation.
