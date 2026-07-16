@@ -316,7 +316,9 @@ function MaintenanceDetailView({ id }: { id: string }) {
                 meta={formatRange(c.overlap_start, c.overlap_end)}
                 details={
                   <>
-                    <ConflictGridItem label="Maintenance" value={c.maintenance_id} mono />
+                    {c.reference ? (
+                      <ConflictGridItem label="Maintenance" value={c.reference} mono />
+                    ) : null}
                     <ConflictGridItem
                       label="Overlap"
                       value={formatRange(c.overlap_start, c.overlap_end)}
