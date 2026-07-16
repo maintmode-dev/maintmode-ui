@@ -34,6 +34,17 @@ const SLACK_CONFIGURED: Integration = {
   updated_by: "admin@maintmode",
 };
 
+const EMAIL_CONFIGURED = (tls_policy: string): Integration => ({
+  id: "i-2",
+  kind: "email",
+  enabled: true,
+  config: { host: "smtp.example.com", from: "noc@example.com", tls_policy },
+  secrets_set: { password: true },
+  created_at: "2026-07-01T00:00:00Z",
+  updated_at: "2026-07-09T00:00:00Z",
+  updated_by: "admin@maintmode",
+});
+
 function renderDialog(props: Partial<React.ComponentProps<typeof IntegrationDialog>> = {}) {
   const onOpenChange = vi.fn();
   const client = new QueryClient({
@@ -109,5 +120,24 @@ describe("IntegrationDialog", () => {
     expect(connect.disabled).toBe(true);
     fireEvent.change(secretInput()!, { target: { value: "xoxb-token" } });
     expect(connect.disabled).toBe(false);
+  });
+
+  it("shows the no-encryption danger warning only when tls_policy is 'none'", () => {
+    const warning = "Mail will be sent unencrypted";
+
+    const { view } = renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    expect(document.body.textContent).not.toContain(warning);
+
+    view.unmount();
+    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("none") });
+    expect(document.body.textContent).toContain(warning);
+  });
+
+  it("surfaces a stored tls_policy set outside the option list as a '(current)' choice", () => {
+    // A value from an older free-text UI (or a future backend) isn't in the
+    // option set; it must stay visible so a later pick doesn't silently drop it.
+    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("legacy_weird_value") });
+    const trigger = document.getElementById("integration-config-tls_policy");
+    expect(trigger?.textContent).toContain("legacy_weird_value (current)");
   });
 });

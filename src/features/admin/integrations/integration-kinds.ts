@@ -8,6 +8,22 @@
 
 import type { IntegrationKind } from "@/domain/admin/integration";
 
+/**
+ * Sentinel option value for "leave this optional field unset". Radix Select
+ * forbids an empty-string item value, so the metadata carries this sentinel and
+ * `ConfigField` translates it to/from `""` at the render boundary — this is what
+ * lets the operator return an optional Select to its default after picking a
+ * value (otherwise the selection is a one-way trap).
+ */
+export const CONFIG_FIELD_UNSET = "__unset__";
+
+export interface ConfigFieldOption {
+  value: string;
+  label: string;
+  /** Marks a security-sensitive choice; the field renders an inline warning. */
+  danger?: string;
+}
+
 export interface ConfigFieldMeta {
   name: string;
   label: string;
@@ -16,6 +32,8 @@ export interface ConfigFieldMeta {
   help?: string;
   /** Parsed as a number before sending (SMTP port). */
   numeric?: boolean;
+  /** Renders as a select instead of a free-text input. */
+  options?: ConfigFieldOption[];
 }
 
 export interface SecretMeta {
@@ -118,7 +136,22 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
         placeholder: "smtp-user",
         help: "Username and password must be set together.",
       },
-      { name: "tls_policy", label: "TLS policy", optional: true, placeholder: "opportunistic" },
+      {
+        name: "tls_policy",
+        label: "TLS policy",
+        optional: true,
+        help: "Mandatory is the safe production posture. Default leaves it to the server.",
+        options: [
+          { value: CONFIG_FIELD_UNSET, label: "Default (server decides)" },
+          { value: "mandatory", label: "Mandatory" },
+          { value: "opportunistic", label: "Opportunistic" },
+          {
+            value: "none",
+            label: "None (no encryption — not for production)",
+            danger: "Mail will be sent unencrypted. Only use this for local testing.",
+          },
+        ],
+      },
       {
         name: "timeout",
         label: "Timeout",

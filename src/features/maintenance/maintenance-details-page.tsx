@@ -136,8 +136,12 @@ function MaintenanceDetailView({ id }: { id: string }) {
             <Link href="/" className="hover:text-fg flex items-center gap-1">
               <ArrowLeft className="size-3" aria-hidden="true" /> Calendar
             </Link>
-            <span aria-hidden="true">·</span>
-            <span>{detail.reference ?? detail.id}</span>
+            {detail.reference ? (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{detail.reference}</span>
+              </>
+            ) : null}
             <Link
               href={`/maintenance/${detail.id}/audit`}
               className="ml-auto flex items-center gap-1 hover:text-fg"
@@ -331,7 +335,7 @@ function MaintenanceDetailView({ id }: { id: string }) {
         open={cancelOpen}
         onOpenChange={setCancelOpen}
         maintenanceTitle={detail.title}
-        maintenanceRef={detail.reference ?? detail.id}
+        maintenanceRef={detail.reference ?? undefined}
         maintenanceStatus={detail.status}
         pending={cancelMutation.isPending}
         onConfirm={(reason: CancelReason, comment: string) => {

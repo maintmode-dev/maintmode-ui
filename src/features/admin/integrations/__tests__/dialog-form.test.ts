@@ -62,4 +62,24 @@ describe("buildConfig", () => {
     const stored = { api_url: "https://old.example", timeout: "10s" };
     expect(buildConfig(slack, { api_url: "", timeout: "10s" }, stored)).toEqual({ timeout: "10s" });
   });
+
+  // tls_policy is an optional Select whose "unset" choice reaches buildConfig as
+  // "" (the CONFIG_FIELD_UNSET sentinel is unwrapped at the ConfigField boundary
+  // before it lands in config state). These lock in that unset ≠ "" on the wire.
+  it("omits an unset tls_policy (Select 'Default') rather than sending an empty string", () => {
+    expect(buildConfig(email, { host: "smtp.b.c", from: "a@b.c", tls_policy: "" })).toEqual({
+      host: "smtp.b.c",
+      from: "a@b.c",
+    });
+  });
+
+  it("sends a chosen tls_policy verbatim", () => {
+    expect(buildConfig(email, { tls_policy: "none" })).toEqual({ tls_policy: "none" });
+  });
+
+  it("clearing tls_policy back to Default in edit mode removes the stored value", () => {
+    // The load-bearing case: a stored dangerous value ("none") must not survive
+    // when the operator returns the Select to "Default (server decides)".
+    expect(buildConfig(email, { tls_policy: "" }, { tls_policy: "none" })).toEqual({});
+  });
 });

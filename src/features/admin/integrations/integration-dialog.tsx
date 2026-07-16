@@ -9,11 +9,23 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Switch } from "@/shared/ui/shadcn/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/shared/ui/shadcn/select";
 import { CreateDialog, CreateDialogBody, CreateDialogFooter } from "@/shared/ui/domain/create-dialog";
 import { Separator } from "@/shared/ui/shadcn/separator";
 import { formatUtc } from "@/shared/ui/lib/format";
 
-import { INTEGRATION_KIND_META, type ConfigFieldMeta, type SecretMeta } from "./integration-kinds";
+import {
+  CONFIG_FIELD_UNSET,
+  INTEGRATION_KIND_META,
+  type ConfigFieldMeta,
+  type SecretMeta,
+} from "./integration-kinds";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
 import { buildConfig, hasMissingRequired } from "./dialog-form";
 import { useCreateIntegration, useUpdateIntegration } from "./queries/use-integrations-queries";
@@ -258,19 +270,52 @@ function ConfigField({
   onChange: (value: string) => void;
 }) {
   const inputId = `integration-config-${field.name}`;
+  // Radix Select forbids an empty-string item value, so the "unset" choice
+  // carries a sentinel in the metadata; translate it to/from "" at this
+  // boundary so the stored config still holds an empty string when unset.
+  const selectValue = value === "" ? CONFIG_FIELD_UNSET : value;
+  const activeDanger = field.options?.find((o) => o.value === value)?.danger;
+  // A stored value set outside this UI (older free-text UI, or the API) may not
+  // be in the option list. Surface it as a transient option so it stays visible
+  // and selected — otherwise the Select shows only the placeholder while still
+  // holding the value, and the first pick silently discards it.
+  const isUnknownValue = !!field.options && value !== "" && !field.options.some((o) => o.value === value);
   return (
     <div className="space-y-1.5">
       <FieldLabel required={!field.optional} htmlFor={inputId}>
         {field.label}
       </FieldLabel>
-      <Input
-        id={inputId}
-        value={value}
-        placeholder={field.placeholder}
-        disabled={disabled}
-        inputMode={field.numeric ? "numeric" : undefined}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      {field.options ? (
+        <Select
+          value={selectValue}
+          disabled={disabled}
+          onValueChange={(v) => onChange(v === CONFIG_FIELD_UNSET ? "" : v)}
+        >
+          <SelectTrigger id={inputId} className="w-full">
+            <SelectValue placeholder={field.placeholder ?? "Select…"} />
+          </SelectTrigger>
+          <SelectContent>
+            {isUnknownValue ? (
+              <SelectItem value={value}>{`${value} (current)`}</SelectItem>
+            ) : null}
+            {field.options.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <Input
+          id={inputId}
+          value={value}
+          placeholder={field.placeholder}
+          disabled={disabled}
+          inputMode={field.numeric ? "numeric" : undefined}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {activeDanger ? <p className="text-xs text-destructive">{activeDanger}</p> : null}
       {field.help ? <p className="text-xs text-fg-dim">{field.help}</p> : null}
     </div>
   );

@@ -22,8 +22,8 @@ export interface CancelMaintenanceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   maintenanceTitle: string;
-  /** Mono id (MNT-xxxx) shown in the subline; falls back to the raw id. */
-  maintenanceRef: string;
+  /** Human-readable reference (MNT-xxxx) shown in the subline; omitted when absent. */
+  maintenanceRef?: string;
   /** Current status, rendered as a severity pill in the subline. */
   maintenanceStatus: MaintenanceStatus;
   pending?: boolean;
@@ -55,10 +55,14 @@ export function CancelMaintenanceDialog({
               undone" copy (frozen decision). Subline = mono id · title + pill. */}
           <DialogDescription asChild>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-xs text-fg-muted">{maintenanceRef}</span>
-              <span className="text-fg-dim" aria-hidden="true">
-                ·
-              </span>
+              {maintenanceRef ? (
+                <>
+                  <span className="font-mono text-xs text-fg-muted">{maintenanceRef}</span>
+                  <span className="text-fg-dim" aria-hidden="true">
+                    ·
+                  </span>
+                </>
+              ) : null}
               <span className="text-sm text-fg">{maintenanceTitle}</span>
               <StatusBadge status={maintenanceStatus} />
             </div>
