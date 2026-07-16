@@ -1,36 +1,42 @@
 /**
  * Display helpers. Keep these purely visual — no business logic.
  *
- * All timestamps render in UTC, never the viewer's locale: maintenance windows
- * are scheduled and reasoned about in UTC across the product (the calendar grid,
- * the Day-view ` · HH:mm UTC` clock, and identity stamps via `formatUtc` are all
- * UTC). Formatting times locally here drifted the quick-sheet / detail ranges
- * off the calendar bar for any non-UTC operator — so these formatters are
- * pinned to `timeZone: "UTC"` too.
+ * Two families live here, and the split is deliberate (RUK-201):
+ *
+ *  - **Event-window** formatters (`formatTime`/`formatDate`/`formatDateTime`/
+ *    `formatRange`) render a maintenance window in a caller-supplied IANA
+ *    `zone`. These describe *when the work happens*, so the operator wants them
+ *    in their own timezone ("18:00 means 18:00"). The `zone` is resolved once,
+ *    app-wide, by `useTimezone()` — call sites pass it straight through.
+ *  - **Identity/audit stamps** (`formatUtc`) stay pinned to **UTC** so a stamp
+ *    reads identically for every viewer. Do NOT thread a zone into `formatUtc`.
+ *
+ * Formatters are memoized per zone (`Intl.DateTimeFormat` construction is not
+ * free) so re-renders don't rebuild them.
  */
 
-const TIME_FMT = new Intl.DateTimeFormat("en-US", {
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-  timeZone: "UTC",
-});
+/** Cache one `Intl.DateTimeFormat` per (kind, zone) — construction is costly. */
+const fmtCache = new Map<string, Intl.DateTimeFormat>();
+function fmt(kind: string, zone: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `${kind}@${zone}`;
+  let f = fmtCache.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat("en-US", { ...options, timeZone: zone });
+    fmtCache.set(key, f);
+  }
+  return f;
+}
 
-const DATE_FMT = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "2-digit",
-  timeZone: "UTC",
-});
-
-const FULL_FMT = new Intl.DateTimeFormat("en-US", {
+const TIME_OPTS: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: false };
+const DATE_OPTS: Intl.DateTimeFormatOptions = { month: "short", day: "2-digit" };
+const FULL_OPTS: Intl.DateTimeFormatOptions = {
   month: "short",
   day: "2-digit",
   year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
-  timeZone: "UTC",
-});
+};
 
 /**
  * Project-wide identity timestamp format: `YYYY-MM-DD HH:mm UTC`, rendered in
@@ -63,17 +69,23 @@ function parseDate(iso: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatTime(iso: string): string {
+/**
+ * Event-window time as `HH:mm`, in `zone`. `zone` is an IANA id from
+ * `useTimezone()` (defaults to UTC during SSR/first render).
+ */
+export function formatTime(iso: string, zone: string): string {
   const date = parseDate(iso);
-  return date ? TIME_FMT.format(date) : NO_DATE;
+  return date ? fmt("time", zone, TIME_OPTS).format(date) : NO_DATE;
 }
-export function formatDate(iso: string): string {
+/** Event-window date as `MMM dd`, in `zone`. */
+export function formatDate(iso: string, zone: string): string {
   const date = parseDate(iso);
-  return date ? DATE_FMT.format(date) : NO_DATE;
+  return date ? fmt("date", zone, DATE_OPTS).format(date) : NO_DATE;
 }
-export function formatDateTime(iso: string): string {
+/** Event-window date+time as `MMM dd, yyyy HH:mm`, in `zone`. */
+export function formatDateTime(iso: string, zone: string): string {
   const date = parseDate(iso);
-  return date ? FULL_FMT.format(date) : NO_DATE;
+  return date ? fmt("full", zone, FULL_OPTS).format(date) : NO_DATE;
 }
 /**
  * Identity timestamp as `YYYY-MM-DD HH:mm UTC`. `Intl` with `en-GB` yields
@@ -87,8 +99,9 @@ export function formatUtc(iso: string | null | undefined): string {
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")} UTC`;
 }
-export function formatRange(startIso: string, endIso: string): string {
-  return `${formatTime(startIso)} – ${formatTime(endIso)}`;
+/** Event-window range `HH:mm – HH:mm`, both ends in `zone`. */
+export function formatRange(startIso: string, endIso: string, zone: string): string {
+  return `${formatTime(startIso, zone)} – ${formatTime(endIso, zone)}`;
 }
 
 /**
@@ -131,6 +144,12 @@ export function formatDuration(input?: string): string | undefined {
   return parts.join("");
 }
 
+/**
+ * Relative "…ago" text for recency (audit "last activity"). Zone-independent up
+ * to a week; past that it degrades to an absolute date. This is an audit/recency
+ * signal, not an event window, so the absolute fallback stays in **UTC** (no
+ * zone param) — consistent with the other audit stamps.
+ */
 export function formatRelative(iso: string): string {
   const date = parseDate(iso);
   if (!date) return NO_DATE;
@@ -142,5 +161,5 @@ export function formatRelative(iso: string): string {
   if (h < 24) return `${h}h ago`;
   const d = Math.round(h / 24);
   if (d < 7) return `${d}d ago`;
-  return formatDate(iso);
+  return formatDate(iso, "UTC");
 }

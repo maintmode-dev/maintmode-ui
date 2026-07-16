@@ -10,7 +10,8 @@ import { Stack } from "@/shared/ui/domain/stack";
 import { StatusBadge } from "@/shared/ui/domain/status-badge";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
-import { formatUtc } from "@/shared/ui/lib/format";
+import { formatDateTime } from "@/shared/ui/lib/format";
+import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 
 /**
  * "Related maintenance" section of ChannelDetailPage — the maintenances that
@@ -52,6 +53,7 @@ function isActive(m: Maintenance): boolean {
 
 export function NotifyChannelRelatedMaintenance({ channelId }: { channelId: string }) {
   const [tab, setTab] = useState<"active" | "past">("active");
+  const { zone } = useTimezone();
 
   const { from, to } = useMemo(() => {
     const now = new Date();
@@ -136,7 +138,7 @@ export function NotifyChannelRelatedMaintenance({ channelId }: { channelId: stri
                   <StatusBadge status={m.status} size="xs" />
                 </span>
                 <span className="font-mono tabular-nums text-xs text-fg-muted">
-                  {formatUtc(m.planned_period.start)}
+                  {formatDateTime(m.planned_period.start, zone)}
                 </span>
                 <span className="truncate text-sm">{m.title}</span>
                 <span className="font-mono text-xs text-fg-dim">{m.reference ?? ""}</span>

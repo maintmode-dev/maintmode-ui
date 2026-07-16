@@ -15,6 +15,7 @@ import { StepRow } from "@/shared/ui/domain/step-row";
 import { ConflictRow } from "@/shared/ui/domain/conflict-row";
 import { formatDuration, formatRange, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
+import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import type { MaintenanceDetail } from "@/domain/maintenance/maintenance";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useMaintenanceAction } from "./queries/use-maintenance-actions";
@@ -62,13 +63,12 @@ export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: Mai
  */
 function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
   const isGlobal = detail.scope === "global";
+  const { zone } = useTimezone();
   return (
     <>
       <SheetHeader className="px-6 pt-6 pb-3 gap-2">
         {detail.reference ? (
-          <div className="flex items-center gap-2 text-xs font-mono text-fg-dim">
-            {detail.reference}
-          </div>
+          <div className="flex items-center gap-2 text-xs font-mono text-fg-dim">{detail.reference}</div>
         ) : null}
         <SheetTitle className="h2">{detail.title}</SheetTitle>
         <div className="flex flex-wrap items-center gap-2">
@@ -93,7 +93,7 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
         <Card label="Overview">
           <Field label="Time">
             <span className="font-mono tabular-nums">
-              {formatRange(detail.planned_period.start, detail.planned_period.end)}
+              {formatRange(detail.planned_period.start, detail.planned_period.end, zone)}
             </span>
           </Field>
           <Field label="Approver">
@@ -161,7 +161,7 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
                   key={`${c.maintenance_id}-${i}`}
                   flush
                   title={c.title}
-                  meta={formatRange(c.overlap_start, c.overlap_end)}
+                  meta={formatRange(c.overlap_start, c.overlap_end, zone)}
                   resolved={c.resolved}
                 />
               ))}

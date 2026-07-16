@@ -28,6 +28,7 @@ import { ConflictCard, ConflictGridItem } from "@/shared/ui/domain/conflict-card
 import { SectionCard } from "@/shared/ui/domain/section-card";
 import { DetailsError, DetailsForbidden, DetailsLoading, DetailsNotFound } from "@/shared/ui/states";
 import { formatRange, formatDuration, formatUtc } from "@/shared/ui/lib/format";
+import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { cn } from "@/shared/ui/lib/cn";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
@@ -99,6 +100,7 @@ function MaintenanceDetailView({ id }: { id: string }) {
   const actionMutation = useMaintenanceAction();
   const cancelMutation = useCancelMaintenance();
   const stepMutation = useStepAction();
+  const { zone } = useTimezone();
 
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [cancelOpen, setCancelOpen] = useState(false);
@@ -185,14 +187,14 @@ function MaintenanceDetailView({ id }: { id: string }) {
                 <Section label="Time" className="col-span-2">
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="font-mono tabular-nums">
-                      {formatRange(detail.planned_period.start, detail.planned_period.end)}
+                      {formatRange(detail.planned_period.start, detail.planned_period.end, zone)}
                     </span>
                     <span className="text-fg-dim">planned</span>
                     {detail.actual_period ? (
                       <>
                         <Separator orientation="vertical" className="h-4" />
                         <span className="font-mono tabular-nums">
-                          {formatRange(detail.actual_period.start, detail.actual_period.end)}
+                          {formatRange(detail.actual_period.start, detail.actual_period.end, zone)}
                         </span>
                         <span className="text-fg-dim">actual</span>
                       </>
@@ -313,15 +315,13 @@ function MaintenanceDetailView({ id }: { id: string }) {
                 key={c.maintenance_id}
                 onClick={() => setConflictPeekId(c.maintenance_id)}
                 title={c.title}
-                meta={formatRange(c.overlap_start, c.overlap_end)}
+                meta={formatRange(c.overlap_start, c.overlap_end, zone)}
                 details={
                   <>
-                    {c.reference ? (
-                      <ConflictGridItem label="Maintenance" value={c.reference} mono />
-                    ) : null}
+                    {c.reference ? <ConflictGridItem label="Maintenance" value={c.reference} mono /> : null}
                     <ConflictGridItem
                       label="Overlap"
-                      value={formatRange(c.overlap_start, c.overlap_end)}
+                      value={formatRange(c.overlap_start, c.overlap_end, zone)}
                       mono
                     />
                   </>

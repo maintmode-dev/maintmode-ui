@@ -2,7 +2,7 @@
 
 import { TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Alert, AlertDescription } from "@/shared/ui/shadcn/alert";
 import { Button } from "@/shared/ui/shadcn/button";
@@ -17,6 +17,8 @@ import { ResourceChip } from "@/shared/ui/domain/resource-chip";
 import { SectionCard } from "@/shared/ui/domain/section-card";
 import { formatDateTime } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
+import { useTimezone } from "@/features/_shared/timezone/use-timezone";
+import { utcIsoToWallClock, wallClockToUtcIso } from "@/features/_shared/timezone/convert";
 import type {
   MaintenanceDetail,
   MaintenanceDraftInput,
@@ -26,10 +28,7 @@ import type {
 
 import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
 import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
-import {
-  transportDisplayTitle,
-  transportStatusCopy,
-} from "@/features/notify-channels/transports";
+import { transportDisplayTitle, transportStatusCopy } from "@/features/notify-channels/transports";
 import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
 import { useCreateMaintenance, useUpdateMaintenance } from "./queries/use-maintenance-draft";
 import {
@@ -51,18 +50,23 @@ export interface MaintenanceEditModeProps {
   onClose: () => void;
 }
 
-function isoDateTimeLocal(iso: string): string {
-  // <input type="datetime-local"> expects "YYYY-MM-DDTHH:MM"
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+/**
+ * Backend UTC instant → the wall-clock `YYYY-MM-DDTHH:MM` the picker shows, read
+ * in the operator's `zone`. Was the read-back half of the "enter 18 → see 15"
+ * bug (it used `getHours()`, i.e. the machine's zone); now it's zone-explicit.
+ */
+function isoDateTimeLocal(iso: string, zone: string): string {
+  return utcIsoToWallClock(iso, zone);
 }
 
-/** "YYYY-MM-DDTHH:MM" (local) → ISO-8601 with offset for the wire. */
-function localToIso(local: string): string {
-  const d = new Date(local);
-  return Number.isNaN(d.getTime()) ? local : d.toISOString();
+/**
+ * Picker wall-clock `YYYY-MM-DDTHH:MM` (interpreted in `zone`) → the UTC instant
+ * the wire wants. Was the write half of the bug (`new Date(local).toISOString()`
+ * parsed in the machine's zone); now the entered time means the same instant the
+ * display shows.
+ */
+function localToIso(local: string, zone: string): string {
+  return wallClockToUtcIso(local, zone);
 }
 
 /** Plain minute count → Go-duration string ("90" → "90m"). */
@@ -117,12 +121,24 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   const create = useCreateMaintenance();
   const update = useUpdateMaintenance();
   const pending = creating ? create.isPending : update.isPending;
+  const { zone, ready: zoneReady } = useTimezone();
 
   const [title, setTitle] = useState(detail?.title ?? "");
   const [description, setDescription] = useState(detail?.description ?? "");
   const [impact, setImpact] = useState<MaintenanceImpact>(detail?.impact ?? "none");
   const [scope, setScope] = useState<MaintenanceScope>(detail?.scope ?? "resource");
-  const [start, setStart] = useState(detail ? isoDateTimeLocal(detail.planned_period.start) : "");
+  // Seed the picker from the loaded draft's UTC start, rendered as wall-clock in
+  // the resolved zone. The seed runs in an effect (not `useState`) so it uses
+  // the REAL zone once resolved, not the SSR fallback — otherwise an operator in
+  // a non-UTC zone would open Edit on the UTC wall-clock and never see it
+  // corrected. `startTouched` guards the re-seed from clobbering a user edit.
+  const [start, setStart] = useState("");
+  const [startTouched, setStartTouched] = useState(false);
+  useEffect(() => {
+    if (startTouched || !detail) return;
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setStart(isoDateTimeLocal(detail.planned_period.start, zone));
+  }, [detail, zone, startTouched]);
   const [approverId, setApproverId] = useState<string | undefined>(undefined);
   const [resourceIds, setResourceIds] = useState<string[]>(() => detail?.resources.map((r) => r.id) ?? []);
   // Hydrate from the loaded draft's notify_targets so Edit pre-selects the
@@ -163,10 +179,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
         <span className={cn("flex items-center gap-1.5", statusCopy && "text-fg-muted")}>
           {c.name}
           {statusCopy ? (
-            <TriangleAlert
-              className="size-3 shrink-0 text-[var(--impact-partial-fg)]"
-              aria-hidden={true}
-            />
+            <TriangleAlert className="size-3 shrink-0 text-[var(--impact-partial-fg)]" aria-hidden={true} />
           ) : null}
         </span>
       ),
@@ -225,7 +238,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     return {
       title: title.trim(),
       description: description.trim(),
-      planned_start: localToIso(start),
+      planned_start: localToIso(start, zone),
       scope,
       impact,
       resource_ids: scope === "resource" ? resourceIds : [],
@@ -244,6 +257,12 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     ev.preventDefault();
     setSubmitted(true);
     if (Object.keys(errors).length > 0) return;
+    // Guard: the wall-clock → UTC conversion must run in the operator's real
+    // zone, not the SSR/first-render UTC fallback, or we'd persist an instant
+    // offset by the zone (the exact RUK-201 bug, on the write side). The zone
+    // resolves synchronously on mount, so this only ever blocks a submit fired
+    // in the same tick as hydration — practically never for a human.
+    if (!zoneReady) return;
     const input = buildInput();
 
     if (creating) {
@@ -285,7 +304,10 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             <DateTimePicker
               id="m-start"
               value={start}
-              onChange={setStart}
+              onChange={(v) => {
+                setStartTouched(true);
+                setStart(v);
+              }}
               aria-invalid={Boolean(show("start"))}
               aria-label="Planned start"
             />
@@ -293,7 +315,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
           <Field label="Planned end" hint="Computed from start + step durations">
             {/* Derived server-side from the start + step durations; read-only here. */}
             <div className="flex h-9 items-center rounded-sm border border-border-subtle bg-bg-elev-2 px-3 text-sm text-fg-dim tabular-nums">
-              {detail ? formatDateTime(detail.planned_period.end) : "Calculated on save"}
+              {detail ? formatDateTime(detail.planned_period.end, zone) : "Calculated on save"}
             </div>
           </Field>
         </div>
@@ -438,7 +460,12 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
           type="submit"
           size="sm"
           className={creating && !createReady ? "" : "ml-auto"}
-          disabled={pending || (creating && !createReady)}
+          // Also gate on `!zoneReady`: the picker's wall-clock is converted to
+          // UTC in the resolved zone, so submitting before the zone resolves
+          // (the same-tick-as-hydration edge) would use the UTC fallback. The
+          // handler still returns early as a backstop, but disabling the button
+          // makes the guard visible instead of a silent no-op.
+          disabled={pending || !zoneReady || (creating && !createReady)}
         >
           {creating ? (pending ? "Creating…" : "Create draft") : pending ? "Saving…" : "Save changes"}
         </Button>

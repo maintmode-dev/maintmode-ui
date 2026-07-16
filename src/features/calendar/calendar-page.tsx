@@ -18,6 +18,7 @@ import {
   FILTERS_STORAGE_KEY,
 } from "./calendar-filters";
 import { useCalendarQuery } from "./queries/use-calendar-query";
+import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { MaintenanceQuickSheet } from "@/features/maintenance/maintenance-quick-sheet";
 import {
   anchorFor,
@@ -90,6 +91,13 @@ export function CalendarPage() {
 
   const range = useMemo(() => viewRange(view, anchor), [view, anchor]);
 
+  // Zone the grid renders event times in (RUK-201). UTC during SSR/first render
+  // (hydration-safe), then the resolved operator zone. The calendar's anchor,
+  // `from`/`to` query window, and header title stay UTC-computed — those track
+  // the calendar DATE, not a wall-clock instant — so only the grid's rendered
+  // event times shift into `zone`.
+  const { zone } = useTimezone();
+
   // Status is filtered SERVER-SIDE: send the active status set as query params so
   // `items` already only holds the selected statuses (no client status filter).
   // Sorted + memoized so the query key is stable and toggling chips refetches
@@ -122,7 +130,7 @@ export function CalendarPage() {
   };
 
   const renderGrid = (gridItems: typeof items) => (
-    <CalendarGrid view={view} anchor={anchor} items={gridItems} onSelect={setSelectedId} />
+    <CalendarGrid view={view} anchor={anchor} items={gridItems} onSelect={setSelectedId} timeZone={zone} />
   );
 
   return (

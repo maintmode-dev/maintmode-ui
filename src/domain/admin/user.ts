@@ -20,6 +20,13 @@ export interface User {
   last_seen_at?: string;
   /** Non-null ISO timestamp means the account is blocked. */
   blocked_at?: string | null;
+  /**
+   * IANA timezone the user chose for rendering event windows (e.g.
+   * "Asia/Nicosia"). `null`/absent means "not chosen" → the UI falls back to the
+   * browser's autodetected zone. Populated by RUK-202 (`GET /me`); the field is
+   * optional so the FE tolerates the pre-RUK-202 wire that omits it entirely.
+   */
+  timezone?: string | null;
 }
 
 /** Derive UI block status from the nullable `blocked_at` timestamp. */

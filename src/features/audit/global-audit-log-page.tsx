@@ -49,17 +49,25 @@ interface DateRange {
   to: string;
 }
 
-/** Resolve the active date window to RFC3339 `{ from, to }` for the server. */
-function resolveDateWindow(
+/**
+ * Resolve the active date window to RFC3339 `{ from, to }` for the server.
+ * Exported for unit testing (the custom-range branch is timezone-sensitive).
+ */
+export function resolveDateWindow(
   preset: string,
   customRange: DateRange | null,
   nowMs: number,
 ): { from?: string; to?: string } {
   if (customRange) {
-    // Inclusive: `to` extends to end-of-day so the last day is fully covered.
+    // Interpret the picked calendar dates as **UTC** days, not the machine's
+    // local day: audit is a UTC domain (stamps render via `formatUtc`, and the
+    // range chip below shows these dates with `formatDate(..., "UTC")`). Without
+    // the explicit `Z`, `new Date("2026-07-16T00:00:00")` parses in the browser
+    // zone, so the window sent to the backend drifted from the window shown to
+    // the user by the machine offset. Inclusive: `to` covers the whole last day.
     return {
-      from: new Date(`${customRange.from}T00:00:00`).toISOString(),
-      to: new Date(`${customRange.to}T23:59:59.999`).toISOString(),
+      from: new Date(`${customRange.from}T00:00:00.000Z`).toISOString(),
+      to: new Date(`${customRange.to}T23:59:59.999Z`).toISOString(),
     };
   }
   const active = DATE_PRESETS.find((p) => p.id === preset) ?? DATE_PRESETS[1];
@@ -203,7 +211,8 @@ export function GlobalAuditLogPage() {
             {customRange ? (
               <span className="inline-flex items-center gap-1.5 rounded-sm border border-border-strong bg-bg-row-selected px-2 py-[3px] text-xs">
                 <span className="font-mono tabular-nums text-fg">
-                  {formatDate(`${customRange.from}T00:00:00`)} – {formatDate(`${customRange.to}T00:00:00`)}
+                  {formatDate(`${customRange.from}T00:00:00`, "UTC")} –{" "}
+                  {formatDate(`${customRange.to}T00:00:00`, "UTC")}
                 </span>
                 <button
                   type="button"

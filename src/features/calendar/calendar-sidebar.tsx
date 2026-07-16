@@ -7,6 +7,7 @@ import { cn } from "@/shared/ui/lib/cn";
 import { Input } from "@/shared/ui/shadcn/input";
 import { STATUS_LABEL } from "@/shared/ui/domain/status-badge";
 import { formatDate, formatRange } from "@/shared/ui/lib/format";
+import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 
 import {
@@ -56,6 +57,7 @@ export interface CalendarSidebarProps {
 
 export function CalendarSidebar({ items, filters, onFiltersChange, now, onSelect }: CalendarSidebarProps) {
   const [resourceQuery, setResourceQuery] = useState("");
+  const { zone } = useTimezone();
 
   const allResources = useMemo(() => resourceOptions(items), [items]);
   const selectedResources = useMemo(
@@ -228,7 +230,7 @@ export function CalendarSidebar({ items, filters, onFiltersChange, now, onSelect
       <section className="space-y-2">
         <h2 className="text-[11px] font-medium uppercase tracking-[0.06em] text-fg-dim">Up next</h2>
         <p className="text-xs text-fg-muted">
-          Today · <span className="tabular-nums">{formatDate(now.toISOString())}</span>
+          Today · <span className="tabular-nums">{formatDate(now.toISOString(), zone)}</span>
         </p>
         {upNext.length === 0 ? (
           <p className="text-xs text-fg-dim">Nothing upcoming.</p>
@@ -259,7 +261,7 @@ export function CalendarSidebar({ items, filters, onFiltersChange, now, onSelect
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-medium text-fg">{m.title}</span>
                     <span className="block font-mono text-[10px] tabular-nums text-fg-dim">
-                      {formatRange(m.planned_period.start, m.planned_period.end)}
+                      {formatRange(m.planned_period.start, m.planned_period.end, zone)}
                     </span>
                   </span>
                 </button>

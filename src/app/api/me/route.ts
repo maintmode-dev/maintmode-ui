@@ -5,6 +5,13 @@ import { clearActiveSession } from "@/server/auth/session-token";
 import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
 import { BackendRequestError } from "@/server/backend/errors/backend-request-error";
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
+import { readJsonBody } from "@/server/backend/http/read-json-body";
+import { isSameOriginRequest } from "@/server/backend/security/csrf";
+
+interface UpdateMeBody {
+  /** IANA identifier (e.g. "Asia/Nicosia"); null/empty resets to autodetect. */
+  timezone?: string | null;
+}
 
 /**
  * GET /api/me — proxy to backend `GET /api/v1/me`. Returns the current
@@ -39,6 +46,49 @@ export async function GET() {
         { status: 401 },
       );
     }
+    return routeErrorResponse(error);
+  }
+}
+
+/**
+ * PATCH /api/me — proxy to backend `PATCH /api/v1/me`, updating the caller's
+ * timezone preference (RUK-201). Body: `{ timezone }` — an IANA id (e.g.
+ * "Asia/Nicosia"), or `null`/empty to reset to browser autodetect. The backend
+ * validates the identifier and returns 400 for an invalid one; that envelope
+ * passes straight through `routeErrorResponse`. Returns the updated user so the
+ * client can refresh its `/me` cache from the response.
+ */
+export async function PATCH(request: Request) {
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json(
+      { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const parsed = await readJsonBody<UpdateMeBody>(request);
+
+    // Normalize the "reset to autodetect" signal to a single canonical `null`:
+    // a present-but-empty/whitespace `timezone` (or an explicit null) all mean
+    // "reset", so collapse them rather than forwarding an ambiguous `""`. A
+    // non-empty value passes through for the backend to validate. Omitting the
+    // field entirely sends `{}` (no change).
+    const body: UpdateMeBody = {};
+    if ("timezone" in parsed) {
+      const tz = parsed.timezone;
+      body.timezone = typeof tz === "string" && tz.trim() ? tz : null;
+    }
+
+    const data = await authenticatedBackendRequest<unknown>({
+      path: "/api/v1/me",
+      method: "PATCH",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+      useAuthBase: true,
+    });
+    return NextResponse.json(data);
+  } catch (error) {
     return routeErrorResponse(error);
   }
 }

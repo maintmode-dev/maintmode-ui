@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import type { User } from "@/domain/admin/user";
@@ -36,6 +36,27 @@ export function useMeQuery() {
         return false;
       }
       return failureCount < 1;
+    },
+  });
+}
+
+/**
+ * Update the current user's timezone preference (RUK-201) via `PATCH /api/me`.
+ * Pass an IANA id (e.g. "Asia/Nicosia") or `null` to reset to browser
+ * autodetect. On success the backend returns the updated user; we seed the
+ * `["me"]` cache with it so `useTimezone` (and the profile) reflect the change
+ * immediately without a refetch round-trip.
+ */
+export function useUpdateTimezone() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (timezone: string | null): Promise<User> =>
+      bffFetch<User>("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify({ timezone }),
+      }),
+    onSuccess: (user) => {
+      queryClient.setQueryData(meKey(), user);
     },
   });
 }

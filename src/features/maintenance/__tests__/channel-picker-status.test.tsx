@@ -43,6 +43,12 @@ vi.mock("../queries/use-maintenance-draft", () => ({
   useCreateMaintenance: () => ({ mutate: vi.fn(), isPending: false }),
   useUpdateMaintenance: () => ({ mutate: vi.fn(), isPending: false }),
 }));
+// The form resolves its display/conversion zone via `useTimezone` (→ useMeQuery).
+// Stub it to a ready UTC zone so the test needs no QueryClient and stays focused
+// on channel-status behaviour, not timezones.
+vi.mock("@/features/_shared/timezone/use-timezone", () => ({
+  useTimezone: () => ({ zone: "UTC", ready: true }),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 import { MaintenanceEditMode } from "../maintenance-edit-mode";

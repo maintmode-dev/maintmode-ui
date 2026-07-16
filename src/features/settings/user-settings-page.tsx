@@ -20,6 +20,7 @@ import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { BrandIcon, type BrandProvider } from "@/shared/ui/icons/brand-icons";
 
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
+import { TimezoneCard } from "./timezone-card";
 import type { Role } from "@/domain/auth/permissions";
 
 /** Role chips render admin-first, consistent with users-management. */
@@ -102,6 +103,8 @@ export function UserSettingsPage() {
             change.
           </p>
         </Card>
+
+        <TimezoneCard savedZone={user.timezone} />
 
         <Card title="Sign-in method">
           <p className="caption">

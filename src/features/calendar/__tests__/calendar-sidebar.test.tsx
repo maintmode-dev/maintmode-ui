@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,20 +14,27 @@ afterEach(() => cleanup());
 
 const NOW = new Date(2026, 5, 23, 12, 0);
 
+// The sidebar now reads the display timezone via `useTimezone` → `useMeQuery`,
+// so it needs a QueryClient in scope. `/me` never resolves here (no bffFetch
+// mock), so the zone stays the UTC fallback — which is exactly what these
+// status-chip assertions want (they don't touch times).
 function renderSidebar(statuses: MaintenanceStatus[], onFiltersChange = vi.fn()) {
   const filters: CalendarFilterState = {
     statuses: new Set(statuses),
     scope: "all",
     resourceIds: new Set(),
   };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <CalendarSidebar
-      items={[]}
-      filters={filters}
-      onFiltersChange={onFiltersChange}
-      now={NOW}
-      onSelect={() => {}}
-    />,
+    <QueryClientProvider client={client}>
+      <CalendarSidebar
+        items={[]}
+        filters={filters}
+        onFiltersChange={onFiltersChange}
+        now={NOW}
+        onSelect={() => {}}
+      />
+    </QueryClientProvider>,
   );
   return onFiltersChange;
 }
