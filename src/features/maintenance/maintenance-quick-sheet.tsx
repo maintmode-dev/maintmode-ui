@@ -65,9 +65,11 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
   return (
     <>
       <SheetHeader className="px-6 pt-6 pb-3 gap-2">
-        <div className="flex items-center gap-2 text-xs font-mono text-fg-dim">
-          {detail.reference ?? detail.id}
-        </div>
+        {detail.reference ? (
+          <div className="flex items-center gap-2 text-xs font-mono text-fg-dim">
+            {detail.reference}
+          </div>
+        ) : null}
         <SheetTitle className="h2">{detail.title}</SheetTitle>
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge status={detail.status} />
