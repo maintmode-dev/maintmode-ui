@@ -13,6 +13,7 @@ import {
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
 import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
+import { isRole } from "@/domain/auth/permissions";
 import {
   AUTH_ERROR_CODES,
   BackendAuthError,
@@ -51,12 +52,22 @@ if (authConfig.devAuthBypassEnabled) {
     Credentials({
       id: DEV_BYPASS_PROVIDER_ID,
       name: "Dev bypass",
-      credentials: {},
-      async authorize() {
-        // Defer the actual backend exchange to the signIn callback so the
-        // logic (and error mapping) lives in one place. We just need to
-        // return a non-null user here for NextAuth to proceed.
-        return { id: "dev-bypass" };
+      // The dev "Login as {role}" block posts the chosen role here; it seeds the
+      // backend `X-Test-Roles` header so the stub OAuth creates a fresh user
+      // with that role. Registered only under `devAuthBypassEnabled`.
+      credentials: { role: {} },
+      async authorize(credentials) {
+        // Reject anything but the four assignable roles before it reaches the
+        // backend (which would 400 on an unknown role). An absent/invalid role
+        // fails the sign-in rather than silently logging in role-less.
+        const role = typeof credentials?.role === "string" ? credentials.role : "";
+        if (!isRole(role)) {
+          return null;
+        }
+        // Defer the actual backend exchange to the signIn callback so the logic
+        // (and error mapping) lives in one place. Carrying `role` on the
+        // returned user hands it to that callback.
+        return { id: "dev-bypass", role };
       },
     }),
   );
@@ -87,7 +98,7 @@ export const config = {
   },
   providers,
   callbacks: {
-    async signIn({ account }) {
+    async signIn({ account, user }) {
       if (!account) {
         return false;
       }
@@ -111,8 +122,11 @@ export const config = {
         // Provider is only registered in non-prod (see providers list above),
         // so reaching this branch implies the bypass is active. Backend in
         // non-prod accepts any id_token; the placeholder makes the bypass
-        // auditable in backend logs.
-        return runBackendExchange(account, "dev-bypass");
+        // auditable in backend logs. `authorize` already validated the role, so
+        // it seeds `X-Test-Roles` and the stub backend creates a fresh user
+        // with it.
+        const role = typeof user?.role === "string" ? user.role : "";
+        return runBackendExchange(account, "dev-bypass", role);
       }
       return false;
     },
@@ -200,9 +214,13 @@ function readNumber(value: unknown): number | undefined {
 async function runBackendExchange(
   account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
   idToken: string,
+  // Dev-only: the role picked in the "Login as" block, seeded onto the new user
+  // via `X-Test-Roles`. Empty for real Google logins (no header sent). Only the
+  // dev-bypass branch, gated by `devAuthBypassEnabled`, ever passes a value.
+  testRoles = "",
 ): Promise<true> {
   try {
-    const tokens = await exchangeGoogleIdToken(idToken);
+    const tokens = await exchangeGoogleIdToken(idToken, testRoles);
     const me = await fetchBackendMe(tokens.access_token);
     account.maintmodeTokens = tokens;
     account.maintmodeUser = {
@@ -213,6 +231,11 @@ async function runBackendExchange(
     };
     return true;
   } catch (error) {
+    // Signup closed (403 `signup_disabled`): surfaced distinctly so /login can
+    // tell the user an invitation is required, instead of the generic failure.
+    if (backendErrorCode(error) === "signup_disabled") {
+      throw new BackendExchangeError(AUTH_ERROR_CODES.signupDisabled);
+    }
     const code = isIdentityLookupError(error)
       ? AUTH_ERROR_CODES.identityLookupFailed
       : AUTH_ERROR_CODES.oauthHandoffFailed;

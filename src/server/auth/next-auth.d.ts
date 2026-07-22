@@ -1,6 +1,7 @@
 import "next-auth";
 import "next-auth/jwt";
 
+import type { Role } from "@/domain/auth/permissions";
 import type { AuthSessionUser, BackendTokenPair } from "@/server/auth/contracts";
 
 /**
@@ -26,6 +27,17 @@ declare module "next-auth" {
      */
     maintmodeTokens?: BackendTokenPair;
     maintmodeUser?: AuthSessionUser;
+  }
+
+  interface User {
+    /**
+     * Dev-only. The role chosen in the "Login as {role}" block, returned from
+     * the dev-bypass provider's `authorize` and read by the `signIn` callback
+     * to seed `X-Test-Roles`. Absent for every real (Google) login. Typed as
+     * `Role` (not `string`) so the validated-in-`authorize` invariant is
+     * structural — any future writer must supply a valid role.
+     */
+    role?: Role;
   }
 }
 

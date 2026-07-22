@@ -51,15 +51,22 @@ export class BackendAuthError extends Error {
 }
 
 /**
- * Stable `error` codes the frontend uses on `/login?error=...` URLs after a
- * failed sign-in. Keep this enum in sync with the messages map in
- * `src/app/(auth)/login/page.tsx`.
+ * Stable codes the frontend surfaces on `/login` after a failed sign-in. The
+ * server page (`src/app/login/page.tsx`) reads `?code=` (falling back to
+ * `?error=`) and the messages map lives in
+ * `src/features/auth/login-page.tsx`. Keep this enum in sync with that map.
  */
 export const AUTH_ERROR_CODES = {
   oauthHandoffFailed: "oauth_handoff_failed",
   identityLookupFailed: "identity_lookup_failed",
   invalidIdToken: "invalid_id_token",
   sessionCreationFailed: "session_creation_failed",
+  // Login exchange only: the backend rejected sign-in because signup is closed
+  // (HTTP 403, code `signup_disabled`) — the account isn't invited and open
+  // signup is off. Surfaced distinctly so /login can say "invitation required"
+  // instead of the generic failure. Leaks nothing: it's the same answer for any
+  // uninvited account, invited-or-not.
+  signupDisabled: "signup_disabled",
   // Accept-invite only: the signed-in Google account's email differs from the
   // invited email. Surfaced distinctly (not the generic code) because it's a
   // fact about the user's OWN account, not about the invitation — so it leaks

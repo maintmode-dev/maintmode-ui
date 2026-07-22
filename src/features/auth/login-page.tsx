@@ -51,7 +51,7 @@ export function LoginPage({ error, signInAction }: LoginPageProps) {
               <span>
                 {error === "email_mismatch"
                   ? "This account isn't the one this invitation was sent to. Sign in with the right account."
-                  : error === "AccessDenied"
+                  : error === "signup_disabled" || error === "AccessDenied"
                     ? "This account is not provisioned. Ask an admin for an invitation."
                     : "Sign-in didn't complete. Try again."}
               </span>

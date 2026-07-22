@@ -27,10 +27,22 @@ const ME_PATH = "/api/v1/me";
  * The backend currently gates this endpoint with the `NotAllowedInProd`
  * middleware, so it is reachable only in dev/staging. Production rollout
  * is a separate backend follow-up.
+ *
+ * `testRoles` (dev-only) seeds the `X-Test-Roles` header so a freshly created
+ * dev user gets the given roles (comma-separated, e.g. `admin,editor`). The
+ * only caller that passes it is the dev-bypass branch of the NextAuth `signIn`
+ * callback, which is registered solely under `devAuthBypassEnabled` (off in
+ * production) — so the header can never ship in a prod build. We only send it
+ * when the value is non-empty. The header is deliberately absent from the
+ * public swagger, so it is added here in the fetch layer by hand.
  */
-export async function exchangeGoogleIdToken(idToken: string): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(EXCHANGE_GOOGLE_PATH, { id_token: idToken }, (parsed) =>
-    Boolean(parsed?.access_token && parsed?.refresh_token),
+export async function exchangeGoogleIdToken(idToken: string, testRoles = ""): Promise<BackendTokenPair> {
+  const headers = testRoles ? { "X-Test-Roles": testRoles } : undefined;
+  return postBackendJson<BackendTokenPair>(
+    EXCHANGE_GOOGLE_PATH,
+    { id_token: idToken },
+    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
+    headers,
   );
 }
 
@@ -173,6 +185,7 @@ async function postBackendJson<TResponse>(
   path: string,
   body: Record<string, unknown>,
   isShapeValid: (parsed: TResponse | undefined) => boolean,
+  extraHeaders?: Record<string, string>,
 ): Promise<TResponse> {
   const config = readMaintmodeBackendConfig();
   const target = resolveBackendUrl(config.authApiBaseUrl, path);
@@ -183,6 +196,9 @@ async function postBackendJson<TResponse>(
     const response = await fetch(target, {
       method: "POST",
       headers: {
+        // Spread extra headers first so the fixed accept/content-type below
+        // always win — a caller can never override the JSON content contract.
+        ...extraHeaders,
         accept: "application/json",
         "content-type": "application/json",
       },
