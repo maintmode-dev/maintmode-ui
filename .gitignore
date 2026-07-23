@@ -27,3 +27,7 @@ smoke-run/
 *.har
 
 SPEC.md
+
+.agents/tasks/
+
+tasks/

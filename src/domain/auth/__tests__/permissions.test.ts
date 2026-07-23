@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEV_LOGIN_ROLES, hasRole, isAdmin, isRole } from "@/domain/auth/permissions";
+import { canWrite, DEV_LOGIN_ROLES, hasRole, isAdmin, isRole } from "@/domain/auth/permissions";
 
 describe("permissions", () => {
   it("returns false for undefined or empty role arrays", () => {
@@ -18,6 +18,30 @@ describe("permissions", () => {
   it("returns false when the role is absent", () => {
     expect(isAdmin(["editor", "reviewer"])).toBe(false);
     expect(hasRole(["guest"], "admin")).toBe(false);
+  });
+});
+
+describe("canWrite", () => {
+  it("returns false for undefined, empty, or read-only role sets", () => {
+    expect(canWrite(undefined)).toBe(false);
+    expect(canWrite([])).toBe(false);
+    expect(canWrite(["guest"])).toBe(false);
+  });
+
+  it("returns true for any write-capable role, including guest-union sets", () => {
+    expect(canWrite(["guest", "editor"])).toBe(true);
+    expect(canWrite(["editor"])).toBe(true);
+    expect(canWrite(["guest", "reviewer"])).toBe(true);
+    expect(canWrite(["reviewer"])).toBe(true);
+    expect(canWrite(["guest", "admin"])).toBe(true);
+    expect(canWrite(["admin"])).toBe(true);
+  });
+
+  it("is a positive check — never derives from guest presence or roles.length", () => {
+    // A lone unknown role has length 1 but grants no write right.
+    expect(canWrite(["someone-else"])).toBe(false);
+    // Multiple read-only roles still cannot write.
+    expect(canWrite(["guest", "guest"])).toBe(false);
   });
 });
 

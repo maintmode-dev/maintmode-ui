@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { canWrite } from "@/domain/auth/permissions";
 import { CalendarEmpty, CalendarError, CalendarLoading } from "@/shared/ui/states";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
@@ -19,6 +20,7 @@ import {
 } from "./calendar-filters";
 import { useCalendarQuery } from "./queries/use-calendar-query";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
+import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 import { MaintenanceQuickSheet } from "@/features/maintenance/maintenance-quick-sheet";
 import {
   anchorFor,
@@ -98,6 +100,12 @@ export function CalendarPage() {
   // event times shift into `zone`.
   const { zone } = useTimezone();
 
+  // Gate the "New maintenance" entry points on write-capable roles. Fail-closed:
+  // while `/me` is pending or errored, `data` is undefined → `canWrite` false →
+  // the links stay hidden, so no guest sees a create action they can't use.
+  const me = useMeQuery().data;
+  const canCreate = canWrite(me?.roles);
+
   // Status is filtered SERVER-SIDE: send the active status set as query params so
   // `items` already only holds the selected statuses (no client status filter).
   // Sorted + memoized so the query key is stable and toggling chips refetches
@@ -176,11 +184,13 @@ export function CalendarPage() {
             <TabsTrigger value="month">Month</TabsTrigger>
           </TabsList>
         </Tabs>
-        <Button asChild size="sm">
-          <Link href="/maintenance/new">
-            <Plus className="size-3.5" aria-hidden="true" /> New maintenance
-          </Link>
-        </Button>
+        {canCreate ? (
+          <Button asChild size="sm">
+            <Link href="/maintenance/new">
+              <Plus className="size-3.5" aria-hidden="true" /> New maintenance
+            </Link>
+          </Button>
+        ) : null}
       </header>
 
       {status === "loading" ? (
@@ -214,12 +224,20 @@ export function CalendarPage() {
                   <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
                     {items.length === 0 ? (
                       <CalendarEmpty
+                        // Guest: neutral empty state, no create link. `cta={false}`
+                        // (not undefined) suppresses CalendarEmpty's default
+                        // "New maintenance" button — `??` only falls back on nullish.
+                        caption={canCreate ? undefined : "No maintenance is scheduled for this period."}
                         cta={
-                          <Button asChild size="sm">
-                            <Link href="/maintenance/new">
-                              <Plus className="size-3" aria-hidden="true" /> New maintenance
-                            </Link>
-                          </Button>
+                          canCreate ? (
+                            <Button asChild size="sm">
+                              <Link href="/maintenance/new">
+                                <Plus className="size-3" aria-hidden="true" /> New maintenance
+                              </Link>
+                            </Button>
+                          ) : (
+                            false
+                          )
                         }
                       />
                     ) : (

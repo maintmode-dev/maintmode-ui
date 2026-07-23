@@ -24,3 +24,18 @@ export function hasRole(roles: readonly string[] | undefined, role: Role): boole
 export function isAdmin(roles: readonly string[] | undefined): boolean {
   return hasRole(roles, "admin");
 }
+
+/**
+ * Can this role set perform write actions (create maintenance / resource /
+ * channel)? Positive check: true iff one of the write-capable roles is present.
+ *
+ * Authoritative matrix: `deployment/maintmode/authz/policy.csv` — `editor`,
+ * `reviewer`, and `admin` hold `*.create` rights; `guest` holds none. Because
+ * the backend expresses the guest→editor→reviewer→admin hierarchy as Casbin
+ * inheritance (not injected into `/me`'s roles array), never gate on `guest`
+ * presence or `roles.length` — check only for the roles that actually grant
+ * write access.
+ */
+export function canWrite(roles: readonly string[] | undefined): boolean {
+  return hasRole(roles, "editor") || hasRole(roles, "reviewer") || hasRole(roles, "admin");
+}

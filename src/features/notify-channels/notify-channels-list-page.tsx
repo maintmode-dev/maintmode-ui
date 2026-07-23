@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Filter, MessageCircle, Plus, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { canWrite } from "@/domain/auth/permissions";
 import { isNotifyChannelArchived } from "@/domain/notify-channel/notify-channel";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -16,6 +17,8 @@ import { SemanticPill } from "@/shared/ui/domain/semantic-pill";
 import { TransportPill } from "@/shared/ui/domain/transport-pill";
 import { CalendarError } from "@/shared/ui/states";
 import { formatUtc } from "@/shared/ui/lib/format";
+
+import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 
 import { useNotifyChannelsQuery } from "./queries/use-notify-channels-query";
 import { NotifyChannelCreateDialog } from "./notify-channel-create-dialog";
@@ -32,6 +35,12 @@ export function NotifyChannelsListPage() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Gate the create affordances on write-capable roles. Fail-closed: while
+  // `/me` is pending or errored, `data` is undefined → `canWrite` false → the
+  // CTAs stay hidden, so no guest ever sees a create action they can't use.
+  const me = useMeQuery().data;
+  const canCreate = canWrite(me?.roles);
 
   const channelsQuery = useNotifyChannelsQuery({ archived: showArchived });
   const channelsData = channelsQuery.data;
@@ -62,9 +71,11 @@ export function NotifyChannelsListPage() {
             </p>
           ) : null}
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="size-3.5" aria-hidden="true" /> New channel
-        </Button>
+        {canCreate ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="size-3.5" aria-hidden="true" /> New channel
+          </Button>
+        ) : null}
       </header>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -128,11 +139,17 @@ export function NotifyChannelsListPage() {
           <Stack
             icon={<MessageCircle aria-hidden="true" />}
             title="No channels yet"
-            caption="Create a channel so maintenance windows have somewhere to send notifications."
+            caption={
+              canCreate
+                ? "Create a channel so maintenance windows have somewhere to send notifications."
+                : "No channels have been added yet."
+            }
             cta={
-              <Button onClick={() => setCreateOpen(true)} size="sm">
-                <Plus className="size-3" aria-hidden="true" /> New channel
-              </Button>
+              canCreate ? (
+                <Button onClick={() => setCreateOpen(true)} size="sm">
+                  <Plus className="size-3" aria-hidden="true" /> New channel
+                </Button>
+              ) : undefined
             }
           />
         )

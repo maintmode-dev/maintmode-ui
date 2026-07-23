@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, Filter, Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { canWrite } from "@/domain/auth/permissions";
 import { isResourceArchived } from "@/domain/resource/resource";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -12,6 +13,8 @@ import { Switch } from "@/shared/ui/shadcn/switch";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Stack } from "@/shared/ui/domain/stack";
 import { formatUtc } from "@/shared/ui/lib/format";
+
+import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 
 import { useResourcesQuery } from "./queries/use-resources-query";
 import { ResourceCreateDialog } from "./resource-create-dialog";
@@ -26,6 +29,12 @@ export function ResourcesListPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+
+  // Gate the create affordances on write-capable roles. Fail-closed: while
+  // `/me` is pending or errored, `data` is undefined → `canWrite` false → the
+  // CTAs stay hidden, so no guest ever sees a create action they can't use.
+  const me = useMeQuery().data;
+  const canCreate = canWrite(me?.roles);
 
   // Debounce the name filter so each keystroke doesn't fire a backend request;
   // filtering is server-side (the list endpoint matches on `name`).
@@ -61,9 +70,11 @@ export function ResourcesListPage() {
             </p>
           ) : null}
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
-          <Plus className="size-3.5" aria-hidden="true" /> New resource
-        </Button>
+        {canCreate ? (
+          <Button onClick={() => setCreateOpen(true)}>
+            <Plus className="size-3.5" aria-hidden="true" /> New resource
+          </Button>
+        ) : null}
       </header>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -127,11 +138,17 @@ export function ResourcesListPage() {
           <Stack
             icon={<Search aria-hidden="true" />}
             title="No resources yet"
-            caption="Create a resource so maintenance windows have something to schedule against."
+            caption={
+              canCreate
+                ? "Create a resource so maintenance windows have something to schedule against."
+                : "No resources have been added yet."
+            }
             cta={
-              <Button onClick={() => setCreateOpen(true)} size="sm">
-                <Plus className="size-3" aria-hidden="true" /> New resource
-              </Button>
+              canCreate ? (
+                <Button onClick={() => setCreateOpen(true)} size="sm">
+                  <Plus className="size-3" aria-hidden="true" /> New resource
+                </Button>
+              ) : undefined
             }
           />
         )

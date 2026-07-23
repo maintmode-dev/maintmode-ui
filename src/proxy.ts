@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { canWrite } from "@/domain/auth/permissions";
 import { auth } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -81,6 +82,13 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     const loginUrl = new URL("/login", request.nextUrl);
     loginUrl.searchParams.set("next", safeNext(`${pathname}${search}`));
     return NextResponse.redirect(loginUrl);
+  }
+
+  // `/maintenance/new` is the only create-only route; hide-the-CTA covers the
+  // UI, this is defense-in-depth against a deep-link. Exact match (not
+  // startsWith) so a hypothetical `/maintenance/newer` is not over-matched.
+  if (pathname === "/maintenance/new" && !canWrite(session.user?.roles)) {
+    return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
   if (pathname.startsWith("/admin/")) {
