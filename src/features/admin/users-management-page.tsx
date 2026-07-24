@@ -76,8 +76,11 @@ export function UsersManagementPage() {
   const allInvitations = useMemo(() => invitationsQuery.data ?? [], [invitationsQuery.data]);
 
   // Header caption counts: active = non-blocked users across the whole dataset;
-  // pending = invites awaiting acceptance.
-  const activeUserCount = activeCountQuery.data?.total ?? 0;
+  // pending = invites awaiting acceptance. The active count is its own request,
+  // so degrade to an em dash while it's loading or on error rather than assert a
+  // false "0 active" next to a fully-rendered table.
+  const activeUserLabel =
+    activeCountQuery.data != null ? String(activeCountQuery.data.total) : "—";
   const pendingInviteCount = useMemo(
     () => allInvitations.filter((i) => i.status === "pending").length,
     [allInvitations],
@@ -103,7 +106,7 @@ export function UsersManagementPage() {
           <div className="flex-1 min-w-[200px]">
             <h1 className="h1">Users</h1>
             <p className="caption mono mt-1 text-fg-dim">
-              {activeUserCount} active · {pendingInviteCount} pending invitations
+              {activeUserLabel} active · {pendingInviteCount} pending invitations
             </p>
           </div>
           <Button onClick={() => setInviteOpen(true)}>

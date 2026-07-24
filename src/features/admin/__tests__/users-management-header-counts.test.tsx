@@ -79,7 +79,13 @@ function invitation(id: string, status: Invitation["status"]): Invitation {
  * count the backend reports for `active=true`; `page` is the (possibly
  * paginated / search-narrowed) main list; `invitations` is the full invite set.
  */
-function renderPage(opts: { activeTotal: number; page: ListUsersPage; invitations: Invitation[] }) {
+function renderPage(opts: {
+  activeTotal: number;
+  page: ListUsersPage;
+  invitations: Invitation[];
+  /** When true, the `active=true` probe rejects, exercising the degraded caption. */
+  activeError?: boolean;
+}) {
   // Track invitation-fetch completion so a test can wait for the loaded count
   // even when the correct rendered value equals the pre-fetch default (0).
   const state = { invitationsResolved: false };
@@ -95,6 +101,7 @@ function renderPage(opts: { activeTotal: number; page: ListUsersPage; invitation
       // The active-count probe carries `active=true`; everything else is the
       // main table page.
       if (path.includes("active=true")) {
+        if (opts.activeError) throw new Error("active-count probe failed");
         return { users: [], limit: 1, offset: 0, total: opts.activeTotal } satisfies ListUsersPage;
       }
       return opts.page;
@@ -120,6 +127,30 @@ describe("UsersManagementPage header counts", () => {
 
     await waitFor(() => expect(captionText()).toMatch(/40 active/));
     expect(captionText()).not.toMatch(/\b1 active/);
+  });
+
+  it("degrades the active count to an em dash when its probe errors, not a false 0", async () => {
+    // The active count is its own request; if it fails while the table renders,
+    // the caption must not assert "0 active" (which reads as "no users").
+    const page: ListUsersPage = { users: [user("a")], limit: 50, offset: 0, total: 1 };
+    renderPage({ activeTotal: 0, page, invitations: [], activeError: true });
+
+    // Wait for the invitations query (which succeeds) to settle the caption, then
+    // confirm the active slot shows the em-dash placeholder rather than 0.
+    await waitFor(() => expect(captionText()).toMatch(/pending invitations/));
+    expect(captionText()).toMatch(/— active/);
+    expect(captionText()).not.toMatch(/\b0 active/);
+  });
+
+  it("reads 0 for both counts when there are no invitations and no active users", async () => {
+    // Empty org: dataset-wide active total is 0 and there are no invites — both
+    // surfaces must read 0 (badge and caption agree at the zero boundary).
+    const page: ListUsersPage = { users: [], limit: 50, offset: 0, total: 0 };
+    renderPage({ activeTotal: 0, page, invitations: [] });
+
+    await waitFor(() => expect(captionText()).toMatch(/0 active/));
+    expect(captionText()).toMatch(/0 pending invitations/);
+    expect(invitationsBadgeText()).toBe("Invitations · 0");
   });
 
   it("counts only pending invitations in the tab badge, ignoring revoked/expired/accepted", async () => {
