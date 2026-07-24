@@ -75,6 +75,19 @@ export async function bffFetch<T>(path: string, init: BffFetchOptions = {}): Pro
     }
   }
 
+  // Global license gate: a suspended org 403s every MUTATING request with this
+  // stable code (backend: maintmode `internal/server/middlewares/license_suspend.go`).
+  // Reads are never gated, so this branch fires only on writes — no GET can hang
+  // a Suspense boundary here. Mirrors the 401 AUTH_REQUIRED handler above:
+  // redirect + never-resolving promise so React Query never flashes an error
+  // state before navigation.
+  if (response.status === 403 && codeFromBody === "organization_suspended") {
+    if (typeof window !== "undefined") {
+      window.location.replace("/suspended");
+      return new Promise<T>(() => {}); // same never-resolving contract as the 401 path
+    }
+  }
+
   throw new BffError(
     response.status,
     typeof body === "object" && body !== null && "error" in body

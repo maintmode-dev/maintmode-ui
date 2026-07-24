@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { BffError } from "@/features/_shared/api/bff-fetch";
+
 import { InviteUserDialog } from "../invite-user-dialog";
 
 // jsdom lacks the layout APIs some Radix internals rely on.
@@ -26,8 +28,10 @@ vi.mock("@/features/_shared/api/bff-fetch", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/features/_shared/api/bff-fetch")>();
   return { ...actual, bffFetch: (...args: unknown[]) => bffFetchMock(...args) };
 });
-// Toasts fire from the mutation hooks; irrelevant here.
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+// Toasts fire from the mutation hooks. The error toast is asserted below, so
+// keep a handle on the mock.
+const toastErrorMock = vi.fn();
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: (...args: unknown[]) => toastErrorMock(...args) } }));
 
 function renderDialog() {
   const onOpenChange = vi.fn();
@@ -86,6 +90,26 @@ describe("InviteUserDialog", () => {
     expect(emailInput().value).toBe("");
     expect(roleCheckbox("admin").getAttribute("data-state")).toBe("unchecked");
     expect(roleCheckbox("editor").getAttribute("data-state")).toBe("checked");
+  });
+
+  it("shows an own-phrased seats message with a recovery hint, not the raw backend string", async () => {
+    const { onOpenChange } = renderDialog();
+    fireEvent.change(emailInput(), { target: { value: "over@maintmode" } });
+    const rawBackendMessage = "all 5 of 5 seats are in use: seats limit exceeded";
+    bffFetchMock.mockRejectedValueOnce(new BffError(403, rawBackendMessage, "seats_limit_exceeded"));
+    fireEvent.click(screen.getByRole("button", { name: /Send invitation/ }));
+
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        "You've used all your seats.",
+        expect.objectContaining({ description: expect.stringContaining("Free up a seat") }),
+      ),
+    );
+    // The raw backend string must never reach the user.
+    const shownStrings = toastErrorMock.mock.calls.flat().map((arg) => JSON.stringify(arg));
+    expect(shownStrings.some((s) => s.includes(rawBackendMessage))).toBe(false);
+    // A non-retryable failure keeps the dialog open so the admin sees why.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
 
   it("disables the primary action when no role is selected", () => {

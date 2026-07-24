@@ -107,6 +107,50 @@ describe("bffFetch", () => {
     expect(rejected).toBe(false);
   });
 
+  it("redirects to /suspended on 403 organization_suspended and the returned promise never resolves", async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { code: "organization_suspended" }));
+    let resolved = false;
+    let rejected = false;
+    void bffFetch("/api/test", { method: "POST" })
+      .then(() => {
+        resolved = true;
+      })
+      .catch(() => {
+        rejected = true;
+      });
+
+    // Same non-deterministic microtask chain as the 401 case (Response.json()
+    // can take several turns): poll for the actual redirect rather than
+    // guessing a yield count.
+    const deadline = Date.now() + 1000;
+    while (replaceMock.mock.calls.length === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    expect(replaceMock).toHaveBeenCalledTimes(1);
+    expect(replaceMock).toHaveBeenCalledWith("/suspended");
+    expect(resolved).toBe(false);
+    expect(rejected).toBe(false);
+  });
+
+  it("does not redirect on a 403 with a different code", async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse(403, { code: "FORBIDDEN" }));
+    await expect(bffFetch("/api/test", { method: "POST" })).rejects.toMatchObject({
+      status: 403,
+      code: "FORBIDDEN",
+    });
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect when organization_suspended arrives with a non-403 status", async () => {
+    fetchMock.mockResolvedValueOnce(mockResponse(400, { code: "organization_suspended" }));
+    await expect(bffFetch("/api/test", { method: "POST" })).rejects.toMatchObject({
+      status: 400,
+      code: "organization_suspended",
+    });
+    expect(replaceMock).not.toHaveBeenCalled();
+  });
+
   it("skips the 401 redirect when skipAuthRedirect=true", async () => {
     fetchMock.mockResolvedValueOnce(mockResponse(401, { code: "AUTH_REQUIRED" }));
     await expect(bffFetch("/api/test", { skipAuthRedirect: true })).rejects.toBeInstanceOf(BffError);

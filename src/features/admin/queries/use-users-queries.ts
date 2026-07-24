@@ -112,6 +112,19 @@ export function useInviteUser() {
     },
     onError: (error: unknown) => {
       if (error instanceof BffError) {
+        // Seats limit is a distinct, non-retryable failure (403
+        // `seats_limit_exceeded`): retrying won't help, so give the admin a
+        // clear reason and a way out instead of the generic "Try again."
+        // fallback. Branch on the code, not the status — 403 is otherwise the
+        // CSRF / suspended-org channel. We phrase the copy ourselves rather
+        // than echoing `error.message`, so the raw backend string never leaks
+        // to the user.
+        if (error.code === "seats_limit_exceeded") {
+          toast.error("You've used all your seats.", {
+            description: "Free up a seat by blocking a user, or upgrade your plan to invite more.",
+          });
+          return;
+        }
         if (error.status === 409) {
           toast.error("That email already has an account or an active invitation.");
           return;

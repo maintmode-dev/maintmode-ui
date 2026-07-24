@@ -219,8 +219,27 @@ async function runBackendExchange(
   // dev-bypass branch, gated by `devAuthBypassEnabled`, ever passes a value.
   testRoles = "",
 ): Promise<true> {
+  // The exchange and the profile load are caught separately so the failure is
+  // attributed to the stage that actually failed. Collapsing them into one
+  // catch (and keying `identity_lookup_failed` off `error.name ===
+  // "BackendAuthError"`) mislabeled every exchange-stage failure — e.g. a 403
+  // `seats_limit_exceeded`, raised before `/me` is ever called — as an
+  // identity-lookup failure.
+  let tokens: BackendTokenPair;
   try {
-    const tokens = await exchangeGoogleIdToken(idToken, testRoles);
+    tokens = await exchangeGoogleIdToken(idToken, testRoles);
+  } catch (error) {
+    // Signup closed (403 `signup_disabled`): surfaced distinctly so /login can
+    // tell the user an invitation is required, instead of the generic failure.
+    if (backendErrorCode(error) === "signup_disabled") {
+      throw new BackendExchangeError(AUTH_ERROR_CODES.signupDisabled);
+    }
+    // Any other exchange failure (network, 4xx/5xx, seat cap, bad payload) is
+    // an OAuth-handoff problem — identity lookup never ran.
+    throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
+  }
+
+  try {
     const me = await fetchBackendMe(tokens.access_token);
     account.maintmodeTokens = tokens;
     account.maintmodeUser = {
@@ -230,16 +249,10 @@ async function runBackendExchange(
       roles: me.roles,
     };
     return true;
-  } catch (error) {
-    // Signup closed (403 `signup_disabled`): surfaced distinctly so /login can
-    // tell the user an invitation is required, instead of the generic failure.
-    if (backendErrorCode(error) === "signup_disabled") {
-      throw new BackendExchangeError(AUTH_ERROR_CODES.signupDisabled);
-    }
-    const code = isIdentityLookupError(error)
-      ? AUTH_ERROR_CODES.identityLookupFailed
-      : AUTH_ERROR_CODES.oauthHandoffFailed;
-    throw new BackendExchangeError(code);
+  } catch {
+    // Exchange succeeded but loading the profile did not: the one genuine
+    // identity-lookup failure.
+    throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
   }
 }
 
@@ -260,8 +273,24 @@ async function runInvitationAccept(
   invitationToken: string,
   idToken: string,
 ): Promise<true> {
+  // Same stage-split as `runBackendExchange`: the accept exchange and the
+  // profile load are caught separately so an accept-stage failure is never
+  // mislabeled as an identity-lookup failure.
+  let tokens: BackendTokenPair;
   try {
-    const tokens = await acceptInvitation({ invitationToken, provider: "google", idToken });
+    tokens = await acceptInvitation({ invitationToken, provider: "google", idToken });
+  } catch (error) {
+    // `email_mismatch` is the one accept failure surfaced distinctly: the
+    // signed-in account isn't the invited one (a fact about the user's own
+    // account, not the invitation). Every other accept failure stays generic
+    // so nothing about the invitation leaks (anti-enumeration).
+    if (backendErrorCode(error) === "email_mismatch") {
+      throw new BackendExchangeError(AUTH_ERROR_CODES.emailMismatch);
+    }
+    throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
+  }
+
+  try {
     const me = await fetchBackendMe(tokens.access_token);
     account.maintmodeTokens = tokens;
     account.maintmodeUser = {
@@ -271,18 +300,10 @@ async function runInvitationAccept(
       roles: me.roles,
     };
     return true;
-  } catch (error) {
-    // `email_mismatch` is the one accept failure surfaced distinctly: the
-    // signed-in account isn't the invited one (a fact about the user's own
-    // account, not the invitation). Every other accept failure stays generic
-    // so nothing about the invitation leaks (anti-enumeration).
-    if (backendErrorCode(error) === "email_mismatch") {
-      throw new BackendExchangeError(AUTH_ERROR_CODES.emailMismatch);
-    }
-    const code = isIdentityLookupError(error)
-      ? AUTH_ERROR_CODES.identityLookupFailed
-      : AUTH_ERROR_CODES.oauthHandoffFailed;
-    throw new BackendExchangeError(code);
+  } catch {
+    // Accept succeeded but loading the profile did not: the one genuine
+    // identity-lookup failure.
+    throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
   }
 }
 
@@ -299,14 +320,4 @@ function backendErrorCode(error: unknown): string | undefined {
   } catch {
     return undefined;
   }
-}
-
-function isIdentityLookupError(error: unknown): boolean {
-  // BackendAuthError thrown by `fetchBackendMe` after a successful
-  // `exchangeGoogleIdToken` is treated as an identity-lookup problem; all
-  // other failures map to the generic OAuth-handoff code.
-  if (error && typeof error === "object" && "name" in error) {
-    return (error as { name: unknown }).name === "BackendAuthError";
-  }
-  return false;
 }
