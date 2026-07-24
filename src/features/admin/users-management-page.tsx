@@ -64,15 +64,20 @@ export function UsersManagementPage() {
 
   const usersQuery = useUsersQuery({ search: debouncedQuery || undefined, limit: PAGE_SIZE, offset });
   const invitationsQuery = useInvitationsQuery();
+  // Dataset-wide active count for the header caption. A dedicated `active=true`
+  // query (limit 1, no search) reports the true total via `total`, so the
+  // caption doesn't shrink to "non-blocked rows on the current page" once the
+  // list paginates or a search narrows it.
+  const activeCountQuery = useUsersQuery({ active: true, limit: 1 });
 
   const page = usersQuery.data;
   const users = useMemo(() => page?.users ?? [], [page]);
   const total = page?.total ?? users.length;
   const allInvitations = useMemo(() => invitationsQuery.data ?? [], [invitationsQuery.data]);
 
-  // Header caption counts: active = non-blocked loaded users; pending = invites
-  // awaiting acceptance. Both come from the same queries feeding the toggle.
-  const activeUserCount = useMemo(() => users.filter((u) => !isUserBlocked(u)).length, [users]);
+  // Header caption counts: active = non-blocked users across the whole dataset;
+  // pending = invites awaiting acceptance.
+  const activeUserCount = activeCountQuery.data?.total ?? 0;
   const pendingInviteCount = useMemo(
     () => allInvitations.filter((i) => i.status === "pending").length,
     [allInvitations],
@@ -128,7 +133,7 @@ export function UsersManagementPage() {
             <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
               <TabsList>
                 <TabsTrigger value="users">Users · {total}</TabsTrigger>
-                <TabsTrigger value="invitations">Invitations · {allInvitations.length}</TabsTrigger>
+                <TabsTrigger value="invitations">Invitations · {pendingInviteCount}</TabsTrigger>
               </TabsList>
             </Tabs>
             {tab === "users" ? (
