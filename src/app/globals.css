@@ -449,6 +449,11 @@
   --card-foreground: var(--fg);
   --popover: var(--bg-elev-3);
   --popover-foreground: var(--fg);
+  /* Not a shadcn token — ours. The active row inside a popover / menu /
+     listbox, one elevation step off `--popover`, so the keyboard-focused option
+     stays visible once the global focus ring is suppressed there (see below).
+     Both themes resolve it through `--bg-elev-4`, which each already flips. */
+  --popover-item-active: var(--bg-elev-4);
   --primary: var(--accent);
   --primary-foreground: var(--fg-strong);
   --secondary: var(--bg-elev-2);
@@ -543,6 +548,67 @@ html {
   outline: none;
   box-shadow: var(--focus-ring);
   border-radius: var(--radius-sm);
+}
+
+/* …except inside popovers, menus and listboxes. There Radix drives focus itself
+   instead of following the user's tab order, so the ring above landed on things
+   the user never focused — two surfaces, both cleared here:
+
+   • Rows: arrowing through a list moves DOM focus onto the active option, so
+     every row drew a ring around itself.
+   • Panels: opening one focuses its `tabindex="-1"` container, ringing the whole
+     dropdown on top of the panel's own border.
+
+   Panels are keyed by `data-slot`, not by role: these primitives land on three
+   different container roles (`menu`, `listbox`, and `dialog` for the cmdk-based
+   approver / resources / channels pickers), so keying on roles left the popover
+   family still ringed. The slots are stable and grep-able. `command` and
+   `dropdown-menu-sub-content` are unused today but are focusable containers of
+   the same kind — listed so a future submenu or CommandDialog isn't re-ringed.
+
+   Only `box-shadow` is reset, so a ring an element opts into via its own classes
+   still applies — buttons, links, inputs, select triggers, tabs and calendar day
+   cells all keep theirs. */
+:is(
+  [role="option"],
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="command-list"],
+  [data-slot="command"]
+):focus-visible {
+  box-shadow: none;
+}
+
+/* …and the background that replaces the ring on rows. The primitives' own
+   `focus:bg-accent` cannot supply it: Tailwind's `accent` is rebased onto
+   `--bg-elev-3` (see @theme inline) while `--popover` is the SAME token, so a
+   focused row rendered at contrast 1.00 against its panel — invisible while
+   arrowing in dark mode.
+
+   No `!important` needed: Tailwind v4 emits its utilities into `@layer
+   utilities`, and an unlayered rule like this one beats every layer regardless
+   of specificity or source order. (Don't wrap this in `@layer` — that would hand
+   the win back to `focus:bg-accent`.) Forcing it would also outrank the two
+   states excluded below, which keep their own background.
+
+   Excluded, and note the two libraries disagree on how they say "disabled":
+   Radix omits the attribute entirely when enabled (`disabled ? "" : void 0`),
+   but cmdk always emits it (`"data-disabled": !!disabled`), so React serializes
+   the enabled case to the string "false". A presence test (`:not([data-disabled])`)
+   is therefore always false for cmdk rows and silently killed this rule on every
+   command picker — match the values instead. */
+:is([role="option"], [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"]):is(
+    :focus,
+    :focus-visible,
+    [data-highlighted],
+    [data-selected="true"]
+  ):not([data-disabled=""], [data-disabled="true"], [data-variant="destructive"]) {
+  background-color: var(--popover-item-active);
 }
 
 /* Selection — accent soft. */
