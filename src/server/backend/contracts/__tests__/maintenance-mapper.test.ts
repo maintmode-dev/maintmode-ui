@@ -8,7 +8,9 @@ import {
   mapCancelReasonView,
   mapConflict,
   mapDraftToCreateRequest,
+  mapDraftToUpdateRequest,
   mapImpact,
+  mapReminders,
   mapMaintenanceView,
   mapPeriod,
   mapScope,
@@ -20,10 +22,13 @@ import {
 } from "@/server/backend/contracts/maintenance-mapper";
 import type {
   CalendarViewResponseDto,
+  CreateDraftMaintRequestDto,
   MaintenanceViewResponseDto,
+  UpdateDraftMaintRequestDto,
 } from "@/server/backend/contracts/maintmode-dto";
 import { BffValidationError } from "@/server/backend/errors/bff-error";
 import type { MaintenanceDraftInput } from "@/domain/maintenance/maintenance";
+import { toOffsetFromFireAt } from "@/domain/maintenance/reminders";
 
 describe("mapScope", () => {
   it("passes through 'resource'", () => {
@@ -348,11 +353,32 @@ describe("mapMaintenanceView", () => {
     expect(detail.created_by).toBeUndefined();
   });
 
-  it("defaults notify_targets to an empty array (read view omits the field today)", () => {
+  it("defaults notify_targets to an empty array when the field is absent", () => {
     expect(mapMaintenanceView(base).notify_targets).toEqual([]);
   });
 
-  it("maps notify_targets defensively once the backend sends them", () => {
+  it("defaults reminders to an empty array when the field is absent", () => {
+    expect(mapMaintenanceView(base).reminders).toEqual([]);
+  });
+
+  it("carries the saved reminders through to the detail, for edit hydration", () => {
+    const detail = mapMaintenanceView({
+      ...base,
+      maintenance: {
+        ...base.maintenance,
+        deferred_notifications: [
+          { id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true },
+          { id: "d-2", fire_at: "2026-07-25T10:00:00Z", scheduled: false },
+        ],
+      },
+    });
+    expect(detail.reminders).toEqual([
+      { id: "d-2", fire_at: "2026-07-25T10:00:00Z", scheduled: false },
+      { id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true },
+    ]);
+  });
+
+  it("maps notify_targets defensively", () => {
     const detail = mapMaintenanceView({
       ...base,
       maintenance: {
@@ -368,6 +394,92 @@ describe("mapMaintenanceView", () => {
       { id: "c-1", name: "#incidents-eu", transport: "slack" },
       { id: "c-2", name: "oncall", transport: "telegram" },
     ]);
+  });
+});
+
+// Read path: the edit screen hydrates its reminder picker from these (backend
+// `90488d0e` added `deferred_notifications` to `uimodels.MaintenanceView`).
+describe("mapReminders", () => {
+  it("maps the view shape to domain reminders", () => {
+    expect(
+      mapReminders([{ id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true }]),
+    ).toEqual([{ id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true }]);
+  });
+
+  it("returns an empty list for an absent or empty field", () => {
+    expect(mapReminders(undefined)).toEqual([]);
+    expect(mapReminders([])).toEqual([]);
+  });
+
+  it("defaults scheduled to false (a draft's reminders are not queued yet)", () => {
+    expect(mapReminders([{ id: "d-1", fire_at: "2026-07-31T10:00:00Z" }])[0].scheduled).toBe(false);
+  });
+
+  it("orders by fire_at even if the backend ever stopped doing so", () => {
+    const out = mapReminders([
+      { id: "b", fire_at: "2026-08-01T09:00:00Z" },
+      { id: "a", fire_at: "2026-07-25T10:00:00Z" },
+    ]);
+    expect(out.map((r) => r.id)).toEqual(["a", "b"]);
+  });
+
+  // A reminder with no instant can't be turned into an offset, so it would
+  // render as a phantom row the operator cannot reason about or fix.
+  it("drops entries with no fire_at", () => {
+    expect(mapReminders([{ id: "d-1" }, { id: "d-2", fire_at: "2026-07-31T10:00:00Z" }])).toEqual([
+      { id: "d-2", fire_at: "2026-07-31T10:00:00Z", scheduled: false },
+    ]);
+  });
+
+  it("drops an empty-string fire_at as well as a missing one", () => {
+    expect(mapReminders([{ id: "d-1", fire_at: "" }])).toEqual([]);
+  });
+
+  it("tolerates a missing id rather than dropping the reminder", () => {
+    // The instant is what the form needs; a blank id still renders and edits.
+    expect(mapReminders([{ fire_at: "2026-07-31T10:00:00Z" }])).toEqual([
+      { id: "", fire_at: "2026-07-31T10:00:00Z", scheduled: false },
+    ]);
+  });
+
+  /**
+   * The full RUK-216 loop, which no single-layer test covers: the backend
+   * stores instants only, so "1 day before" survives a save/reload ONLY if
+   * write → read → hydrate → write is a fixed point. Break any one of
+   * `toFireAt` / `mapReminders` / `toOffsetFromFireAt` and this fails.
+   */
+  it("round-trips offsets through the wire and back unchanged", () => {
+    const plannedStart = "2026-08-01T10:00:00Z";
+    const picked = [7 * 24 * 60, 24 * 60, 60, 15];
+
+    const written = mapDraftToUpdateRequest({
+      title: "Patch orders-db",
+      description: "Rolling restart",
+      planned_start: plannedStart,
+      scope: "resource",
+      impact: "partial_outage",
+      resource_ids: ["r-1"],
+      steps: [{ order: 1, description: "Drain traffic", duration: "1h30m" }],
+      approver_user_id: "u-9",
+      notify_target_channel_ids: ["c-1"],
+      reminder_offsets_minutes: picked,
+    });
+
+    // What the backend would hand back on the read path.
+    const readBack = mapReminders(
+      (written.deferred_notifications ?? []).map((n, i) => ({
+        id: `d-${i}`,
+        fire_at: n.fire_at,
+        scheduled: false,
+      })),
+    );
+
+    const rehydrated = readBack
+      .map((r) => toOffsetFromFireAt(plannedStart, r.fire_at))
+      .filter((m): m is number => m !== null);
+
+    // Sorted: mapReminders orders by fire_at, so the longest lead time is first.
+    expect(rehydrated).toEqual([...picked].sort((a, b) => b - a));
   });
 });
 
@@ -436,6 +548,197 @@ describe("mapDraftToCreateRequest", () => {
     });
     expect(req.steps.map((s) => s.order)).toEqual([1, 2]);
   });
+
+  // RUK-216. The wire carries absolute instants; the offsets are UI-side sugar.
+  describe("deferred notifications", () => {
+    it("resolves reminder offsets against planned_start", () => {
+      const req = mapDraftToCreateRequest({
+        ...base,
+        planned_start: "2026-08-01T10:00:00Z",
+        reminder_offsets_minutes: [7 * 24 * 60, 24 * 60, 60, 15],
+      });
+      expect(req.deferred_notifications).toEqual([
+        { fire_at: "2026-07-25T10:00:00.000Z" },
+        { fire_at: "2026-07-31T10:00:00.000Z" },
+        { fire_at: "2026-08-01T09:00:00.000Z" },
+        { fire_at: "2026-08-01T09:45:00.000Z" },
+      ]);
+    });
+
+    // Create has no "unchanged" state, so omitting is simply the tersest way to
+    // say "no reminders". (Update is the one that must send `[]` — see the
+    // mapDraftToUpdateRequest suite.)
+    it("omits the field entirely for an empty selection", () => {
+      const req = mapDraftToCreateRequest({ ...base, reminder_offsets_minutes: [] });
+      expect(req).not.toHaveProperty("deferred_notifications");
+    });
+
+    it("omits the field when reminders are absent altogether", () => {
+      const req = mapDraftToCreateRequest(base);
+      expect(req).not.toHaveProperty("deferred_notifications");
+    });
+
+    it("omits the field when the start is unparseable rather than sending Invalid Date", () => {
+      const req = mapDraftToCreateRequest({
+        ...base,
+        planned_start: "",
+        reminder_offsets_minutes: [60],
+      });
+      expect(req).not.toHaveProperty("deferred_notifications");
+    });
+
+    it("moves every reminder when planned_start changes", () => {
+      const offsets = [24 * 60, 60];
+      const first = mapDraftToCreateRequest({
+        ...base,
+        planned_start: "2026-08-01T10:00:00Z",
+        reminder_offsets_minutes: offsets,
+      });
+      const moved = mapDraftToCreateRequest({
+        ...base,
+        planned_start: "2026-08-02T10:00:00Z",
+        reminder_offsets_minutes: offsets,
+      });
+      expect(first.deferred_notifications).toEqual([
+        { fire_at: "2026-07-31T10:00:00.000Z" },
+        { fire_at: "2026-08-01T09:00:00.000Z" },
+      ]);
+      expect(moved.deferred_notifications).toEqual([
+        { fire_at: "2026-08-01T10:00:00.000Z" },
+        { fire_at: "2026-08-02T09:00:00.000Z" },
+      ]);
+    });
+
+    it("sits alongside notify_targets, not in place of it", () => {
+      const req = mapDraftToCreateRequest({ ...base, reminder_offsets_minutes: [60] });
+      expect(req.notify_targets).toEqual({ channel_ids: ["c-1", "c-2"] });
+      expect(req.deferred_notifications).toHaveLength(1);
+    });
+  });
+});
+
+/**
+ * Update diverged from create when the backend made `deferred_notifications`
+ * tri-state (`53d3ba0c`): omitted = unchanged, `[]` = clear, non-empty =
+ * replace. Everything else is byte-identical to the create body.
+ */
+describe("mapDraftToUpdateRequest", () => {
+  const base: MaintenanceDraftInput = {
+    title: "Patch orders-db",
+    description: "Rolling restart",
+    planned_start: "2026-08-01T10:00:00Z",
+    scope: "resource",
+    impact: "partial_outage",
+    resource_ids: ["r-1"],
+    steps: [{ order: 1, description: "Drain traffic", duration: "1h30m" }],
+    approver_user_id: "u-9",
+    notify_target_channel_ids: ["c-1"],
+  };
+
+  it("matches the create body on every non-reminder field", () => {
+    const withReminders = { ...base, reminder_offsets_minutes: [60] };
+    const withoutReminders = (
+      req: CreateDraftMaintRequestDto | UpdateDraftMaintRequestDto,
+    ): Partial<CreateDraftMaintRequestDto> => {
+      const copy: Partial<CreateDraftMaintRequestDto> = { ...req, deferred_notifications: undefined };
+      delete copy.deferred_notifications;
+      return copy;
+    };
+    expect(withoutReminders(mapDraftToUpdateRequest(withReminders))).toEqual(
+      withoutReminders(mapDraftToCreateRequest(withReminders)),
+    );
+  });
+
+  it("resolves offsets against planned_start", () => {
+    const req = mapDraftToUpdateRequest({ ...base, reminder_offsets_minutes: [24 * 60, 60] });
+    expect(req.deferred_notifications).toEqual([
+      { fire_at: "2026-07-31T10:00:00.000Z" },
+      { fire_at: "2026-08-01T09:00:00.000Z" },
+    ]);
+  });
+
+  // The load-bearing difference from create. Before the backend fix an empty
+  // array meant "unchanged", so unchecking every reminder silently kept them and
+  // they still fired; now `[]` clears, and the key MUST be present to say so.
+  it("sends an empty array to clear, never omitting the key", () => {
+    const req = mapDraftToUpdateRequest({ ...base, reminder_offsets_minutes: [] });
+    expect(req).toHaveProperty("deferred_notifications");
+    expect(req.deferred_notifications).toEqual([]);
+  });
+
+  it("still sends the key when the form carries no reminder field at all", () => {
+    const req = mapDraftToUpdateRequest(base);
+    expect(req.deferred_notifications).toEqual([]);
+  });
+
+  /**
+   * Data-loss guard. If `planned_start` won't parse, every offset drops out —
+   * and an empty array on update means "clear", so the reminders the operator
+   * never touched would be hard-deleted. Omitting the key leaves them alone.
+   */
+  it("omits the key entirely when no offset can resolve, rather than clearing", () => {
+    const req = mapDraftToUpdateRequest({
+      ...base,
+      planned_start: "",
+      reminder_offsets_minutes: [60],
+    });
+    expect(req).not.toHaveProperty("deferred_notifications");
+    expect(JSON.parse(JSON.stringify(req))).not.toHaveProperty("deferred_notifications");
+  });
+
+  it("still clears when the operator genuinely selected nothing", () => {
+    const req = mapDraftToUpdateRequest({
+      ...base,
+      planned_start: "",
+      reminder_offsets_minutes: [],
+    });
+    expect(req.deferred_notifications).toEqual([]);
+  });
+
+  /**
+   * The tri-state trap, stated as the invariant that actually protects the
+   * operator: `[]` (clear) and absent (leave unchanged) are DIFFERENT wire
+   * messages, and update must never emit the second one. `JSON.stringify` drops
+   * an `undefined` value, so serialising is the only assertion that proves the
+   * key really reaches the backend.
+   */
+  it("keeps the key through JSON serialisation, so `[]` reaches the wire as a clear", () => {
+    const body = JSON.parse(
+      JSON.stringify(mapDraftToUpdateRequest({ ...base, reminder_offsets_minutes: [] })),
+    ) as Record<string, unknown>;
+    expect(Object.keys(body)).toContain("deferred_notifications");
+    expect(body.deferred_notifications).toEqual([]);
+  });
+
+  it("never serialises to the 'leave unchanged' shape, whatever the selection", () => {
+    for (const offsets of [undefined, [], [60], [1_440, 60]]) {
+      const body = JSON.parse(
+        JSON.stringify(mapDraftToUpdateRequest({ ...base, reminder_offsets_minutes: offsets })),
+      ) as Record<string, unknown>;
+      expect(Object.keys(body)).toContain("deferred_notifications");
+      expect(body.deferred_notifications).not.toBeNull();
+    }
+  });
+
+  // Create is the mirror image: an empty selection must NOT serialise the key,
+  // or a create body would carry a meaning update reserves for clearing.
+  it("create drops the key on serialisation when nothing is selected", () => {
+    const body = JSON.parse(
+      JSON.stringify(mapDraftToCreateRequest({ ...base, reminder_offsets_minutes: [] })),
+    ) as Record<string, unknown>;
+    expect(Object.keys(body)).not.toContain("deferred_notifications");
+  });
+
+  // The backend replaces wholesale and never merges (SPEC §1.3), so the mapper
+  // must emit the complete desired set — a duplicate offset is the operator's
+  // stated intent, not something to silently collapse here.
+  // The picker already prevents duplicates, but the BFF is its own trust
+  // boundary — and hydration keys rows by offset, so a duplicate that got saved
+  // would render twice and delete both at once.
+  it("collapses duplicate offsets instead of sending the same instant twice", () => {
+    const req = mapDraftToUpdateRequest({ ...base, reminder_offsets_minutes: [60, 60] });
+    expect(req.deferred_notifications).toEqual([{ fire_at: "2026-08-01T09:00:00.000Z" }]);
+  });
 });
 
 describe("assertValidDraftInput", () => {
@@ -474,6 +777,49 @@ describe("assertValidDraftInput", () => {
       field: "steps",
       message: "steps must be an array",
     });
+  });
+
+  it("accepts a body with no reminder offsets", () => {
+    expect(() => assertValidDraftInput(valid)).not.toThrow();
+    expect(() => assertValidDraftInput({ ...valid, reminder_offsets_minutes: [] })).not.toThrow();
+  });
+
+  it("rejects reminder offsets that are not an array", () => {
+    let caught: unknown;
+    try {
+      assertValidDraftInput({ ...valid, reminder_offsets_minutes: 60 });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as BffValidationError).fieldErrors).toContainEqual({
+      field: "reminder_offsets_minutes",
+      message: "reminder_offsets_minutes must be an array",
+    });
+  });
+
+  it("rejects more reminders than the backend cap", () => {
+    const eleven = Array.from({ length: 11 }, (_, i) => (i + 1) * 15);
+    let caught: unknown;
+    try {
+      assertValidDraftInput({ ...valid, reminder_offsets_minutes: eleven });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as BffValidationError).fieldErrors).toContainEqual({
+      field: "reminder_offsets_minutes",
+      message: "At most 10 reminders.",
+    });
+    expect(() =>
+      assertValidDraftInput({ ...valid, reminder_offsets_minutes: eleven.slice(0, 10) }),
+    ).not.toThrow();
+  });
+
+  it("rejects non-positive or non-numeric reminder offsets", () => {
+    for (const bad of [[0], [-15], ["60"], [Number.NaN]]) {
+      expect(() => assertValidDraftInput({ ...valid, reminder_offsets_minutes: bad })).toThrow(
+        BffValidationError,
+      );
+    }
   });
 
   it("requires resource_ids only for resource scope", () => {

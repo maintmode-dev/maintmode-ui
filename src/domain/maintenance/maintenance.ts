@@ -126,6 +126,25 @@ export interface MaintenanceDetail extends Maintenance {
    * as `observed_maint_revision` on approve.
    */
   revision?: number;
+  /**
+   * Saved advance reminders, ordered by `fire_at`. Lives on the detail (not on
+   * `Maintenance`) because only the detail read view carries them — the calendar
+   * projection has no reminders.
+   */
+  reminders: MaintenanceReminder[];
+}
+
+/**
+ * A saved reminder as the read view exposes it. The absolute `fire_at` is the
+ * stored truth; the edit form derives its offset back out (see
+ * `toOffsetFromFireAt`), since the backend never stores the chosen preset.
+ */
+export interface MaintenanceReminder {
+  id: string;
+  /** ISO-8601 datetime the reminder fires at. */
+  fire_at: string;
+  /** True once the goque task is queued — only ever after approval. */
+  scheduled: boolean;
 }
 
 /**
@@ -167,6 +186,19 @@ export interface MaintenanceDraftInput {
    * Channel ids come from the catalog (`@/domain/notify-channel`).
    */
   notify_target_channel_ids: string[];
+  /**
+   * Advance reminders, as offsets in minutes BEFORE `planned_start` (e.g. 1440 =
+   * "1 day before"). The wire contract carries absolute instants
+   * (`deferred_notifications: [{ fire_at }]`); the offset is the operator's
+   * mental model and the only thing worth holding in form state, so the mapper
+   * resolves `fire_at = planned_start − offset` at the boundary.
+   *
+   * Empty or absent means "no reminders" — the mapper omits the wire field
+   * entirely rather than sending `[]`, which the backend reads as "leave
+   * unchanged" on edit. Optional so a client that predates reminders (or simply
+   * has none) stays a valid body; `assertValidDraftInput` matches.
+   */
+  reminder_offsets_minutes?: number[];
 }
 
 /**

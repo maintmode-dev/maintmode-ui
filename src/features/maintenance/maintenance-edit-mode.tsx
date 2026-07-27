@@ -26,6 +26,9 @@ import type {
   MaintenanceScope,
 } from "@/domain/maintenance/maintenance";
 
+import { MAX_REMINDERS, offsetLabel, toFireAt, toOffsetFromFireAt } from "@/domain/maintenance/reminders";
+
+import { MaintenanceRemindersField } from "./maintenance-reminders-field";
 import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
 import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
 import { transportDisplayTitle, transportStatusCopy } from "@/features/notify-channels/transports";
@@ -146,6 +149,30 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // picker opened empty and Save was blocked by the "≥1 channel" rule even
   // though the draft had a channel — risking a silent loss of the binding.
   const [channelIds, setChannelIds] = useState<string[]>(() => detail?.notify_targets.map((c) => c.id) ?? []);
+  // Advance reminders, held as offsets in minutes (see `@/domain/maintenance/reminders`).
+  // Hydrated on Edit by deriving each offset back out of the saved `fire_at`
+  // (the backend stores instants, never the chosen preset). Seeded in an effect
+  // rather than `useState` for the same reason as `start`: the derivation needs
+  // the draft's real start, and `remindersTouched` keeps a later re-run from
+  // clobbering the operator's edits.
+  const [reminderOffsets, setReminderOffsets] = useState<number[]>([]);
+  const [remindersTouched, setRemindersTouched] = useState(false);
+  useEffect(() => {
+    if (remindersTouched || !detail) return;
+    const start = detail.planned_period.start;
+    const offsets = detail.reminders
+      .map((r) => toOffsetFromFireAt(start, r.fire_at))
+      .filter((m): m is number => m !== null);
+    // Deduped: `toOffsetFromFireAt` rounds to the minute, so two saved instants
+    // less than a minute apart collapse onto the same offset. The picker keys
+    // rows by offset and toggles by value, so a duplicate would render twice and
+    // delete both at once. The backend caps the count, not the spacing, so this
+    // is reachable — collapse it here, at the boundary where it arises.
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
+    setReminderOffsets([...new Set(offsets)]);
+  }, [detail, remindersTouched]);
+  /** Submit-time "would fire in the past" error (see `pastReminders`). */
+  const [reminderTimingError, setReminderTimingError] = useState<string | null>(null);
   const [steps, setSteps] = useState<StepDraft[]>(() => detailToSteps(detail));
   const [submitted, setSubmitted] = useState(false);
 
@@ -216,6 +243,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     }
     if (channelIds.length === 0) e.channels = "Pick at least one notification channel.";
     if (channelIds.length > MAX_CHANNELS) e.channels = `At most ${MAX_CHANNELS} channels.`;
+    if (reminderOffsets.length > MAX_REMINDERS) e.reminders = `At most ${MAX_REMINDERS} reminders.`;
     const stepBad =
       steps.length === 0 ||
       steps.some((s) => {
@@ -232,7 +260,43 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
       e.steps = `Every step needs a description, a rollback plan, and a duration ≥ ${MIN_STEP_MINUTES} min.`;
     }
     return e;
-  }, [title, description, start, scope, resourceIds, approverId, steps, channelIds, creating]);
+  }, [
+    title,
+    description,
+    start,
+    scope,
+    resourceIds,
+    approverId,
+    steps,
+    channelIds,
+    creating,
+    reminderOffsets,
+  ]);
+
+  /**
+   * Reminders that would fire in the past, evaluated against "now" at submit
+   * time. Deliberately NOT part of the `errors` memo: `Date.now()` during render
+   * is impure (unstable across re-renders), and a wall-clock comparison belongs
+   * to the moment the operator actually submits. On approve the backend clamps
+   * `fire_at - now` at zero, so a past reminder fires immediately — a surprise
+   * blast worth blocking rather than shipping.
+   *
+   * On Edit this only judges what the operator actually touched. A draft saved
+   * long enough ago can hold a reminder that has since fallen into the past;
+   * blocking on it would trap them in a form they cannot save without first
+   * deleting a reminder they never asked to change. Once they touch the picker
+   * the full selection is theirs, so it is all fair game again.
+   */
+  function pastReminders(): number[] {
+    if (!start || reminderOffsets.length === 0) return [];
+    if (!creating && !remindersTouched) return [];
+    const startIso = localToIso(start, zone);
+    const now = Date.now();
+    return reminderOffsets.filter((m) => {
+      const fireAt = toFireAt(startIso, m);
+      return fireAt != null && new Date(fireAt).getTime() <= now;
+    });
+  }
 
   function buildInput(): MaintenanceDraftInput {
     return {
@@ -244,6 +308,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
       resource_ids: scope === "resource" ? resourceIds : [],
       approver_user_id: approverId,
       notify_target_channel_ids: channelIds,
+      reminder_offsets_minutes: reminderOffsets,
       steps: steps.map((s, i) => ({
         order: i + 1,
         description: s.description.trim(),
@@ -263,6 +328,16 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     // resolves synchronously on mount, so this only ever blocks a submit fired
     // in the same tick as hydration — practically never for a human.
     if (!zoneReady) return;
+    // Checked here (not in `errors`) because it compares against wall-clock now
+    // — see `pastReminders`. Blocks the submit and surfaces in the field.
+    const past = pastReminders();
+    if (past.length > 0) {
+      setReminderTimingError(
+        `${past.map(offsetLabel).join(", ")} would fire in the past — move the start or drop the reminder.`,
+      );
+      return;
+    }
+    setReminderTimingError(null);
     const input = buildInput();
 
     if (creating) {
@@ -307,6 +382,10 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
               onChange={(v) => {
                 setStartTouched(true);
                 setStart(v);
+                // Every reminder is relative to the start, so moving it can turn
+                // a past reminder into a future one. Drop the stale error rather
+                // than leaving a red warning about a problem just fixed.
+                setReminderTimingError(null);
               }}
               aria-invalid={Boolean(show("start"))}
               aria-label="Planned start"
@@ -430,6 +509,27 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
               </AlertDescription>
             </Alert>
           ) : null}
+        </Field>
+        <Field
+          label="When to notify"
+          hint={`Optional, up to ${MAX_REMINDERS}`}
+          error={show("reminders") ?? reminderTimingError ?? undefined}
+        >
+          <MaintenanceRemindersField
+            value={reminderOffsets}
+            onChange={(next) => {
+              setRemindersTouched(true);
+              setReminderOffsets(next);
+              // The stale timing error refers to a selection that no longer
+              // exists; re-checked on the next submit.
+              setReminderTimingError(null);
+            }}
+            plannedStart={start ? localToIso(start, zone) : ""}
+            zone={zone}
+          />
+          <p className="pt-1 text-[10px] text-fg-muted">
+            Reminders are scheduled once the maintenance is approved.
+          </p>
         </Field>
       </SectionCard>
 

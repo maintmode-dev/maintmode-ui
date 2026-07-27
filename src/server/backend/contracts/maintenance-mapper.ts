@@ -24,6 +24,7 @@ import type {
   MaintenanceDraftInput,
   MaintenanceImpact,
   MaintenanceNotifyTarget,
+  MaintenanceReminder,
   MaintenanceResource,
   MaintenanceScope,
   MaintenanceStatus,
@@ -31,6 +32,7 @@ import type {
   Period,
   StepStatus,
 } from "@/domain/maintenance/maintenance";
+import { MAX_OFFSET_MINUTES, MAX_REMINDERS, toFireAt } from "@/domain/maintenance/reminders";
 
 import { BffValidationError, type FieldError } from "@/server/backend/errors/bff-error";
 
@@ -39,12 +41,15 @@ import type {
   CalendarViewResponseDto,
   ConflictViewDto,
   CreateDraftMaintRequestDto,
+  DeferredNotificationDto,
+  DeferredNotificationViewDto,
   MaintenanceCancelReasonDto,
   MaintenanceViewDto,
   MaintenanceViewNotifyTargetDto,
   MaintenanceViewResourceDto,
   MaintenanceViewResponseDto,
   MaintenanceViewStepDto,
+  UpdateDraftMaintRequestDto,
   UserSummaryDto,
 } from "./maintmode-dto";
 
@@ -133,17 +138,30 @@ export function mapStep(step: MaintenanceViewStepDto, index: number): Maintenanc
   };
 }
 
-/**
- * Read-view notify targets → domain. The backend read view does not emit
- * `notify_targets` yet, so this is empty in practice today; map defensively so
- * the Notify-channels section starts rendering the moment the field appears.
- */
+/** Read-view notify targets → domain. */
 export function mapNotifyTargets(
   targets: MaintenanceViewNotifyTargetDto[] | undefined,
 ): MaintenanceNotifyTarget[] {
   return (targets ?? [])
     .map((t) => ({ id: t.id ?? t.channel_id ?? "", name: t.name ?? "", transport: t.transport }))
     .filter((t) => t.id || t.name);
+}
+
+/**
+ * Read-view reminders → domain, so Edit can hydrate the saved schedule
+ * (backend `90488d0e`). Entries without a `fire_at` are dropped rather than
+ * carried as an empty string: the form derives an offset from this instant, and
+ * an unparseable one would render as a phantom reminder the operator can't act
+ * on. The backend already orders by `fire_at`; the sort keeps that guarantee
+ * local rather than assuming it.
+ */
+export function mapReminders(
+  reminders: DeferredNotificationViewDto[] | undefined,
+): MaintenanceReminder[] {
+  return (reminders ?? [])
+    .filter((r): r is DeferredNotificationViewDto & { fire_at: string } => Boolean(r.fire_at))
+    .map((r) => ({ id: r.id ?? "", fire_at: r.fire_at, scheduled: r.scheduled ?? false }))
+    .sort((a, b) => a.fire_at.localeCompare(b.fire_at));
 }
 
 /** `ConflictView` → domain `Conflict`. No `reference`/`resolved` on the wire. */
@@ -205,6 +223,7 @@ export function mapMaintenanceView(dto: MaintenanceViewResponseDto): Maintenance
     actual_period: actualPeriod,
     resources: (m.resources ?? []).map(mapResource),
     notify_targets: mapNotifyTargets(m.notify_targets),
+    reminders: mapReminders(m.deferred_notifications),
     steps: (m.steps ?? []).map(mapStep),
     cancel_reason: mapCancelReason(m.cancel_reason),
     cancel_reason_comment: m.cancel_reason_comment,
@@ -280,6 +299,10 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
   }
   if (typeof record.planned_start !== "string") {
     fieldErrors.push({ field: "planned_start", message: "planned_start is required and must be a string" });
+  } else if (!Number.isFinite(new Date(record.planned_start).getTime())) {
+    // Reminder offsets resolve against this instant, so an unparseable start
+    // would drop every one of them on the floor. Reject the body instead.
+    fieldErrors.push({ field: "planned_start", message: "planned_start must be a valid date-time" });
   }
   if (record.scope !== "global" && record.scope !== "resource") {
     fieldErrors.push({ field: "scope", message: "scope must be 'global' or 'resource'" });
@@ -298,6 +321,35 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
       message: "notify_target_channel_ids must be an array",
     });
   }
+  // Reminder offsets are optional (absent === none), but when present they are
+  // `.map`ped, so a non-array is a 400 rather than a mapper TypeError. The cap
+  // is enforced here too: the backend rejects >10 with a generic error, and this
+  // turns it into a field-scoped one the form can render.
+  if (record.reminder_offsets_minutes !== undefined) {
+    if (!Array.isArray(record.reminder_offsets_minutes)) {
+      fieldErrors.push({
+        field: "reminder_offsets_minutes",
+        message: "reminder_offsets_minutes must be an array",
+      });
+    } else if (record.reminder_offsets_minutes.length > MAX_REMINDERS) {
+      fieldErrors.push({
+        field: "reminder_offsets_minutes",
+        message: `At most ${MAX_REMINDERS} reminders.`,
+      });
+    } else if (
+      // Whole minutes only, and within the same horizon the picker enforces.
+      // A fractional offset would survive the round trip badly: hydration rounds
+      // to the minute, so re-opening Edit would silently rewrite the instant.
+      record.reminder_offsets_minutes.some(
+        (m) => typeof m !== "number" || !Number.isInteger(m) || m <= 0 || m > MAX_OFFSET_MINUTES,
+      )
+    ) {
+      fieldErrors.push({
+        field: "reminder_offsets_minutes",
+        message: `reminder_offsets_minutes must contain whole minutes between 1 and ${MAX_OFFSET_MINUTES}`,
+      });
+    }
+  }
 
   if (fieldErrors.length > 0) {
     throw new BffValidationError(fieldErrors, "Malformed request body");
@@ -305,13 +357,48 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
 }
 
 /**
- * Domain `MaintenanceDraftInput` → `CreateDraftMaintRequest` /
- * `UpdateDraftMaintRequest` (same wire shape). Steps keep their human
- * `duration` string ("1h30m") — the write contract takes a Go-duration
+ * Domain `MaintenanceDraftInput` → `CreateDraftMaintRequest`. Steps keep their
+ * human `duration` string ("1h30m") — the write contract takes a Go-duration
  * string, NOT integer seconds. Resources become `{ id }` refs; `global`
  * scope carries no resources.
+ *
+ * Create and update are NOT the same request any more — use
+ * `mapDraftToUpdateRequest` for edit, whose `deferred_notifications` is
+ * tri-state.
  */
 export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDraftMaintRequestDto {
+  const notifications = remindersToFireAt(input);
+  return {
+    ...mapDraftCommon(input),
+    // On create there is no "unchanged" state, so nothing-to-send (an empty
+    // selection, or offsets that would not resolve — `null`) simply omits the key.
+    ...(notifications?.length ? { deferred_notifications: notifications } : {}),
+  };
+}
+
+/**
+ * Domain `MaintenanceDraftInput` → `UpdateDraftMaintRequest`.
+ *
+ * Identical to create except `deferred_notifications`, which the backend made
+ * tri-state (`53d3ba0c`): omitted = leave unchanged, `[]` = clear, non-empty =
+ * replace. The edit form always knows the operator's full intent, so this
+ * always sends the key — `[]` included. That is what makes "uncheck everything,
+ * save" actually clear the reminders instead of silently keeping them.
+ */
+export function mapDraftToUpdateRequest(input: MaintenanceDraftInput): UpdateDraftMaintRequestDto {
+  const notifications = remindersToFireAt(input);
+  return {
+    ...mapDraftCommon(input),
+    // `null` means "we could not resolve what the operator asked for" — omit the
+    // key so the backend leaves the saved reminders alone. Sending `[]` there
+    // would read as "clear" and hard-delete them: silent data loss on a body we
+    // failed to understand. An operator-chosen empty set still sends `[]`.
+    ...(notifications === null ? {} : { deferred_notifications: notifications }),
+  };
+}
+
+/** The fields create and update share verbatim. */
+function mapDraftCommon(input: MaintenanceDraftInput): Omit<CreateDraftMaintRequestDto, "deferred_notifications"> {
   const resourceIds = input.scope === "resource" ? input.resource_ids : [];
   return {
     approver_user_id: input.approver_user_id || undefined,
@@ -332,6 +419,32 @@ export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDra
     // edit (a missing field was the `notify_targets: cannot be blank` 400).
     notify_targets: { channel_ids: input.notify_target_channel_ids },
   };
+}
+
+/**
+ * Reminder offsets → the wire's absolute instants, or `null` when they cannot be
+ * resolved at all.
+ *
+ * Offsets resolve against `planned_start`, so a changed start moves every
+ * reminder with it — the backend never recomputes `fire_at` itself.
+ *
+ * The `null` return distinguishes two cases update must not conflate: an
+ * operator who genuinely selected nothing (empty array → "clear") versus a body
+ * whose `planned_start` won't parse, where every offset silently drops out and
+ * an empty array would read as "clear" and delete reminders nobody touched.
+ * Duplicates are collapsed so the same instant is never sent twice — the picker
+ * already prevents it, but the BFF is a trust boundary of its own.
+ */
+function remindersToFireAt(input: MaintenanceDraftInput): DeferredNotificationDto[] | null {
+  const offsets = [...new Set(input.reminder_offsets_minutes ?? [])];
+  if (offsets.length === 0) return [];
+
+  const resolved = offsets
+    .map((minutes) => toFireAt(input.planned_start, minutes))
+    .filter((fireAt): fireAt is string => fireAt !== null)
+    .map((fireAt) => ({ fire_at: fireAt }));
+
+  return resolved.length > 0 ? resolved : null;
 }
 
 /** `uimodels.AssignableUser` → domain `AssignableUser` (approver picker). */

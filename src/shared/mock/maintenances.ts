@@ -14,6 +14,9 @@ const todayAt = (h: number, m = 0, dayOffset = 0) => {
   d.setHours(h, m, 0, 0);
   return d.toISOString();
 };
+/** Shift an ISO instant by whole minutes (negative = earlier). */
+const shiftIso = (iso: string, offsetMin: number) =>
+  new Date(new Date(iso).getTime() + offsetMin * 60_000).toISOString();
 
 // Mock maintenances carry no notify targets (the read view doesn't expose them
 // yet); `withNotifyTargets` stamps the empty array so each literal stays terse.
@@ -134,6 +137,13 @@ export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefi
     ...base,
     created_by: "Alice Operator",
     approver: base.status === "draft" ? undefined : "Ruslan Kosykh",
+    // A 1-day and a 1-hour reminder off the planned start, so the edit form's
+    // hydration (fire_at → offset → preset) has something to resolve. Only
+    // queued once approved, hence `scheduled` tracking the draft state.
+    reminders: [
+      { id: `${base.id}-rem-1`, fire_at: shiftIso(base.planned_period.start, -24 * 60) },
+      { id: `${base.id}-rem-2`, fire_at: shiftIso(base.planned_period.start, -60) },
+    ].map((r) => ({ ...r, scheduled: base.status !== "draft" })),
     actions: {
       can_edit: base.status === "draft" || base.status === "planned",
       can_cancel: base.status !== "completed" && base.status !== "canceled",

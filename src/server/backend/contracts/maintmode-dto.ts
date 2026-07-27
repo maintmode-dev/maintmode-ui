@@ -101,12 +101,15 @@ export interface MaintenanceViewDto {
   created_by?: UserSummaryDto;
   approver?: UserSummaryDto;
   resources?: MaintenanceViewResourceDto[];
-  /**
-   * Notify channels the maintenance broadcasts to. Not yet emitted by the
-   * backend read view (only the write path carries `notify_target_channel_ids`);
-   * typed here so the mapper can pick it up defensively once it lands.
-   */
+  /** Notify channels the maintenance broadcasts to, resolved from the catalog. */
   notify_targets?: MaintenanceViewNotifyTargetDto[];
+  /**
+   * Advance reminders, ordered by `fire_at`, so the edit screen can hydrate the
+   * already-saved schedule. The backend documents this as always an array
+   * (empty when none) — still optional here because every other read-view field
+   * is, and a defensive `?? []` costs nothing.
+   */
+  deferred_notifications?: DeferredNotificationViewDto[];
   steps?: MaintenanceViewStepDto[];
   cancel_reason?: string;
   cancel_reason_comment?: string;
@@ -114,12 +117,26 @@ export interface MaintenanceViewDto {
   updated_at?: string;
 }
 
-/** A notify target as the read view would expose it (anticipated shape). */
+/** A notify target as the read view exposes it. */
 export interface MaintenanceViewNotifyTargetDto {
   id?: string;
   channel_id?: string;
   name?: string;
   transport?: string;
+}
+
+/**
+ * `uimodels.DeferredNotificationView` — one saved reminder on the read path.
+ *
+ * Distinct from the write-side `DeferredNotificationDto`: this one carries the
+ * row `id` and `scheduled`. `scheduled` is false while the maintenance is a
+ * draft (goque tasks are only enqueued on approve) and true once queued.
+ */
+export interface DeferredNotificationViewDto {
+  id?: string;
+  /** ISO-8601 datetime the reminder fires at. */
+  fire_at?: string;
+  scheduled?: boolean;
 }
 
 /** `uimodels.MaintenanceViewResponse` envelope. */
@@ -270,13 +287,32 @@ export interface NotifyTargetsDto {
 }
 
 /**
+ * `apimodels.DeferredNotification` — one advance reminder for a maintenance.
+ *
+ * The backend stores ONLY the absolute instant: there is no `offset` /
+ * `lead_time` / `notify_before` field, by design. The UI presets ("1 day
+ * before", …) are client-side sugar — the mapper resolves them against
+ * `planned_start` and sends absolute timestamps.
+ */
+export interface DeferredNotificationDto {
+  /** ISO-8601 datetime the reminder fires at. */
+  fire_at: string;
+}
+
+/**
  * `apimodels.CreateDraftMaintRequest` — body for
- * `POST /api/v1/maintenances/create`. `UpdateDraftMaintRequest`
- * (`POST /api/v1/maintenances/{id}/edit`) shares the same shape.
+ * `POST /api/v1/maintenances/create`.
+ *
+ * NOT interchangeable with `UpdateDraftMaintRequestDto`: the two diverged when
+ * the backend made update's `deferred_notifications` tri-state (see below).
+ * Create has no "unchanged" state — the maintenance either starts with
+ * reminders or with none — so it stays a flat array.
  *
  * `notify_targets` is the OBJECT shape `{ channel_ids }` — NOT a bare string
  * array (the earlier `string[]` typing was wrong and meant the field was never
- * sent, blocking both create and edit).
+ * sent, blocking both create and edit). `deferred_notifications` is an array of
+ * OBJECTS for the same reason — it was mistyped as `string[]` here too, which is
+ * why the field had never been sent at all (RUK-216).
  */
 export interface CreateDraftMaintRequestDto {
   approver_user_id?: string;
@@ -289,11 +325,36 @@ export interface CreateDraftMaintRequestDto {
   resources: ResourceRefDto[];
   steps: MaintenanceStepInputDto[];
   notify_targets: NotifyTargetsDto;
-  deferred_notifications?: string[];
+  /**
+   * Advance reminders the maintenance starts with. Omitted when none are picked;
+   * on create there is no "unchanged" state to distinguish, so `[]` and an
+   * absent field mean the same thing.
+   */
+  deferred_notifications?: DeferredNotificationDto[];
 }
 
-/** `apimodels.UpdateDraftMaintRequest` — same wire shape as create. */
-export type UpdateDraftMaintRequestDto = CreateDraftMaintRequestDto;
+/**
+ * `apimodels.UpdateDraftMaintRequest` — body for
+ * `POST /api/v1/maintenances/{id}/edit`. Same as create EXCEPT
+ * `deferred_notifications`, which is tri-state here.
+ */
+export interface UpdateDraftMaintRequestDto extends Omit<CreateDraftMaintRequestDto, "deferred_notifications"> {
+  /**
+   * Tri-state, carried by `*[]*DeferredNotification` on the Go side and gated
+   * with `cmd.DeferredNotifications != nil` (`update_maint.go:107`):
+   *
+   * - **omitted / `null`** → leave the saved reminders unchanged
+   * - **`[]`** → clear them (hard-deletes the rows)
+   * - **non-empty** → replace the whole set
+   *
+   * `undefined` and `null` are equivalent on the wire, since `JSON.stringify`
+   * drops an `undefined` value. The distinction that matters to the mapper is
+   * `[]` (clear) vs absent (unchanged) — conflating them is exactly the bug the
+   * backend fixed in `53d3ba0c`, where unchecking every reminder silently kept
+   * them and they still fired.
+   */
+  deferred_notifications?: DeferredNotificationDto[] | null;
+}
 
 /** `uimodels.AssignableUser` — `GET /api/v1/users/assignable`. */
 export interface AssignableUserDto {

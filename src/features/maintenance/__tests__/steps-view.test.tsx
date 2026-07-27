@@ -49,6 +49,7 @@ function detail(over: { status: MaintenanceStatus; steps: MaintenanceStep[] }): 
     planned_period: { start: "2026-06-14T17:00:00Z", end: "2026-06-14T17:05:00Z" },
     resources: [],
     notify_targets: [],
+    reminders: [],
     steps: over.steps,
     created_at: "2026-06-14T16:00:00Z",
     updated_at: "2026-06-14T16:00:00Z",
