@@ -9,13 +9,7 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Switch } from "@/shared/ui/shadcn/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/shared/ui/shadcn/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
 import { CreateDialog, CreateDialogBody, CreateDialogFooter } from "@/shared/ui/domain/create-dialog";
 import { Separator } from "@/shared/ui/shadcn/separator";
 import { formatUtc } from "@/shared/ui/lib/format";
@@ -295,9 +289,7 @@ function ConfigField({
             <SelectValue placeholder={field.placeholder ?? "Select…"} />
           </SelectTrigger>
           <SelectContent>
-            {isUnknownValue ? (
-              <SelectItem value={value}>{`${value} (current)`}</SelectItem>
-            ) : null}
+            {isUnknownValue ? <SelectItem value={value}>{`${value} (current)`}</SelectItem> : null}
             {field.options.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}

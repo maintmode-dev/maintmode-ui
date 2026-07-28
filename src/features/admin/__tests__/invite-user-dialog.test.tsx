@@ -31,7 +31,9 @@ vi.mock("@/features/_shared/api/bff-fetch", async (importOriginal) => {
 // Toasts fire from the mutation hooks. The error toast is asserted below, so
 // keep a handle on the mock.
 const toastErrorMock = vi.fn();
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: (...args: unknown[]) => toastErrorMock(...args) } }));
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: (...args: unknown[]) => toastErrorMock(...args) },
+}));
 
 function renderDialog() {
   const onOpenChange = vi.fn();

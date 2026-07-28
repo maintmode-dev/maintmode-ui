@@ -49,6 +49,8 @@ const admin: User = {
   roles: ["admin"],
   connected_providers: [],
   created_at: "2026-01-01T00:00:00Z",
+  telegram_tag: null,
+  slack_tag: null,
 };
 
 function user(id: string, blocked = false): User {

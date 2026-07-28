@@ -11,6 +11,10 @@ import { isSameOriginRequest } from "@/server/backend/security/csrf";
 interface UpdateMeBody {
   /** IANA identifier (e.g. "Asia/Nicosia"); null/empty resets to autodetect. */
   timezone?: string | null;
+  /** Telegram handle, stored verbatim (leading `@` kept); null/empty clears. */
+  telegram_tag?: string | null;
+  /** Slack handle, stored verbatim (leading `@` kept); null/empty clears. */
+  slack_tag?: string | null;
 }
 
 /**
@@ -52,11 +56,20 @@ export async function GET() {
 
 /**
  * PATCH /api/me — proxy to backend `PATCH /api/v1/me`, updating the caller's
- * timezone preference (RUK-201). Body: `{ timezone }` — an IANA id (e.g.
- * "Asia/Nicosia"), or `null`/empty to reset to browser autodetect. The backend
- * validates the identifier and returns 400 for an invalid one; that envelope
- * passes straight through `routeErrorResponse`. Returns the updated user so the
- * client can refresh its `/me` cache from the response.
+ * own preferences: `timezone` (RUK-201) plus `telegram_tag` / `slack_tag`
+ * (RUK-217). Body: `{ timezone?, telegram_tag?, slack_tag? }`.
+ *
+ * This is a **true patch**: an absent key leaves the stored value untouched,
+ * while `null`/empty/whitespace clears it. Only keys actually present in the
+ * incoming body are forwarded — sending a key the caller never touched would
+ * overwrite the other fields. Tag values are forwarded verbatim (a leading `@`
+ * is part of the handle and is never stripped); `timezone` is an IANA id.
+ *
+ * The backend validates both the identifier and the tags and returns 400 for an
+ * invalid one — note it uses the same `invalid request` code for either, so the
+ * offending field can't be told apart from the envelope. That envelope passes
+ * straight through `routeErrorResponse`. Returns the updated user so the client
+ * can refresh its `/me` cache from the response.
  */
 export async function PATCH(request: Request) {
   if (!isSameOriginRequest(request)) {
@@ -74,10 +87,22 @@ export async function PATCH(request: Request) {
     // "reset", so collapse them rather than forwarding an ambiguous `""`. A
     // non-empty value passes through for the backend to validate. Omitting the
     // field entirely sends `{}` (no change).
+    // The three fields are handled by three explicit blocks on purpose. Do NOT
+    // fold them into a loop or a spread of `parsed`: a spread forwards keys the
+    // caller never touched, and on this true-patch endpoint that silently wipes
+    // the other fields (SPEC §7 — changing a timezone would clear both tags).
     const body: UpdateMeBody = {};
     if ("timezone" in parsed) {
       const tz = parsed.timezone;
       body.timezone = typeof tz === "string" && tz.trim() ? tz : null;
+    }
+    if ("telegram_tag" in parsed) {
+      const v = parsed.telegram_tag;
+      body.telegram_tag = typeof v === "string" && v.trim() ? v.trim() : null;
+    }
+    if ("slack_tag" in parsed) {
+      const v = parsed.slack_tag;
+      body.slack_tag = typeof v === "string" && v.trim() ? v.trim() : null;
     }
 
     const data = await authenticatedBackendRequest<unknown>({

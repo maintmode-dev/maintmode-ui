@@ -35,6 +35,8 @@ describe("mapUser", () => {
       last_seen_at: "2026-06-01T00:00:00Z",
       blocked_at: null,
       is_last_admin: false,
+      telegram_tag: null,
+      slack_tag: null,
     };
     expect(mapUser(dto)).toEqual({
       id: "u-1",
@@ -47,6 +49,8 @@ describe("mapUser", () => {
       created_at: "2026-01-01T00:00:00Z",
       last_seen_at: "2026-06-01T00:00:00Z",
       blocked_at: null,
+      telegram_tag: null,
+      slack_tag: null,
     });
   });
 
@@ -63,6 +67,45 @@ describe("mapUser", () => {
   it("falls back display_name to email then 'Unknown user'", () => {
     expect(mapUser({ id: "u-4", email: "x@y.z" }).display_name).toBe("x@y.z");
     expect(mapUser({ id: "u-5" }).display_name).toBe("Unknown user");
+  });
+});
+
+describe("mapUser — messenger tags (SPEC §1.1)", () => {
+  it("maps explicit nulls (the /me shape) to null", () => {
+    const dto: AuthUserDto = { id: "u-6", telegram_tag: null, slack_tag: null };
+    const user = mapUser(dto);
+    expect(user.telegram_tag).toBeNull();
+    expect(user.slack_tag).toBeNull();
+  });
+
+  it("maps absent keys (the /users/list omitempty shape) to null", () => {
+    // The two wire forms must converge: the admin list drops the key entirely,
+    // /me sends `null`. Both mean "not set" and must be indistinguishable here.
+    const omitted = mapUser({ id: "u-7" });
+    const explicitNull = mapUser({ id: "u-7", telegram_tag: null, slack_tag: null });
+    expect(omitted.telegram_tag).toBeNull();
+    expect(omitted.slack_tag).toBeNull();
+    expect(omitted).toEqual(explicitNull);
+  });
+
+  it("passes values through verbatim, keeping a leading @", () => {
+    const dto: AuthUserDto = { id: "u-8", telegram_tag: "@ruslan", slack_tag: "@rus.k" };
+    const user = mapUser(dto);
+    expect(user.telegram_tag).toBe("@ruslan");
+    expect(user.slack_tag).toBe("@rus.k");
+  });
+
+  it("does not add a leading @ to a bare handle", () => {
+    // `@ruslan` and `ruslan` are distinct stored values — never normalized.
+    const user = mapUser({ id: "u-9", telegram_tag: "ruslan", slack_tag: "ruslan" });
+    expect(user.telegram_tag).toBe("ruslan");
+    expect(user.slack_tag).toBe("ruslan");
+  });
+
+  it("normalizes an empty-string tag to null", () => {
+    const user = mapUser({ id: "u-10", telegram_tag: "", slack_tag: "" });
+    expect(user.telegram_tag).toBeNull();
+    expect(user.slack_tag).toBeNull();
   });
 });
 

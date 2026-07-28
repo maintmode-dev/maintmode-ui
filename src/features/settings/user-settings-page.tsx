@@ -20,6 +20,7 @@ import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { BrandIcon, type BrandProvider } from "@/shared/ui/icons/brand-icons";
 
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
+import { MessengerTagsFields } from "./messenger-tags-card";
 import { TimezoneCard } from "./timezone-card";
 import type { Role } from "@/domain/auth/permissions";
 
@@ -78,11 +79,18 @@ export function UserSettingsPage() {
           </div>
         </header>
 
-        <Card title="Bio">
-          {/* Read-only identity (frozen decision: MVP profile is identity from
-              GET /me, no editable fields). */}
+        {/* Identity from GET /me. Name and email stay read-only; the messenger
+            handles are the one editable part, which supersedes the snapshot's
+            "full-page read-only profile" (see SPEC §5.8). They live here rather
+            than in a section of their own because a handle is also part of what
+            someone is called. */}
+        <Card
+          title="Bio"
+          caption="Handles are added to maintenance notifications so your team knows who owns the window. Optional — leave blank to be shown by name only."
+        >
           <ReadOnlyField label="Display name" value={user.display_name} />
           <ReadOnlyField label="Email" value={user.email} mono />
+          <MessengerTagsFields savedTelegram={user.telegram_tag} savedSlack={user.slack_tag} />
         </Card>
 
         <Card title="Roles">
@@ -239,10 +247,26 @@ export function UserSettingsPage() {
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  caption,
+  children,
+}: {
+  title: string;
+  /** Optional one-liner under the title, for cards whose purpose isn't obvious. */
+  caption?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="rounded-md border border-border-subtle bg-bg-elev-1 p-5 space-y-4">
-      <h2 className="h3">{title}</h2>
+      {caption ? (
+        <div className="space-y-1">
+          <h2 className="h3">{title}</h2>
+          <p className="caption">{caption}</p>
+        </div>
+      ) : (
+        <h2 className="h3">{title}</h2>
+      )}
       {children}
     </section>
   );

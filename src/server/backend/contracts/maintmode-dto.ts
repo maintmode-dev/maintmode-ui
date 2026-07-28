@@ -338,7 +338,10 @@ export interface CreateDraftMaintRequestDto {
  * `POST /api/v1/maintenances/{id}/edit`. Same as create EXCEPT
  * `deferred_notifications`, which is tri-state here.
  */
-export interface UpdateDraftMaintRequestDto extends Omit<CreateDraftMaintRequestDto, "deferred_notifications"> {
+export interface UpdateDraftMaintRequestDto extends Omit<
+  CreateDraftMaintRequestDto,
+  "deferred_notifications"
+> {
   /**
    * Tri-state, carried by `*[]*DeferredNotification` on the Go side and gated
    * with `cmd.DeferredNotifications != nil` (`update_maint.go:107`):

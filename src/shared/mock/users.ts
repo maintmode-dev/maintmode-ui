@@ -15,6 +15,8 @@ const MOCK_CURRENT_USER: User = {
   created_at: iso(180),
   last_seen_at: iso(0),
   blocked_at: null,
+  telegram_tag: "@ruslan",
+  slack_tag: "@ruslan.kosykh",
 };
 
 export const MOCK_USERS: User[] = [
@@ -30,6 +32,8 @@ export const MOCK_USERS: User[] = [
     created_at: iso(120),
     last_seen_at: iso(0),
     blocked_at: null,
+    telegram_tag: "@ops_lead",
+    slack_tag: null,
   },
   {
     id: "u-3",
@@ -41,6 +45,8 @@ export const MOCK_USERS: User[] = [
     created_at: iso(60),
     last_seen_at: iso(1),
     blocked_at: null,
+    telegram_tag: null,
+    slack_tag: "alice",
   },
   {
     id: "u-4",
@@ -52,6 +58,8 @@ export const MOCK_USERS: User[] = [
     created_at: iso(30),
     last_seen_at: iso(4),
     blocked_at: null,
+    telegram_tag: null,
+    slack_tag: null,
   },
   {
     id: "u-5",
@@ -63,5 +71,7 @@ export const MOCK_USERS: User[] = [
     created_at: iso(200),
     last_seen_at: iso(10),
     blocked_at: iso(8),
+    telegram_tag: null,
+    slack_tag: null,
   },
 ];

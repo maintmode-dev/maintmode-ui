@@ -9,6 +9,7 @@ import type {
   CreateInvitationResponse,
   Invitation,
   ListUsersPage,
+  User,
 } from "@/domain/admin/user";
 import type { Role } from "@/domain/auth/permissions";
 
@@ -277,6 +278,61 @@ export function useRevokeRole() {
       // message propagates through the error envelope.
       const msg = error instanceof BffError ? error.message : "Couldn't revoke the role. Try again.";
       toast.error(msg);
+    },
+  });
+}
+
+/**
+ * Which user to edit, plus the tag keys the caller actually changed. `userId`
+ * is the hook's own field (camelCase, like `useAssignRole`'s) and travels in
+ * the PATH; the tag fields are wire keys and travel in the BODY verbatim.
+ */
+export interface UpdateUserTagsArgs {
+  userId: string;
+  telegram_tag?: string | null;
+  slack_tag?: string | null;
+}
+
+/**
+ * Admin edit of ANOTHER user's messenger tags (RUK-217) via
+ * `PATCH /api/admin/users/{id}`.
+ *
+ * **The caller decides which keys to send; this hook forwards exactly those**
+ * — it never adds, defaults, or drops one (SPEC §1.1):
+ *
+ *  - key ABSENT → the backend leaves that tag alone;
+ *  - key present as `null` → the backend CLEARS that tag;
+ *  - key present with a stale value → it OVERWRITES the current tag, silently
+ *    clobbering an edit the user made to their own profile.
+ *
+ * So the body is assembled key-by-key rather than spread from `args`: a spread
+ * would smuggle `userId` into the payload, and a sheet that only touched
+ * Telegram would start sending Slack too.
+ *
+ * **No toast here, deliberately.** The user sheet (T10) saves roles and tags in
+ * one action and owns the messaging: a "saved" toast from this hook could land
+ * next to a banner saying the roles did NOT save. Contrast `useBlockUser`,
+ * which does toast — it is a standalone row action with nothing else to
+ * coordinate. Failures propagate as `BffError` for the caller to catch.
+ */
+export function useUpdateUserTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: UpdateUserTagsArgs): Promise<User> => {
+      const body: Omit<UpdateUserTagsArgs, "userId"> = {};
+      if ("telegram_tag" in args) {
+        body.telegram_tag = args.telegram_tag;
+      }
+      if ("slack_tag" in args) {
+        body.slack_tag = args.slack_tag;
+      }
+      return bffFetch<User>(`/api/admin/users/${encodeURIComponent(args.userId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: () => {
+      invalidateUsers(queryClient);
     },
   });
 }

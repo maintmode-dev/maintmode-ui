@@ -8,6 +8,8 @@
  *  - roles    : whitelisted against `guest | editor | reviewer | admin`.
  *  - providers: whitelisted against the `SignInProvider` union; unknown dropped.
  *  - blocking : `blocked_at` carried through nullable (no status enum).
+ *  - tags     : `telegram_tag`/`slack_tag` normalized to `string | null`, which
+ *               erases the wire's three shapes for "unset" (SPEC §1.1).
  */
 
 import type { Role } from "@/domain/auth/permissions";
@@ -48,6 +50,12 @@ export function mapUser(dto: AuthUserDto): User {
     last_seen_at: dto.last_seen_at,
     // Normalize an empty string to null so `isUserBlocked` reads cleanly.
     blocked_at: dto.blocked_at || null,
+    // Messenger tags: `/me` sends `null`, the admin list omits the key entirely
+    // (`omitempty`). Collapse absent/null/"" into a single `null` so the domain
+    // has one representation of "not set" (SPEC §1.1). Non-empty values pass
+    // through verbatim — a leading `@` is part of the value, never stripped.
+    telegram_tag: dto.telegram_tag || null,
+    slack_tag: dto.slack_tag || null,
   };
 }
 

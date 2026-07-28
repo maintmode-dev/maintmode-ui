@@ -22,6 +22,14 @@ export interface AuthUserDto {
   /** Nullable: non-null ISO timestamp means the account is blocked. */
   blocked_at?: string | null;
   is_last_admin?: boolean;
+  /**
+   * Messenger tags (RUK-217). Optional here because the wire genuinely varies:
+   * `GET/PATCH /api/v1/me` always sends the key (`null` when unset), while
+   * `GET /api/v1/users/list` and the admin `PATCH` response use `omitempty` and
+   * drop the key entirely. `mapUser` normalizes both forms to `null`.
+   */
+  telegram_tag?: string | null;
+  slack_tag?: string | null;
 }
 
 /** Auth `ListUsersResponse`. */

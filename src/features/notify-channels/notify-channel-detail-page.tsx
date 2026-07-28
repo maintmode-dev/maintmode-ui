@@ -119,9 +119,7 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
         <Alert variant="warning" role="status">
           <TriangleAlert aria-hidden="true" />
           <AlertTitle>{statusCopy.badge}</AlertTitle>
-          <AlertDescription>
-            {statusCopy.detail(transportDisplayTitle(channel.transport))}
-          </AlertDescription>
+          <AlertDescription>{statusCopy.detail(transportDisplayTitle(channel.transport))}</AlertDescription>
         </Alert>
       ) : null}
 

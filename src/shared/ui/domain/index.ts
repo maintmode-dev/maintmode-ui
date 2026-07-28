@@ -49,5 +49,7 @@ export type { CalendarEventBarProps } from "./calendar-event-bar";
 export { Kbd } from "./kbd";
 export type { KbdProps } from "./kbd";
 
+export { LabeledField } from "./labeled-field";
+
 export { CreateDialog, CreateDialogBody, CreateDialogFooter } from "./create-dialog";
 export type { CreateDialogProps, CreateDialogBodyProps, CreateDialogFooterProps } from "./create-dialog";

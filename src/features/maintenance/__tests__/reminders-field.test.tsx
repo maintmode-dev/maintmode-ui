@@ -66,7 +66,9 @@ describe("MaintenanceRemindersField", () => {
     render(<Harness />);
     fireEvent.click(preset("15 minutes before"));
     fireEvent.click(preset("7 days before"));
-    const labels = screen.getAllByRole("button", { name: /^Remove / }).map((b) => b.getAttribute("aria-label"));
+    const labels = screen
+      .getAllByRole("button", { name: /^Remove / })
+      .map((b) => b.getAttribute("aria-label"));
     expect(labels).toEqual(["Remove 7 days before", "Remove 15 minutes before"]);
   });
 
@@ -136,9 +138,7 @@ describe("MaintenanceRemindersField", () => {
   });
 
   it("says so rather than showing a bogus time when the start is unset", () => {
-    render(
-      <MaintenanceRemindersField value={[60]} onChange={() => {}} plannedStart="" zone="UTC" />,
-    );
+    render(<MaintenanceRemindersField value={[60]} onChange={() => {}} plannedStart="" zone="UTC" />);
     expect(screen.getByText("Set a start time")).toBeTruthy();
   });
 
@@ -204,7 +204,11 @@ describe("MaintenanceRemindersField", () => {
   it("adds on Enter without submitting the surrounding form", () => {
     let submitted = false;
     render(
-      <form onSubmit={() => { submitted = true; }}>
+      <form
+        onSubmit={() => {
+          submitted = true;
+        }}
+      >
         <Harness />
       </form>,
     );

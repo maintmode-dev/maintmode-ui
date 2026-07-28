@@ -155,9 +155,7 @@ export function mapNotifyTargets(
  * on. The backend already orders by `fire_at`; the sort keeps that guarantee
  * local rather than assuming it.
  */
-export function mapReminders(
-  reminders: DeferredNotificationViewDto[] | undefined,
-): MaintenanceReminder[] {
+export function mapReminders(reminders: DeferredNotificationViewDto[] | undefined): MaintenanceReminder[] {
   return (reminders ?? [])
     .filter((r): r is DeferredNotificationViewDto & { fire_at: string } => Boolean(r.fire_at))
     .map((r) => ({ id: r.id ?? "", fire_at: r.fire_at, scheduled: r.scheduled ?? false }))
@@ -398,7 +396,9 @@ export function mapDraftToUpdateRequest(input: MaintenanceDraftInput): UpdateDra
 }
 
 /** The fields create and update share verbatim. */
-function mapDraftCommon(input: MaintenanceDraftInput): Omit<CreateDraftMaintRequestDto, "deferred_notifications"> {
+function mapDraftCommon(
+  input: MaintenanceDraftInput,
+): Omit<CreateDraftMaintRequestDto, "deferred_notifications"> {
   const resourceIds = input.scope === "resource" ? input.resource_ids : [];
   return {
     approver_user_id: input.approver_user_id || undefined,

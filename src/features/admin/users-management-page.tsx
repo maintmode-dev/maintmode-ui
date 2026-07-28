@@ -1,7 +1,7 @@
 "use client";
 
-import { Lock, Pencil, Plus, Search, ShieldAlert } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Lock, Mail, Pencil, Plus, Search, Send, ShieldAlert } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useDebouncedValue } from "@/features/_shared/hooks/use-debounced-value";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
 import { Chip } from "@/shared/ui/domain/chip";
+import { SlackGlyph } from "@/shared/ui/icons/slack-glyph";
 import { SemanticPill, type SemanticTone } from "@/shared/ui/domain/semantic-pill";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { formatUtc } from "@/shared/ui/lib/format";
@@ -33,10 +34,14 @@ import {
   useRevokeInvitation,
   useRevokeRole,
   useUnblockUser,
+  useUpdateUserTags,
   useUsersQuery,
+  type UpdateUserTagsArgs,
 } from "./queries/use-users-queries";
 import { InviteUserDialog } from "./invite-user-dialog";
 import { Field, ROLE_DESCRIPTIONS, ROLE_ORDER, sortRoles } from "./roles-ui";
+import { tagChanged, validateTag, type TagError } from "@/domain/admin/messenger-tag";
+import { MessengerTagFields } from "@/shared/ui/domain/messenger-tag-fields";
 import type { InvitationStatus } from "@/domain/admin/user";
 import { inviterHandle, isUserBlocked } from "@/domain/admin/user";
 import type { Invitation, User } from "@/domain/admin/user";
@@ -79,8 +84,7 @@ export function UsersManagementPage() {
   // pending = invites awaiting acceptance. The active count is its own request,
   // so degrade to an em dash while it's loading or on error rather than assert a
   // false "0 active" next to a fully-rendered table.
-  const activeUserLabel =
-    activeCountQuery.data != null ? String(activeCountQuery.data.total) : "—";
+  const activeUserLabel = activeCountQuery.data != null ? String(activeCountQuery.data.total) : "—";
   const pendingInviteCount = useMemo(
     () => allInvitations.filter((i) => i.status === "pending").length,
     [allInvitations],
@@ -96,8 +100,12 @@ export function UsersManagementPage() {
   // a mutation), looking the user up by id rather than holding a stale copy.
   const activeUser = useMemo(() => users.find((u) => u.id === activeUserId) ?? null, [users, activeUserId]);
 
+  // Handles are searchable because that is how a report actually arrives: someone
+  // says "@ruslan is being tagged and he has no idea", and the admin needs to find
+  // whose profile carries that handle. Scanning the column would only cover the
+  // 50 rows on screen; the search covers the dataset.
   const searchPlaceholder =
-    tab === "invitations" ? "Search invitations by email…" : "Search by name or email…";
+    tab === "invitations" ? "Search invitations by email…" : "Search by name, email or handle…";
 
   return (
     <TooltipProvider>
@@ -293,6 +301,10 @@ function UsersTable({
   return (
     <div className="bg-bg-elev-1 border border-border-subtle rounded-md overflow-hidden">
       <table className="w-full text-left text-sm table-fixed">
+        {/* Four columns, per the users-management snapshot. Handles deliberately
+            get no column of their own: they are found by searching for the one
+            you were told about, not by scanning a column that is an em dash on
+            almost every row. They stay visible in the user sheet. */}
         <colgroup>
           <col className="w-10" />
           <col />
@@ -338,7 +350,17 @@ function UsersTable({
                       <span className="font-medium text-fg">{u.display_name}</span>
                       {isSelf ? <YouPill /> : null}
                     </div>
-                    <div className="text-xs font-mono text-fg-dim">{u.email}</div>
+                    {/* Email and handles share one line as peers: all three are
+                        ways of addressing the same person, so they get the same
+                        weight — a glyph plus muted mono text, no chip. A chip
+                        would make the handle louder than the email it sits next
+                        to. The email yields first (`min-w-0` + truncate) so a
+                        long address shortens instead of pushing handles out. */}
+                    <div className="flex items-center gap-3 text-xs font-mono text-fg-dim">
+                      <IdentityValue icon={Mail} value={u.email} className="min-w-0" />
+                      {u.telegram_tag ? <IdentityValue icon={Send} value={u.telegram_tag} /> : null}
+                      {u.slack_tag ? <IdentityValue icon={SlackGlyph} value={u.slack_tag} /> : null}
+                    </div>
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex flex-wrap gap-1">
@@ -358,6 +380,34 @@ function UsersTable({
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * One way of addressing a user — email or a messenger handle — as a glyph plus
+ * muted mono text. All three read at the same weight on purpose: a chip around
+ * the handle would make it louder than the email beside it, and on a list where
+ * most rows carry only an email that reads as an alert rather than a detail.
+ *
+ * Handle values render verbatim: a leading `@` is neither added nor stripped,
+ * since `@ruslan` and `ruslan` are distinct stored values (SPEC §5.9). A user
+ * with no handle simply gets nothing — no placeholder, since most rows would
+ * otherwise carry two em dashes apiece.
+ */
+function IdentityValue({
+  icon: Icon,
+  value,
+  className,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1", className)}>
+      <Icon className="size-3 shrink-0" aria-hidden={true} />
+      <span className="truncate">{value}</span>
+    </span>
   );
 }
 
@@ -510,54 +560,229 @@ function UserSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent aria-modal="true" className="sm:max-w-[560px] bg-bg-elev-1 p-0">
         {user ? (
-          <UserSheetBody user={user} isSelf={user.id === selfId} onClose={() => onOpenChange(false)} />
+          // `key={user.id}` remounts the body — and so re-seeds every draft —
+          // when the sheet switches to a different user. Without it the drafts,
+          // which are seeded once in `useState`, survive the switch while
+          // `user` is re-derived from the refetched list, so B's sheet would
+          // show A's edits. That is a latent bug already on `main`; four
+          // checkboxes re-derived from the same roles hid it, a text field
+          // shows it immediately.
+          //
+          // The key is the id, NOT the data: a background refetch deliberately
+          // does not reset the draft. Safe because the save sends only keys
+          // whose value actually changed, so a concurrent edit to an untouched
+          // field is never clobbered.
+          <UserSheetBody
+            key={user.id}
+            user={user}
+            isSelf={user.id === selfId}
+            onClose={() => onOpenChange(false)}
+          />
         ) : null}
       </SheetContent>
     </Sheet>
   );
 }
 
+type TagField = "telegram" | "slack";
+
 /**
- * User sheet body. Roles are edited as a local draft (4-checkbox list); the
- * footer Save fires the diff against the server (parallel assign/revoke), per
- * the frozen contract. Block lives in the Danger zone with the last-admin and
- * self guards.
+ * Banner copy for a failed save (SPEC §5.4, verbatim). Each string names what
+ * DID land and what did not, because "couldn't save changes" next to roles that
+ * are already applied server-side invites the admin to apply them twice.
+ *
+ * The "…saved" half is only claimed when that half was actually SENT: with only
+ * handles changed and the PATCH rejected, "Roles saved." would announce a
+ * request that never happened. That case falls through to the plain string.
+ */
+function saveErrorText(result: {
+  rolesSent: boolean;
+  rolesOk: boolean;
+  tagsSent: boolean;
+  tagsOk: boolean;
+}): string {
+  const { rolesSent, rolesOk, tagsSent, tagsOk } = result;
+  if (!rolesOk && tagsSent && tagsOk) {
+    return "Handles saved. Roles didn't save — they've been reset. Try again.";
+  }
+  if (!tagsOk && rolesSent && rolesOk) {
+    return "Roles saved. Handles didn't save — your text is still here. Try again.";
+  }
+  return "Couldn't save changes. Try again.";
+}
+
+/** `2 role changes` / `1 handle change` — the footer names units, never a sum. */
+function pendingClause(count: number, unit: "role" | "handle"): string {
+  return `${count} ${unit} change${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * User sheet body. Roles (4-checkbox list) and messenger handles (two text
+ * fields) are each edited as a local draft; the footer Save commits both.
+ * Block lives in the Danger zone with the last-admin and self guards.
+ *
+ * The two drafts are diffed SEPARATELY and committed SEQUENTIALLY — see `save`.
  */
 function UserSheetBody({ user, isSelf, onClose }: { user: User; isSelf: boolean; onClose: () => void }) {
   const assignRole = useAssignRole();
   const revokeRole = useRevokeRole();
+  const updateUserTags = useUpdateUserTags();
 
   const [draftRoles, setDraftRoles] = useState<Role[]>(user.roles);
+  const [draftTags, setDraftTags] = useState({
+    telegram: user.telegram_tag ?? "",
+    slack: user.slack_tag ?? "",
+  });
+  const [tagErrors, setTagErrors] = useState<Record<TagField, TagError | null>>({
+    telegram: null,
+    slack: null,
+  });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const bannerRef = useRef<HTMLParagraphElement>(null);
+
+  // `save` awaits between steps, and a role write invalidates the users query,
+  // so the `user` captured by its closure can be stale by the time the next
+  // step runs. Anything read AFTER an await goes through this ref instead.
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
 
   const added = draftRoles.filter((r) => !user.roles.includes(r));
   const removed = user.roles.filter((r) => !draftRoles.includes(r));
-  const diffCount = added.length + removed.length;
+  const roleDiffCount = added.length + removed.length;
+
+  // Deliberately NOT summed with the role count: "2 changes" built from one
+  // role and one handle doesn't say what will reach the server (SPEC §5.4).
+  const telegramChanged = tagChanged(draftTags.telegram, user.telegram_tag);
+  const slackChanged = tagChanged(draftTags.slack, user.slack_tag);
+  const tagDiffCount = (telegramChanged ? 1 : 0) + (slackChanged ? 1 : 0);
+  const anyTagError = tagErrors.telegram !== null || tagErrors.slack !== null;
 
   const toggleRole = (role: Role, checked: boolean) => {
     setError(null);
     setDraftRoles((cur) => (checked ? [...cur, role] : cur.filter((r) => r !== role)));
   };
 
+  // Errors land on blur and on Save only (SPEC §5.6). `onChange` may only CLEAR
+  // one: validating per keystroke flashes an error mid-word and, since the
+  // message carries `role="alert"`, announces it on every key.
+  const onTagChange = (field: TagField, value: string) => {
+    setError(null);
+    setDraftTags((d) => ({ ...d, [field]: value }));
+    setTagErrors((e) => (e[field] ? { ...e, [field]: null } : e));
+  };
+
+  const onTagBlur = (field: TagField) => {
+    setTagErrors((e) => ({ ...e, [field]: validateTag(draftTags[field]) }));
+  };
+
+  /**
+   * Roles first, then handles — SEQUENTIALLY, not `Promise.all` (SPEC §5.4).
+   *
+   * They are different resources (`POST roles/assign|revoke` vs one
+   * `PATCH /users/{id}`), so a combined all-or-nothing failure message lies in
+   * both mixed outcomes: it would claim nothing saved while the roles are
+   * already applied server-side, tempting the admin to re-apply them. Roles are
+   * the higher-stakes half (they are access), so their outcome is known before
+   * the second request goes out; the cost is one extra round-trip on the rare
+   * path where both changed.
+   *
+   * The rollback is ASYMMETRIC on purpose. Roles reset to the server's state on
+   * failure — a checkbox advertising access that does not exist is a lie about
+   * permissions. Handles are never reset: the text was typed by hand, and
+   * discarding it over a network blip is data loss. The sheet stays open with
+   * the text in place, so Retry is one click.
+   */
   const save = async () => {
-    if (diffCount === 0) return;
+    if (roleDiffCount === 0 && tagDiffCount === 0) return;
+
+    // Re-validate on submit: a field may be untouched since mount, or have had
+    // its error cleared by a keystroke that did not actually fix it.
+    const nextTagErrors = {
+      telegram: validateTag(draftTags.telegram),
+      slack: validateTag(draftTags.slack),
+    };
+    setTagErrors(nextTagErrors);
+    if (nextTagErrors.telegram || nextTagErrors.slack) return;
+
     setSaving(true);
     setError(null);
-    try {
-      await Promise.all([
-        ...added.map((role) => assignRole.mutateAsync({ userId: user.id, role })),
-        ...removed.map((role) => revokeRole.mutateAsync({ userId: user.id, role })),
-      ]);
-      onClose();
-    } catch {
-      // Roll back to the server's roles and surface a recoverable banner.
-      setDraftRoles(user.roles);
-      setError("Couldn't save changes. Try again.");
-    } finally {
-      setSaving(false);
+    const rolesSent = roleDiffCount > 0;
+    const tagsSent = tagDiffCount > 0;
+    let rolesOk = true;
+    let tagsOk = true;
+
+    if (roleDiffCount > 0) {
+      try {
+        await Promise.all([
+          ...added.map((role) => assignRole.mutateAsync({ userId: user.id, role })),
+          ...removed.map((role) => revokeRole.mutateAsync({ userId: user.id, role })),
+        ]);
+      } catch {
+        rolesOk = false;
+        // Roll back to what the SERVER has now, not to the snapshot this save
+        // started from. A partially-applied role change invalidates the users
+        // query, so `user` in this closure is already stale by the time we get
+        // here; restoring it would show roles the server no longer has —
+        // exactly the lie the rollback exists to prevent.
+        setDraftRoles(userRef.current.roles);
+      }
     }
+
+    if (tagDiffCount > 0) {
+      // ONLY CHANGED KEYS. An absent key tells the backend to leave that tag
+      // alone; sending an untouched one would overwrite — or, as `null`,
+      // destroy — a handle the person set for themselves between this list
+      // loading and this save (SPEC §1.1, §5.4).
+      // Re-diff against the CURRENT server value, not the one this save
+      // started from: the role writes above invalidated the users query, and
+      // the person may have edited their own handle meanwhile. Diffing against
+      // the stale snapshot could mark an untouched field as changed and send
+      // it, which is the overwrite this comment promises cannot happen.
+      const current = userRef.current;
+      const body: UpdateUserTagsArgs = { userId: current.id };
+      if (tagChanged(draftTags.telegram, current.telegram_tag)) {
+        body.telegram_tag = draftTags.telegram.trim() || null;
+      }
+      if (tagChanged(draftTags.slack, current.slack_tag)) {
+        body.slack_tag = draftTags.slack.trim() || null;
+      }
+      // The refetch may have made the edit a no-op — only `userId` is left, so
+      // there is nothing to send. Skip the request but fall through, so a
+      // failed role write still reports itself instead of closing the sheet.
+      if (Object.keys(body).length > 1) {
+        try {
+          await updateUserTags.mutateAsync(body);
+        } catch {
+          // No draft reset here — see the asymmetry note above.
+          tagsOk = false;
+        }
+      }
+    }
+
+    setSaving(false);
+
+    if (rolesOk && tagsOk) {
+      onClose();
+      return;
+    }
+    setError(saveErrorText({ rolesSent, rolesOk, tagsSent, tagsOk }));
+    // The sheet body scrolls, so the banner can sit below the fold.
+    bannerRef.current?.scrollIntoView({ block: "nearest" });
   };
+
+  const footerText = anyTagError
+    ? "Fix the highlighted handle to save."
+    : roleDiffCount === 0 && tagDiffCount === 0
+      ? "No changes."
+      : [
+          roleDiffCount > 0 ? pendingClause(roleDiffCount, "role") : null,
+          tagDiffCount > 0 ? pendingClause(tagDiffCount, "handle") : null,
+        ]
+          .filter(Boolean)
+          .join(" and ") + " pending.";
 
   return (
     <div className="flex h-full flex-col">
@@ -576,7 +801,7 @@ function UserSheetBody({ user, isSelf, onClose }: { user: User; isSelf: boolean;
           </div>
         </div>
         <SheetDescription className="sr-only">
-          Edit roles and account status for {user.display_name}.
+          Edit roles, messenger handles, and account status for {user.display_name}.
         </SheetDescription>
       </SheetHeader>
 
@@ -593,24 +818,47 @@ function UserSheetBody({ user, isSelf, onClose }: { user: User; isSelf: boolean;
           disabled={saving}
         />
 
-        <UserDangerZone user={user} isSelf={isSelf} />
+        {/* Handles sits between Roles and the Danger zone: everything the
+            footer Save commits stays contiguous and above the section whose
+            own button acts immediately (SPEC §5.5). */}
+        <Field label="Handles">
+          <MessengerTagFields
+            idPrefix={user.id}
+            voice="admin"
+            values={draftTags}
+            errors={tagErrors}
+            onChange={onTagChange}
+            onBlur={onTagBlur}
+            disabled={saving}
+          />
+        </Field>
 
-        {error ? (
-          <p role="alert" className="text-xs text-[var(--destructive-fg)]">
-            {error}
-          </p>
-        ) : null}
+        {/* Always mounted, only the text changes: re-mounting a `role="alert"`
+            node can leave a repeat of the same error unannounced. It also sits
+            ABOVE the Danger zone now, since it reports on the two draft
+            sections above it, not on Block. */}
+        <p ref={bannerRef} role="alert" className="text-xs text-[var(--destructive-fg)]">
+          {error}
+        </p>
+
+        <UserDangerZone user={user} isSelf={isSelf} />
       </div>
 
       <SheetFooter className="flex-row items-center justify-between border-t border-border-subtle px-6 py-4">
-        <p className="text-xs text-fg-dim">
-          {diffCount === 0 ? "No changes." : `${diffCount} change${diffCount === 1 ? "" : "s"} pending.`}
-        </p>
+        <p className="text-xs text-fg-dim">{footerText}</p>
         <div className="flex gap-2">
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="button" size="sm" onClick={save} disabled={diffCount === 0 || saving}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={save}
+            // Disabled only while there is genuinely nothing to commit, while a
+            // handle is invalid (the footer says which, so it is never a dead
+            // button), or while a save is in flight.
+            disabled={(roleDiffCount === 0 && tagDiffCount === 0) || anyTagError || saving}
+          >
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </div>

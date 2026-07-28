@@ -60,9 +60,7 @@ describe("NotifyChannelsListPage transport-status badges", () => {
   it("renders no status badge for an ok channel", async () => {
     renderList([channel({ transportStatus: "ok" })]);
     await waitFor(() => expect(screen.getByText("Ops alerts")).toBeTruthy());
-    expect(
-      screen.queryByText(/^Integration (disabled|not configured|unreadable|unavailable)$/),
-    ).toBeNull();
+    expect(screen.queryByText(/^Integration (disabled|not configured|unreadable|unavailable)$/)).toBeNull();
   });
 
   it("renders distinct badges for disabled and not_configured channels", async () => {

@@ -27,6 +27,24 @@ export interface User {
    * optional so the FE tolerates the pre-RUK-202 wire that omits it entirely.
    */
   timezone?: string | null;
+  /**
+   * Telegram handle used to name this person in notification text (RUK-217).
+   * Stored **verbatim**, including any leading `@` — `@ruslan` and `ruslan` are
+   * distinct values and are never normalized into each other.
+   *
+   * Required and nullable on purpose (SPEC §1.1): the wire has three shapes for
+   * "no tag" — `null` from `GET/PATCH /me`, an absent key from the `omitempty`
+   * admin list, and an absent key again from the admin `PATCH` response. The
+   * mapper collapses all three into `null`; declaring the field `?:` *and*
+   * `| null` would reintroduce exactly the asymmetry the mapper exists to erase.
+   */
+  telegram_tag: string | null;
+  /**
+   * Slack handle used to name this person in notification text (RUK-217).
+   * Same contract as {@link User.telegram_tag}: stored verbatim (leading `@`
+   * kept), required and nullable — see SPEC §1.1.
+   */
+  slack_tag: string | null;
 }
 
 /** Derive UI block status from the nullable `blocked_at` timestamp. */

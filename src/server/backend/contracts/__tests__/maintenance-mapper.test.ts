@@ -401,9 +401,9 @@ describe("mapMaintenanceView", () => {
 // `90488d0e` added `deferred_notifications` to `uimodels.MaintenanceView`).
 describe("mapReminders", () => {
   it("maps the view shape to domain reminders", () => {
-    expect(
-      mapReminders([{ id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true }]),
-    ).toEqual([{ id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true }]);
+    expect(mapReminders([{ id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true }])).toEqual([
+      { id: "d-1", fire_at: "2026-07-31T10:00:00Z", scheduled: true },
+    ]);
   });
 
   it("returns an empty list for an absent or empty field", () => {

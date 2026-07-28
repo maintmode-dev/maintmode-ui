@@ -60,12 +60,7 @@ export function isNotifyChannelArchived(channel: Pick<NotifyChannel, "archivedAt
  *   are silently dropped.
  * - `not_configured` — no integration exists for the transport at all.
  */
-export type NotifyTransportStatus =
-  | "ok"
-  | "unreadable"
-  | "disabled"
-  | "not_configured"
-  | (string & {});
+export type NotifyTransportStatus = "ok" | "unreadable" | "disabled" | "not_configured" | (string & {});
 
 /**
  * Wire `transport_status` → domain. A missing/blank value defaults to

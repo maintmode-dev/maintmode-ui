@@ -46,6 +46,12 @@ export function useMeQuery() {
  * autodetect. On success the backend returns the updated user; we seed the
  * `["me"]` cache with it so `useTimezone` (and the profile) reflect the change
  * immediately without a refetch round-trip.
+ *
+ * Deliberately single-field: the body is built from the scalar argument alone,
+ * so it can only ever contain `timezone`. Do NOT generalise this and
+ * `useUpdateMyTags` into one partial-`/me` mutation over a draft object — the
+ * moment a shared builder spreads a draft, every timezone change would also
+ * send `telegram_tag`/`slack_tag` and wipe both tags (SPEC §7, §8).
  */
 export function useUpdateTimezone() {
   const queryClient = useQueryClient();
@@ -54,6 +60,45 @@ export function useUpdateTimezone() {
       bffFetch<User>("/api/me", {
         method: "PATCH",
         body: JSON.stringify({ timezone }),
+      }),
+    onSuccess: (user) => {
+      queryClient.setQueryData(meKey(), user);
+    },
+  });
+}
+
+/** Keys the caller actually changed. Absent key = "don't touch that tag". */
+export type UpdateMyTagsArgs = {
+  telegram_tag?: string | null;
+  slack_tag?: string | null;
+};
+
+/**
+ * Update the current user's messenger tags (RUK-217) via `PATCH /api/me`.
+ *
+ * **The caller decides which keys to send; this hook forwards the object
+ * verbatim** — it never adds, defaults, or drops a key. That is the whole
+ * contract (SPEC §1.1):
+ *
+ *  - key ABSENT → the backend leaves that tag alone;
+ *  - key present as `null` (or `""`) → the backend CLEARS that tag;
+ *  - key present with a stale value → it OVERWRITES whatever the tag holds
+ *    now, silently clobbering a concurrent edit.
+ *
+ * So a card that only edited Telegram must send `{ telegram_tag }` alone, not
+ * a spread of its whole draft. See the sibling `useUpdateTimezone` comment for
+ * why the two hooks stay separate.
+ *
+ * No toast here — the calling card owns messaging. On success the backend
+ * returns the updated user, so we seed the `["me"]` cache with it directly.
+ */
+export function useUpdateMyTags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: UpdateMyTagsArgs): Promise<User> =>
+      bffFetch<User>("/api/me", {
+        method: "PATCH",
+        body: JSON.stringify(args),
       }),
     onSuccess: (user) => {
       queryClient.setQueryData(meKey(), user);
