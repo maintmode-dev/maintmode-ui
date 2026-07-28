@@ -42,7 +42,7 @@ const ALLOWED_KEYS = ["telegram_tag", "slack_tag"] as const;
  *  - `null`, `""`, whitespace-only  → `null` (clear), matching the backend's
  *    `TrimSpace` → empty → reset rule.
  *  - non-empty string               → trimmed; the leading `@` is NEVER
- *    stripped (`@ruslan` and `ruslan` are different values, SPEC §1.2).
+ *    stripped (`@username` and `username` are different values, SPEC §1.2).
  *  - any non-string, non-null value (`42`, `{}`, `[]`) → `null`, i.e. treated
  *    as a clear. Rationale: the key was explicitly present, so "don't touch"
  *    would misrepresent the caller's intent; and forwarding the junk verbatim

@@ -136,7 +136,7 @@ export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefi
   return {
     ...base,
     created_by: "Alice Operator",
-    approver: base.status === "draft" ? undefined : "Ruslan Kosykh",
+    approver: base.status === "draft" ? undefined : "Platform Admin",
     // A 1-day and a 1-hour reminder off the planned start, so the edit form's
     // hydration (fire_at → offset → preset) has something to resolve. Only
     // queued once approved, hence `scheduled` tracking the draft state.

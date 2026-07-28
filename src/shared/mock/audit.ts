@@ -10,7 +10,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
   {
     id: "g-1",
     created_at: iso(5),
-    actor: "Ruslan Kosykh",
+    actor: "Platform Admin",
     action: "login.success",
     entity_type: "user",
     entity_id: "u-1",
@@ -19,7 +19,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
   {
     id: "g-2",
     created_at: iso(30),
-    actor: "Ruslan Kosykh",
+    actor: "Platform Admin",
     action: "roles.changed",
     entity_type: "user",
     entity_id: "u-3",
@@ -37,7 +37,7 @@ export const MOCK_GLOBAL_AUDIT: AuditEvent[] = [
   {
     id: "g-4",
     created_at: iso(90),
-    actor: "Ruslan Kosykh",
+    actor: "Platform Admin",
     action: "maintenance.created",
     entity_type: "maintenance",
     entity_id: "m-1",

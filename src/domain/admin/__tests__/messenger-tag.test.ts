@@ -9,8 +9,8 @@ describe("validateTag", () => {
   });
 
   it("accepts real handles, with or without a leading @", () => {
-    expect(validateTag("@ruslan")).toBeNull();
-    expect(validateTag("ruslan")).toBeNull();
+    expect(validateTag("@username")).toBeNull();
+    expect(validateTag("username")).toBeNull();
   });
 
   it("accepts handles that merely resemble broadcast words (exact match only)", () => {
@@ -31,11 +31,11 @@ describe("validateTag", () => {
   });
 
   it("accepts a trailing newline, which trim() removes before any check", () => {
-    // Verified against the backend: canonicalMessengerTag("ruslan\n") returns
-    // ("ruslan", true) — Go's TrimSpace strips the trailing \n exactly as JS
+    // Verified against the backend: canonicalMessengerTag("username\n") returns
+    // ("username", true) — Go's TrimSpace strips the trailing \n exactly as JS
     // trim() does, so the server stores it. Refusing it here would be a false
     // refusal on a common copy-paste artifact.
-    expect(validateTag("ruslan\n")).toBeNull();
+    expect(validateTag("username\n")).toBeNull();
   });
 
   it("refuses a newline inside the tag", () => {
@@ -77,7 +77,7 @@ describe("validateTag", () => {
 
   it("refuses an @ or a space inside the tag", () => {
     expect(validateTag("ab@cd")).toBe("invalid_format");
-    expect(validateTag("@@ruslan")).toBe("invalid_format");
+    expect(validateTag("@@username")).toBe("invalid_format");
     expect(validateTag("rus lan")).toBe("invalid_format");
   });
 });
@@ -90,15 +90,15 @@ describe("validateTag — whitespace parity with Go's TrimSpace", () => {
     // U+FEFF survives Go's TrimSpace, so the backend sees it, fails its own
     // pattern and answers 400 — an error the UI cannot attribute to a field,
     // since tag and timezone share one error code (SPEC §1.5). Refuse it here.
-    expect(validateTag("﻿ruslan")).toBe("invalid_format");
-    expect(validateTag("ruslan﻿")).toBe("invalid_format");
+    expect(validateTag("﻿username")).toBe("invalid_format");
+    expect(validateTag("username﻿")).toBe("invalid_format");
   });
 
   it("accepts a NEL-padded handle, which the backend trims and stores", () => {
     // U+0085 is whitespace to Go but not to JS trim(). Refusing it would be a
-    // false refusal: the backend accepts it and stores "ruslan".
-    expect(validateTag("ruslan")).toBeNull();
-    expect(validateTag("ruslan")).toBeNull();
+    // false refusal: the backend accepts it and stores "username".
+    expect(validateTag("username")).toBeNull();
+    expect(validateTag("username")).toBeNull();
   });
 
   it("treats NBSP-only input as a clear, matching the backend", () => {

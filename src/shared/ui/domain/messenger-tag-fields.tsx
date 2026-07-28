@@ -74,10 +74,10 @@ const LABELS: Record<Field, string> = {
  * mounts sharing an id would point every label and every `aria-describedby` at
  * the first input on the page.
  *
- * No `@` adornment and no trimming or case-folding of what is typed: `@ruslan`
- * and `ruslan` are distinct stored values (SPEC §5.9), an adornment would claim
- * the `@` is part of the value, and it would turn a pasted `@ruslan` into
- * `@@ruslan`. The placeholder does the teaching instead.
+ * No `@` adornment and no trimming or case-folding of what is typed: `@username`
+ * and `username` are distinct stored values (SPEC §5.9), an adornment would claim
+ * the `@` is part of the value, and it would turn a pasted `@username` into
+ * `@@username`. The placeholder does the teaching instead.
  */
 export function MessengerTagFields({
   idPrefix,
@@ -151,7 +151,7 @@ function TagField({
         onChange={(e) => onChange(field, e.target.value)}
         onBlur={() => onBlur(field)}
         disabled={disabled}
-        placeholder="@ruslan"
+        placeholder="@username"
         className="font-mono"
         maxLength={64}
         autoCapitalize="none"

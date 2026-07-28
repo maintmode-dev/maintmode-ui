@@ -39,7 +39,7 @@ function trimLikeGo(raw: string): string {
 
 /**
  * `null` = valid. Empty/whitespace means "clear the field", not an error. A
- * leading `@` is never stripped — `@ruslan` and `ruslan` are distinct stored
+ * leading `@` is never stripped — `@username` and `username` are distinct stored
  * values; the reserved-word comparison strips it for comparison only.
  *
  * Deliberately has no `transport` parameter: the rules coincide, and a
@@ -53,7 +53,7 @@ export function validateTag(raw: string): TagError | null {
   // Belt to the pattern's suspenders. JS `$` matches BEFORE a trailing \n where
   // Go's does not, so the anchors are not equivalent \u2014 but `trim()` (like Go's
   // TrimSpace) already removes a trailing newline, so the divergence is not
-  // reachable here and "ruslan\n" is accepted by both sides. What this does
+  // reachable here and "username\n" is accepted by both sides. What this does
   // catch is an *interior* line break, which the backend treats as a
   // notification-injection vector: a newline inside a handle would inject
   // arbitrary lines into a plain-text message. Keep it \u2014 it survives any future

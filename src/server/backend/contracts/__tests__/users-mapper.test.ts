@@ -89,17 +89,17 @@ describe("mapUser — messenger tags (SPEC §1.1)", () => {
   });
 
   it("passes values through verbatim, keeping a leading @", () => {
-    const dto: AuthUserDto = { id: "u-8", telegram_tag: "@ruslan", slack_tag: "@rus.k" };
+    const dto: AuthUserDto = { id: "u-8", telegram_tag: "@username", slack_tag: "@username.doe" };
     const user = mapUser(dto);
-    expect(user.telegram_tag).toBe("@ruslan");
-    expect(user.slack_tag).toBe("@rus.k");
+    expect(user.telegram_tag).toBe("@username");
+    expect(user.slack_tag).toBe("@username.doe");
   });
 
   it("does not add a leading @ to a bare handle", () => {
-    // `@ruslan` and `ruslan` are distinct stored values — never normalized.
-    const user = mapUser({ id: "u-9", telegram_tag: "ruslan", slack_tag: "ruslan" });
-    expect(user.telegram_tag).toBe("ruslan");
-    expect(user.slack_tag).toBe("ruslan");
+    // `@username` and `username` are distinct stored values — never normalized.
+    const user = mapUser({ id: "u-9", telegram_tag: "username", slack_tag: "username" });
+    expect(user.telegram_tag).toBe("username");
+    expect(user.slack_tag).toBe("username");
   });
 
   it("normalizes an empty-string tag to null", () => {

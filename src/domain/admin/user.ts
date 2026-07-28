@@ -29,7 +29,7 @@ export interface User {
   timezone?: string | null;
   /**
    * Telegram handle used to name this person in notification text (RUK-217).
-   * Stored **verbatim**, including any leading `@` — `@ruslan` and `ruslan` are
+   * Stored **verbatim**, including any leading `@` — `@username` and `username` are
    * distinct values and are never normalized into each other.
    *
    * Required and nullable on purpose (SPEC §1.1): the wire has three shapes for

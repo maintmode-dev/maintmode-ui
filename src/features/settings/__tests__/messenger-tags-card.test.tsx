@@ -61,16 +61,16 @@ function patchBody(): Record<string, unknown> {
 
 describe("MessengerTagsFields", () => {
   it("sends only the telegram key when only telegram was entered", async () => {
-    bffFetchMock.mockResolvedValue({ id: "me", telegram_tag: "@ruslan", slack_tag: null });
+    bffFetchMock.mockResolvedValue({ id: "me", telegram_tag: "@username", slack_tag: null });
     renderCard();
 
-    fireEvent.change(telegram(), { target: { value: "@ruslan" } });
+    fireEvent.change(telegram(), { target: { value: "@username" } });
     fireEvent.click(save());
 
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalledTimes(1));
     const body = patchBody();
     expect(Object.keys(body)).toEqual(["telegram_tag"]);
-    expect(body.telegram_tag).toBe("@ruslan");
+    expect(body.telegram_tag).toBe("@username");
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith("Messenger handles saved"));
   });
 
@@ -96,7 +96,7 @@ describe("MessengerTagsFields", () => {
 
   it("sends null when a previously set handle is cleared", async () => {
     bffFetchMock.mockResolvedValue({ id: "me", telegram_tag: null, slack_tag: null });
-    renderCard({ savedTelegram: "@ruslan" });
+    renderCard({ savedTelegram: "@username" });
 
     fireEvent.change(telegram(), { target: { value: "" } });
     fireEvent.click(save());
@@ -108,13 +108,13 @@ describe("MessengerTagsFields", () => {
   });
 
   it("keeps Save disabled when an edited field is restored to its saved value", () => {
-    renderCard({ savedTelegram: "@ruslan" });
+    renderCard({ savedTelegram: "@username" });
 
     expect(save().disabled).toBe(true);
     fireEvent.change(telegram(), { target: { value: "@rus" } });
     expect(save().disabled).toBe(false);
 
-    fireEvent.change(telegram(), { target: { value: "@ruslan" } });
+    fireEvent.change(telegram(), { target: { value: "@username" } });
     expect(save().disabled).toBe(true);
     expect(bffFetchMock).not.toHaveBeenCalled();
   });
@@ -189,7 +189,7 @@ describe("MessengerTagsFields", () => {
     );
     renderCard();
 
-    fireEvent.change(telegram(), { target: { value: "@ruslan" } });
+    fireEvent.change(telegram(), { target: { value: "@username" } });
     fireEvent.click(save());
 
     // Both fields lock for the whole round-trip: an edit landing mid-flight
@@ -198,7 +198,7 @@ describe("MessengerTagsFields", () => {
     await waitFor(() => expect(telegram().disabled).toBe(true));
     expect(slack().disabled).toBe(true);
 
-    release({ id: "me", telegram_tag: "@ruslan", slack_tag: null });
+    release({ id: "me", telegram_tag: "@username", slack_tag: null });
     await waitFor(() => expect(telegram().disabled).toBe(false));
   });
 
@@ -207,14 +207,14 @@ describe("MessengerTagsFields", () => {
     bffFetchMock.mockRejectedValue(new BffError(400, "invalid request", "INVALID_REQUEST"));
     renderCard();
 
-    fireEvent.change(telegram(), { target: { value: "@ruslan" } });
+    fireEvent.change(telegram(), { target: { value: "@username" } });
     fireEvent.click(save());
 
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith("invalid request"));
     expect(toastMock.success).not.toHaveBeenCalled();
     // The hand-typed text survives the failure — re-typing it is worse UX than
     // a stale field, and the user can retry in one click.
-    expect(telegram().value).toBe("@ruslan");
+    expect(telegram().value).toBe("@username");
   });
 
   // The 400 test above pins only the pass-through branch. Without this one the
@@ -226,7 +226,7 @@ describe("MessengerTagsFields", () => {
     bffFetchMock.mockRejectedValue(new BffError(500, "boom", "INTERNAL"));
     renderCard();
 
-    fireEvent.change(telegram(), { target: { value: "@ruslan" } });
+    fireEvent.change(telegram(), { target: { value: "@username" } });
     fireEvent.click(save());
 
     await waitFor(() =>

@@ -90,7 +90,7 @@ describe("MessengerTagFields copy", () => {
     expect(container.textContent).toContain("Telegram handle");
     expect(container.textContent).toContain("Slack handle");
     for (const id of ["profile-telegram", "profile-slack"]) {
-      expect(input(container, id).placeholder).toBe("@ruslan");
+      expect(input(container, id).placeholder).toBe("@username");
     }
   });
 
@@ -215,11 +215,11 @@ describe("MessengerTagFields interaction", () => {
     const container = renderFields({ onChange });
 
     fireEvent.change(input(container, "profile-telegram"), {
-      target: { value: "  @Ruslan.K_1  " },
+      target: { value: "  @Username.K_1  " },
     });
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange).toHaveBeenCalledWith("telegram", "  @Ruslan.K_1  ");
+    expect(onChange).toHaveBeenCalledWith("telegram", "  @Username.K_1  ");
   });
 
   it("blur reports the field it came from", () => {
@@ -232,10 +232,10 @@ describe("MessengerTagFields interaction", () => {
   });
 
   it("renders no @ adornment and does not rewrite the displayed value", () => {
-    const container = renderFields({ values: { telegram: "ruslan", slack: "@ruslan" } });
+    const container = renderFields({ values: { telegram: "username", slack: "@username" } });
     // A bare handle stays bare; an @-handle keeps exactly one @.
-    expect(input(container, "profile-telegram").value).toBe("ruslan");
-    expect(input(container, "profile-slack").value).toBe("@ruslan");
+    expect(input(container, "profile-telegram").value).toBe("username");
+    expect(input(container, "profile-slack").value).toBe("@username");
   });
 
   it("disabled propagates to both inputs", () => {

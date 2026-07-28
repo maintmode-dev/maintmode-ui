@@ -92,9 +92,9 @@ describe("buildUserTagsBody", () => {
   });
 
   it("trims outer whitespace without touching the leading @", () => {
-    const body = buildUserTagsBody({ telegram_tag: " @ruslan " });
+    const body = buildUserTagsBody({ telegram_tag: " @username " });
 
-    expect(body.telegram_tag).toBe("@ruslan");
+    expect(body.telegram_tag).toBe("@username");
   });
 
   it.each([

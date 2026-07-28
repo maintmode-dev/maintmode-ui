@@ -7,16 +7,16 @@ const iso = (offsetDays: number) => new Date(Date.now() - offsetDays * 86_400_00
 // current user — so the constant stays module-private.
 const MOCK_CURRENT_USER: User = {
   id: "u-1",
-  email: "ruslan.kosykh@indriver.com",
-  display_name: "Ruslan Kosykh",
+  email: "platform-admin@maintmode",
+  display_name: "Platform Admin",
   roles: ["admin"],
   oauth_provider: "google",
   connected_providers: ["google"],
   created_at: iso(180),
   last_seen_at: iso(0),
   blocked_at: null,
-  telegram_tag: "@ruslan",
-  slack_tag: "@ruslan.kosykh",
+  telegram_tag: "@platform_admin",
+  slack_tag: "@platform.admin",
 };
 
 export const MOCK_USERS: User[] = [

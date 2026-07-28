@@ -101,7 +101,7 @@ export function UsersManagementPage() {
   const activeUser = useMemo(() => users.find((u) => u.id === activeUserId) ?? null, [users, activeUserId]);
 
   // Handles are searchable because that is how a report actually arrives: someone
-  // says "@ruslan is being tagged and he has no idea", and the admin needs to find
+  // says "@username is being tagged and they have no idea", and the admin needs to find
   // whose profile carries that handle. Scanning the column would only cover the
   // 50 rows on screen; the search covers the dataset.
   const searchPlaceholder =
@@ -390,7 +390,7 @@ function UsersTable({
  * most rows carry only an email that reads as an alert rather than a detail.
  *
  * Handle values render verbatim: a leading `@` is neither added nor stripped,
- * since `@ruslan` and `ruslan` are distinct stored values (SPEC §5.9). A user
+ * since `@username` and `username` are distinct stored values (SPEC §5.9). A user
  * with no handle simply gets nothing — no placeholder, since most rows would
  * otherwise carry two em dashes apiece.
  */
