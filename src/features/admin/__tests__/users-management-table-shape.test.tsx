@@ -48,6 +48,12 @@ function renderUsers(users: User[]) {
     if (typeof path !== "string") throw new Error(`unexpected bffFetch: ${String(path)}`);
     if (path === "/api/me") return admin;
     if (path.startsWith("/api/admin/roles")) return { roles: ["admin", "reviewer", "editor", "guest"] };
+    // The header's seats indicator queries this on every render. Answered
+    // as "unlimited" so the block stays hidden and these assertions keep
+    // describing the header they were written for.
+    if (path.startsWith("/api/admin/seats")) {
+      return { seats_purchased: null, seats_used: 0, seats_pending: 0, seats_occupied: 0, unlimited: true };
+    }
     if (path.startsWith("/api/admin/invitations")) return { invitations: [] };
     if (path.startsWith("/api/admin/users")) {
       if (path.includes("active=true")) {

@@ -39,6 +39,7 @@ import {
   type UpdateUserTagsArgs,
 } from "./queries/use-users-queries";
 import { InviteUserDialog } from "./invite-user-dialog";
+import { SeatsIndicator } from "./seats-indicator";
 import { Field, ROLE_DESCRIPTIONS, ROLE_ORDER, sortRoles } from "./roles-ui";
 import { tagChanged, validateTag, type TagError } from "@/domain/admin/messenger-tag";
 import { MessengerTagFields } from "@/shared/ui/domain/messenger-tag-fields";
@@ -113,9 +114,16 @@ export function UsersManagementPage() {
         <header className="flex items-end flex-wrap gap-3">
           <div className="flex-1 min-w-[200px]">
             <h1 className="h1">Users</h1>
-            <p className="caption mono mt-1 text-fg-dim">
+            <p className="caption mono mt-1 text-fg-dim" data-testid="header-counts">
               {activeUserLabel} active · {pendingInviteCount} pending invitations
             </p>
+            {/*
+              Licensed seats, deliberately worded apart from the caption above:
+              its "active" counts every non-blocked account including guests,
+              while seats_used counts only seat roles. Two counters that both
+              say "active" with different numbers would read as a bug.
+            */}
+            <SeatsIndicator />
           </div>
           <Button onClick={() => setInviteOpen(true)}>
             <Plus className="size-3.5" aria-hidden="true" /> Invite user

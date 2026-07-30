@@ -11,6 +11,7 @@ import type {
   ListUsersPage,
   User,
 } from "@/domain/admin/user";
+import type { SeatsUsage } from "@/domain/admin/seats";
 import type { Role } from "@/domain/auth/permissions";
 
 /** Query parameters for the paginated users list (mirrors the BFF route). */
@@ -31,6 +32,9 @@ export function rolesKey() {
 }
 export function invitationsKey() {
   return ["invitations"] as const;
+}
+export function seatsKey() {
+  return ["seats"] as const;
 }
 
 function buildUsersQuery(params: UsersQueryParams): string {
@@ -93,6 +97,29 @@ export function useInvitationsQuery() {
 }
 
 /**
+ * Licensed-seat counters for the page header (RUK-220). Independent of the
+ * users list on purpose: a failure here hides the indicator without taking the
+ * list down with it.
+ *
+ * `retry: false` — the two realistic failures are 403 (not an admin) and 500
+ * (the backend fails closed rather than reporting zeroes, because a zero reads
+ * as "plenty of room"). Neither is fixed by asking again.
+ *
+ * `staleTime` is **not** a free knob: it is the only thing that refreshes the
+ * counters after an invite is *accepted*, which happens in the invitee's
+ * browser and produces no mutation here. Raising it widens that window — see
+ * the invalidation notes below before touching it.
+ */
+export function useSeatsQuery() {
+  return useQuery({
+    queryKey: seatsKey(),
+    queryFn: (): Promise<SeatsUsage> => bffFetch<SeatsUsage>("/api/admin/seats"),
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/**
  * Create an invitation. Posts `{ email, roles[] }` to the BFF, which relays to
  * `POST /api/v1/users/invite`. A 409 (user already exists / active-invite
  * conflict) surfaces as a specific toast; the list is refetched on success so
@@ -110,6 +137,7 @@ export function useInviteUser() {
     onSuccess: (_, { email }) => {
       toast.success(`Invitation sent to ${email}`);
       queryClient.invalidateQueries({ queryKey: invitationsKey() });
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       if (error instanceof BffError) {
@@ -124,6 +152,11 @@ export function useInviteUser() {
           toast.error("You've used all your seats.", {
             description: "Free up a seat by blocking a user, or upgrade your plan to invite more.",
           });
+          // This rejection is the server saying our seat numbers are stale —
+          // the one response that reports the disagreement outright. Refresh
+          // them, or the recovery the toast suggests ("free up a seat") leaves
+          // the header frozen on the old count while the admin acts on it.
+          invalidateSeats(queryClient);
           return;
         }
         if (error.status === 409) {
@@ -156,11 +189,13 @@ export function useResendInvitation() {
     onSuccess: () => {
       toast.success("Invitation resent");
       queryClient.invalidateQueries({ queryKey: invitationsKey() });
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       if (error instanceof BffError && error.status === 409) {
         toast.error("This invitation is no longer pending. Refreshing the list.");
         queryClient.invalidateQueries({ queryKey: invitationsKey() });
+        invalidateSeats(queryClient);
         return;
       }
       toast.error("Couldn't resend the invitation. Try again.");
@@ -183,11 +218,13 @@ export function useRevokeInvitation() {
     onSuccess: () => {
       toast.success("Invitation revoked");
       queryClient.invalidateQueries({ queryKey: invitationsKey() });
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       if (error instanceof BffError && error.status === 409) {
         toast.error("This invitation was already accepted. Refreshing the list.");
         queryClient.invalidateQueries({ queryKey: invitationsKey() });
+        invalidateSeats(queryClient);
         return;
       }
       toast.error("Couldn't revoke the invitation. Try again.");
@@ -200,6 +237,23 @@ function invalidateUsers(queryClient: ReturnType<typeof useQueryClient>) {
   queryClient.invalidateQueries({ queryKey: ["users"] });
 }
 
+/**
+ * Refresh the seat counters after anything that can move them (RUK-220).
+ *
+ * Paired with **every** existing invalidation site, including the 409 branches
+ * of resend/revoke: a 409 there means the invitation stopped being pending —
+ * accepted, revoked or expired — which is precisely when a seat changed hands.
+ * Skipping those would leave a stale counter next to a freshly refetched list.
+ *
+ * Called even when the numbers may not move — inviting a guest holds no seat,
+ * but the role only becomes knowable server-side, and deciding here would mean
+ * reimplementing "which role holds a seat" on the client. One extra GET is
+ * cheaper than a second copy of that rule.
+ */
+function invalidateSeats(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: seatsKey() });
+}
+
 export function useBlockUser() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -210,6 +264,7 @@ export function useBlockUser() {
     onSuccess: () => {
       toast.success("User blocked");
       invalidateUsers(queryClient);
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       const msg = error instanceof BffError ? error.message : "Couldn't block the user. Try again.";
@@ -227,6 +282,7 @@ export function useUnblockUser() {
     onSuccess: () => {
       toast.success("User unblocked");
       invalidateUsers(queryClient);
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       const msg = error instanceof BffError ? error.message : "Couldn't unblock the user. Try again.";
@@ -252,6 +308,7 @@ export function useAssignRole() {
     onSuccess: (_, { role }) => {
       toast.success(`Assigned ${role}`);
       invalidateUsers(queryClient);
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       const msg = error instanceof BffError ? error.message : "Couldn't assign the role. Try again.";
@@ -272,6 +329,7 @@ export function useRevokeRole() {
     onSuccess: (_, { role }) => {
       toast.success(`Revoked ${role}`);
       invalidateUsers(queryClient);
+      invalidateSeats(queryClient);
     },
     onError: (error: unknown) => {
       // Backend rejects revoking the last admin's role (is_last_admin); the
@@ -332,6 +390,9 @@ export function useUpdateUserTags() {
       });
     },
     onSuccess: () => {
+      // No `invalidateSeats` here, and that is deliberate rather than an
+      // oversight: a messenger handle holds no licensed seat, so this is the
+      // one mutation in the file that cannot move the counters.
       invalidateUsers(queryClient);
     },
   });

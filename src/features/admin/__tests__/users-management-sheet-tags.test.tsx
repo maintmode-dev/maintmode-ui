@@ -76,6 +76,12 @@ function renderPage(
       return {};
     }
     if (path.startsWith("/api/admin/roles")) return { roles: ["admin", "reviewer", "editor", "guest"] };
+    // The header's seats indicator queries this on every render. Answered
+    // as "unlimited" so the block stays hidden and these assertions keep
+    // describing the header they were written for.
+    if (path.startsWith("/api/admin/seats")) {
+      return { seats_purchased: null, seats_used: 0, seats_pending: 0, seats_occupied: 0, unlimited: true };
+    }
     if (path.startsWith("/api/admin/invitations")) return { invitations: [] };
     if (init?.method === "PATCH") {
       calls.push({ path, body: init.body ? JSON.parse(init.body) : undefined });
@@ -459,6 +465,12 @@ describe("UserSheetBody handles editing", () => {
         return {};
       }
       if (path.startsWith("/api/admin/roles")) return { roles: ["admin", "reviewer", "editor", "guest"] };
+      // The header's seats indicator queries this on every render. Answered
+      // as "unlimited" so the block stays hidden and these assertions keep
+      // describing the header they were written for.
+      if (path.startsWith("/api/admin/seats")) {
+        return { seats_purchased: null, seats_used: 0, seats_pending: 0, seats_occupied: 0, unlimited: true };
+      }
       if (path.startsWith("/api/admin/invitations")) return { invitations: [] };
       if (init?.method === "PATCH") {
         calls.push({ path, body: init.body ? JSON.parse(init.body) : undefined });

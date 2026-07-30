@@ -12,7 +12,13 @@ import { UsersManagementPage } from "../users-management-page";
 // number and its label are separate text nodes. Exact-string `getByText` can't
 // match across that boundary — assert on collapsed textContent instead.
 function captionText(): string {
-  const el = document.querySelector("p.caption");
+  // Selected by its own testid rather than by "the p.caption that isn't the
+  // indicator". The header holds a second `p.caption` — the seats indicator —
+  // and its loading placeholder carries no testid of its own, so a negative
+  // selector would match it and this helper would silently start describing the
+  // wrong line, leaving the assertions below vacuously true. A positive
+  // selector cannot be broken by whatever else appears in the header.
+  const el = document.querySelector('[data-testid="header-counts"]');
   return el?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 }
 function invitationsBadgeText(): string {
@@ -95,6 +101,12 @@ function renderPage(opts: {
     if (typeof path !== "string") throw new Error(`unexpected bffFetch: ${String(path)}`);
     if (path === "/api/me") return admin;
     if (path.startsWith("/api/admin/roles")) return { roles: ["admin", "reviewer", "editor", "guest"] };
+    // The header's seats indicator queries this on every render. Answered
+    // as "unlimited" so the block stays hidden and these assertions keep
+    // describing the header they were written for.
+    if (path.startsWith("/api/admin/seats")) {
+      return { seats_purchased: null, seats_used: 0, seats_pending: 0, seats_occupied: 0, unlimited: true };
+    }
     if (path.startsWith("/api/admin/invitations")) {
       state.invitationsResolved = true;
       return { invitations: opts.invitations };
