@@ -23,6 +23,7 @@ import type {
   MaintenanceDetail,
   MaintenanceDraftInput,
   MaintenanceImpact,
+  MaintenanceMention,
   MaintenanceNotifyTarget,
   MaintenanceReminder,
   MaintenanceResource,
@@ -32,6 +33,7 @@ import type {
   Period,
   StepStatus,
 } from "@/domain/maintenance/maintenance";
+import { MAX_MENTIONS } from "@/domain/maintenance/mentions";
 import { MAX_OFFSET_MINUTES, MAX_REMINDERS, toFireAt } from "@/domain/maintenance/reminders";
 
 import { BffValidationError, type FieldError } from "@/server/backend/errors/bff-error";
@@ -49,6 +51,8 @@ import type {
   MaintenanceViewResourceDto,
   MaintenanceViewResponseDto,
   MaintenanceViewStepDto,
+  MentionDto,
+  MentionViewDto,
   UpdateDraftMaintRequestDto,
   UserSummaryDto,
 } from "./maintmode-dto";
@@ -162,6 +166,22 @@ export function mapReminders(reminders: DeferredNotificationViewDto[] | undefine
     .sort((a, b) => a.fire_at.localeCompare(b.fire_at));
 }
 
+/**
+ * Read-view mention → domain, so Edit can hydrate the tagged people and the
+ * detail can name them (RUK-218).
+ *
+ * `display_name` is defended through `mapUserSummary` — the same trim/fallback
+ * every other read DTO here gets. The backend already substitutes its own
+ * "Unknown user" for someone deleted or unresolvable, but this is what the chips
+ * render, so it is not left to trust.
+ */
+export function mapMention(mention: MentionViewDto): MaintenanceMention {
+  return {
+    user_id: mention.user_id,
+    display_name: mapUserSummary(mention),
+  };
+}
+
 /** `ConflictView` → domain `Conflict`. No `reference`/`resolved` on the wire. */
 export function mapConflict(conflict: ConflictViewDto): Conflict {
   return {
@@ -222,6 +242,11 @@ export function mapMaintenanceView(dto: MaintenanceViewResponseDto): Maintenance
     resources: (m.resources ?? []).map(mapResource),
     notify_targets: mapNotifyTargets(m.notify_targets),
     reminders: mapReminders(m.deferred_notifications),
+    // Deliberately NOT `?? []`. The read view documents `mentions` as always an
+    // array, never null, so an ABSENT key is an unambiguous version detect: the
+    // deployed backend predates mentions and the form hides the field entirely.
+    // `[]` is the other answer — the contract is there, nobody was tagged.
+    mentions: m.mentions ? m.mentions.map(mapMention) : undefined,
     steps: (m.steps ?? []).map(mapStep),
     cancel_reason: mapCancelReason(m.cancel_reason),
     cancel_reason_comment: m.cancel_reason_comment,
@@ -348,6 +373,35 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
       });
     }
   }
+  // Mentions are optional and `.map`ped by the mappers, so the same structural
+  // treatment as the reminder offsets above: array-or-400, and the cap turned
+  // into a field-scoped error because the backend rejects >10 with a generic
+  // `invalid request` the form cannot attribute to a field.
+  //
+  // This guard stays DIRECTION-AGNOSTIC on purpose — `parseDraftBody` calls it
+  // for both the create and the edit route. Whether an empty list means "clear"
+  // or "leave unchanged" is a wire-semantics question that lives exclusively in
+  // the two mappers, exactly as it does for `reminder_offsets_minutes`.
+  if (record.mention_user_ids !== undefined) {
+    if (!Array.isArray(record.mention_user_ids)) {
+      fieldErrors.push({
+        field: "mention_user_ids",
+        message: "mention_user_ids must be an array",
+      });
+    } else if (record.mention_user_ids.length > MAX_MENTIONS) {
+      fieldErrors.push({
+        field: "mention_user_ids",
+        message: `At most ${MAX_MENTIONS} mentions.`,
+      });
+    } else if (record.mention_user_ids.some((id) => typeof id !== "string" || id.trim().length === 0)) {
+      // A blank id would reach the backend as a nil-uuid and come back as the
+      // same unattributable 400.
+      fieldErrors.push({
+        field: "mention_user_ids",
+        message: "mention_user_ids must contain non-empty user ids",
+      });
+    }
+  }
 
   if (fieldErrors.length > 0) {
     throw new BffValidationError(fieldErrors, "Malformed request body");
@@ -361,27 +415,32 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
  * scope carries no resources.
  *
  * Create and update are NOT the same request any more — use
- * `mapDraftToUpdateRequest` for edit, whose `deferred_notifications` is
- * tri-state.
+ * `mapDraftToUpdateRequest` for edit, whose `deferred_notifications` and
+ * `mentions` are tri-state.
  */
 export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDraftMaintRequestDto {
   const notifications = remindersToFireAt(input);
+  const mentions = mentionsToWire(input);
   return {
     ...mapDraftCommon(input),
     // On create there is no "unchanged" state, so nothing-to-send (an empty
     // selection, or offsets that would not resolve — `null`) simply omits the key.
     ...(notifications?.length ? { deferred_notifications: notifications } : {}),
+    // Same reasoning for mentions: on create `[]` and an absent key say the same
+    // thing, so an empty picker omits it.
+    ...(mentions.length ? { mentions } : {}),
   };
 }
 
 /**
  * Domain `MaintenanceDraftInput` → `UpdateDraftMaintRequest`.
  *
- * Identical to create except `deferred_notifications`, which the backend made
- * tri-state (`53d3ba0c`): omitted = leave unchanged, `[]` = clear, non-empty =
- * replace. The edit form always knows the operator's full intent, so this
- * always sends the key — `[]` included. That is what makes "uncheck everything,
- * save" actually clear the reminders instead of silently keeping them.
+ * Identical to create except `deferred_notifications` and `mentions`, both of
+ * which the backend made tri-state (`53d3ba0c` and RUK-218): omitted = leave
+ * unchanged, `[]` = clear, non-empty = replace. The edit form always knows the
+ * operator's full intent, so this always sends the keys — `[]` included. That is
+ * what makes "clear everything, save" actually clear them instead of silently
+ * keeping them.
  */
 export function mapDraftToUpdateRequest(input: MaintenanceDraftInput): UpdateDraftMaintRequestDto {
   const notifications = remindersToFireAt(input);
@@ -392,13 +451,23 @@ export function mapDraftToUpdateRequest(input: MaintenanceDraftInput): UpdateDra
     // would read as "clear" and hard-delete them: silent data loss on a body we
     // failed to understand. An operator-chosen empty set still sends `[]`.
     ...(notifications === null ? {} : { deferred_notifications: notifications }),
+    // ALWAYS sends the key, `[]` included — no `null` counterpart exists here
+    // because there is nothing to resolve: ids go to the wire as-is (unlike
+    // offsets, which may fail to become instants). Omitting on an empty picker
+    // would read as "leave unchanged" and the mentions the operator just removed
+    // would stay tagged. This is the exact inverse of the reminders trap.
+    mentions: mentionsToWire(input),
   };
 }
 
-/** The fields create and update share verbatim. */
+/**
+ * The fields create and update share verbatim. `deferred_notifications` and
+ * `mentions` are excluded because their empty-list semantics diverge between the
+ * two directions — each mapper adds its own one-line spread.
+ */
 function mapDraftCommon(
   input: MaintenanceDraftInput,
-): Omit<CreateDraftMaintRequestDto, "deferred_notifications"> {
+): Omit<CreateDraftMaintRequestDto, "deferred_notifications" | "mentions"> {
   const resourceIds = input.scope === "resource" ? input.resource_ids : [];
   return {
     approver_user_id: input.approver_user_id || undefined,
@@ -447,7 +516,31 @@ function remindersToFireAt(input: MaintenanceDraftInput): DeferredNotificationDt
   return resolved.length > 0 ? resolved : null;
 }
 
-/** `uimodels.AssignableUser` → domain `AssignableUser` (approver picker). */
+/**
+ * Selected user ids → the wire's `[{ user_id }]` objects (RUK-218).
+ *
+ * Returns a plain array and never `null`: unlike the reminder offsets there is
+ * nothing to resolve — the ids travel as-is — so no "we failed to understand the
+ * body" state exists for the callers to guard against. The two directions differ
+ * only in what they do with an EMPTY result, and that decision stays in them.
+ *
+ * Duplicates are collapsed: the backend rejects them outright
+ * (`ErrDuplicateMentions` → an unattributable 400), and tagging the same person
+ * twice is never a distinguishable intent.
+ */
+function mentionsToWire(input: MaintenanceDraftInput): MentionDto[] {
+  return [...new Set(input.mention_user_ids ?? [])].map((id) => ({ user_id: id }));
+}
+
+/**
+ * `uimodels.AssignableUser` → domain `AssignableUser` (approver and mention
+ * pickers).
+ *
+ * `has_messenger_tag` is carried through RAW — no `?? false`. "The backend
+ * checked and found no handle" (`false`) and "nobody told us" (absent) are
+ * different statements, and collapsing them would make the mention picker warn
+ * about a missing messenger handle on data it never had (RUK-218).
+ */
 export function mapAssignableUser(dto: AssignableUserDto): AssignableUser {
   const name = dto.display_name?.trim();
   return {
@@ -455,6 +548,7 @@ export function mapAssignableUser(dto: AssignableUserDto): AssignableUser {
     display_name: name && name.length > 0 ? name : (dto.email ?? UNKNOWN_USER),
     email: dto.email ?? "",
     roles: dto.roles ?? [],
+    has_messenger_tag: dto.has_messenger_tag,
   };
 }
 

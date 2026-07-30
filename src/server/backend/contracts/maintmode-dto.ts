@@ -110,6 +110,14 @@ export interface MaintenanceViewDto {
    * is, and a defensive `?? []` costs nothing.
    */
   deferred_notifications?: DeferredNotificationViewDto[];
+  /**
+   * People tagged in the notification, in insertion order (the storage query
+   * pins `ORDER BY created_at, id`). The backend documents this as always an
+   * array, never null — so unlike the other read-view fields, an ABSENT key here
+   * is load-bearing: it means the deployed backend predates mentions, and the
+   * mapper must keep it distinguishable from `[]`. No defensive `?? []`.
+   */
+  mentions?: MentionViewDto[];
   steps?: MaintenanceViewStepDto[];
   cancel_reason?: string;
   cancel_reason_comment?: string;
@@ -123,6 +131,20 @@ export interface MaintenanceViewNotifyTargetDto {
   channel_id?: string;
   name?: string;
   transport?: string;
+}
+
+/**
+ * `uimodels.MentionView` — one tagged person on the read path.
+ *
+ * Distinct from the write-side `MentionDto`: it adds `display_name`, resolved in
+ * one batch alongside the author and approver (no N+1). It deliberately carries
+ * NO messenger-tag flag — the detail view shows who was mentioned, not who has a
+ * messenger configured, and the endpoint is readable by guests. An unresolvable
+ * user comes back as "Unknown user" rather than being dropped.
+ */
+export interface MentionViewDto {
+  user_id: string;
+  display_name?: string;
 }
 
 /**
@@ -300,13 +322,25 @@ export interface DeferredNotificationDto {
 }
 
 /**
+ * `apimodels.Mention` — one person to tag in the notification.
+ *
+ * An OBJECT rather than a bare uuid, verbatim per the backend comment: the
+ * contract can gain keys without a breaking change. Sending `string[]` would be
+ * rejected — the same mistyping that silently blocked `notify_targets` and
+ * `deferred_notifications` before RUK-216.
+ */
+export interface MentionDto {
+  user_id: string;
+}
+
+/**
  * `apimodels.CreateDraftMaintRequest` — body for
  * `POST /api/v1/maintenances/create`.
  *
  * NOT interchangeable with `UpdateDraftMaintRequestDto`: the two diverged when
- * the backend made update's `deferred_notifications` tri-state (see below).
- * Create has no "unchanged" state — the maintenance either starts with
- * reminders or with none — so it stays a flat array.
+ * the backend made update's `deferred_notifications` (and later `mentions`)
+ * tri-state (see below). Create has no "unchanged" state — the maintenance
+ * either starts with reminders/mentions or with none — so both stay flat arrays.
  *
  * `notify_targets` is the OBJECT shape `{ channel_ids }` — NOT a bare string
  * array (the earlier `string[]` typing was wrong and meant the field was never
@@ -331,16 +365,22 @@ export interface CreateDraftMaintRequestDto {
    * absent field mean the same thing.
    */
   deferred_notifications?: DeferredNotificationDto[];
+  /**
+   * People to tag in the notification on top of the delivery channels. Omitted
+   * when nobody is picked; on create there is no "unchanged" state to
+   * distinguish, so `[]` and an absent field mean the same thing.
+   */
+  mentions?: MentionDto[];
 }
 
 /**
  * `apimodels.UpdateDraftMaintRequest` — body for
  * `POST /api/v1/maintenances/{id}/edit`. Same as create EXCEPT
- * `deferred_notifications`, which is tri-state here.
+ * `deferred_notifications` and `mentions`, which are tri-state here.
  */
 export interface UpdateDraftMaintRequestDto extends Omit<
   CreateDraftMaintRequestDto,
-  "deferred_notifications"
+  "deferred_notifications" | "mentions"
 > {
   /**
    * Tri-state, carried by `*[]*DeferredNotification` on the Go side and gated
@@ -357,6 +397,20 @@ export interface UpdateDraftMaintRequestDto extends Omit<
    * them and they still fired.
    */
   deferred_notifications?: DeferredNotificationDto[] | null;
+  /**
+   * Tri-state, carried by `*[]*Mention` on the Go side, with the same three
+   * readings as `deferred_notifications` above:
+   *
+   * - **omitted / `null`** → leave the saved mentions unchanged
+   * - **`[]`** → clear them
+   * - **non-empty** → replace the whole set
+   *
+   * The trap runs OPPOSITE to the reminders mapper, which omits the field when
+   * the form has none: doing that here would leave un-picked mentions tagged. An
+   * emptied picker must send `[]`. Equally, `[]` must never be sent for a set we
+   * failed to resolve — that clears mentions the operator never saw.
+   */
+  mentions?: MentionDto[] | null;
 }
 
 /** `uimodels.AssignableUser` — `GET /api/v1/users/assignable`. */
@@ -365,6 +419,15 @@ export interface AssignableUserDto {
   display_name?: string;
   email?: string;
   roles?: string[];
+  /**
+   * Whether the user has a messenger handle a mention can reach. On the Go side
+   * this is a non-pointer `bool` without `omitempty`, so the key is ALWAYS
+   * present — deliberately, so the frontend never confuses "not permitted" with
+   * "no handle". It is gated behind `maintenance.create` and hard-false per row
+   * for guests. Optional here only because an absent key is a real signal: a
+   * backend predating the flag. The mapper must pass it through untouched.
+   */
+  has_messenger_tag?: boolean;
 }
 
 /** `uimodels.ListAssignableUsersResponse` envelope. */

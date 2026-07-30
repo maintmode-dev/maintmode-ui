@@ -132,6 +132,30 @@ export interface MaintenanceDetail extends Maintenance {
    * projection has no reminders.
    */
   reminders: MaintenanceReminder[];
+  /**
+   * People tagged in the notification, in insertion order. Lives on the detail
+   * (not on `Maintenance`) for the same reason as {@link reminders} — only the
+   * detail read view carries them, the calendar projection has none.
+   *
+   * `undefined` means the backend predates mentions and never sent the key: the
+   * read view documents this as always an array, never null, so an absent field
+   * is an unambiguous version detect (the form hides the field on it). `[]`
+   * means the contract is there and nobody was tagged.
+   */
+  mentions?: MaintenanceMention[];
+}
+
+/**
+ * One tagged person as the detail read view exposes it. Deliberately carries no
+ * messenger-tag flag (backend `uimodels.MentionView`): the detail shows who was
+ * mentioned, not who has a messenger configured, and the endpoint is readable by
+ * guests. `display_name` may be the literal "Unknown user" for someone deleted
+ * or unresolvable — the backend keeps the row rather than dropping it, so the UI
+ * never silently loses a mention.
+ */
+export interface MaintenanceMention {
+  user_id: string;
+  display_name: string;
 }
 
 /**
@@ -199,6 +223,19 @@ export interface MaintenanceDraftInput {
    * has none) stays a valid body; `assertValidDraftInput` matches.
    */
   reminder_offsets_minutes?: number[];
+  /**
+   * User ids to tag in the notification, on top of the delivery channels. Held
+   * as bare ids because that is the operator's mental model; the wire contract
+   * carries objects (`mentions: [{ user_id }]`) so it can gain keys without a
+   * breaking change, and the mapper wraps them at the boundary.
+   *
+   * Empty or absent means "nobody tagged" — but unlike
+   * {@link reminder_offsets_minutes}, the mappers must NOT treat the two alike:
+   * edit has to send `[]` so cleared mentions are actually deleted, while create
+   * omits the field. Optional so a client that predates mentions stays a valid
+   * body; `assertValidDraftInput` matches.
+   */
+  mention_user_ids?: string[];
 }
 
 /**
@@ -210,6 +247,19 @@ export interface AssignableUser {
   display_name: string;
   email: string;
   roles: string[];
+  /**
+   * Whether the user has a messenger handle a mention can actually reach.
+   * Tri-state ON PURPOSE — optional so `undefined` survives as its own answer:
+   *
+   * - `true` — reachable, no warning
+   * - `false` — the backend checked and found no handle, warn on the picker row
+   * - `undefined` — we don't know (backend predates the flag, or the entry came
+   *   from detail hydration rather than the picker) — warn about nothing
+   *
+   * Never collapse this with `?? false`: that turns "we don't know" into "no
+   * handle" and makes the UI warn on data it never had.
+   */
+  has_messenger_tag?: boolean;
 }
 
 /**

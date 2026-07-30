@@ -1,6 +1,6 @@
 "use client";
 
-import { TriangleAlert } from "lucide-react";
+import { TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -26,10 +26,12 @@ import type {
   MaintenanceScope,
 } from "@/domain/maintenance/maintenance";
 
+import { MAX_MENTIONS, mergeMentionChips, type MentionChip } from "@/domain/maintenance/mentions";
 import { MAX_REMINDERS, offsetLabel, toFireAt, toOffsetFromFireAt } from "@/domain/maintenance/reminders";
 
 import { MaintenanceRemindersField } from "./maintenance-reminders-field";
 import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
+import { useMentionableUsersQuery } from "./queries/use-mentionable-users-query";
 import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
 import { transportDisplayTitle, transportStatusCopy } from "@/features/notify-channels/transports";
 import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
@@ -149,6 +151,16 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // picker opened empty and Save was blocked by the "≥1 channel" rule even
   // though the draft had a channel — risking a silent loss of the binding.
   const [channelIds, setChannelIds] = useState<string[]>(() => detail?.notify_targets.map((c) => c.id) ?? []);
+  // People to tag in the notification (RUK-218). Hydrated from the loaded
+  // draft's `mentions` so Edit pre-selects who is already tagged — load-bearing,
+  // not convenience: on edit an empty selection is sent as `[]`, which
+  // hard-deletes, so a picker that opened empty would silently drop the tags.
+  // Deduped through a `Set` because the source is backend data, not just picker
+  // clicks (same reasoning as `reminderOffsets` below); the DB's unique index
+  // makes it a cheap belt-and-suspenders.
+  const [mentionIds, setMentionIds] = useState<string[]>(() => [
+    ...new Set(detail?.mentions?.map((m) => m.user_id) ?? []),
+  ]);
   // Advance reminders, held as offsets in minutes (see `@/domain/maintenance/reminders`).
   // Hydrated on Edit by deriving each offset back out of the saved `fire_at`
   // (the backend stores instants, never the chosen preset). Seeded in an effect
@@ -177,6 +189,10 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   const [submitted, setSubmitted] = useState(false);
 
   const assignable = useAssignableUsersQuery();
+  // A separate hook from `assignable`, deliberately: that one re-filters to
+  // approver roles client-side, and mentions answer "who should be warned", not
+  // "who can approve" — guests belong here. See `useMentionableUsersQuery`.
+  const mentionable = useMentionableUsersQuery();
   const channelsQuery = useNotifyChannelsQuery();
   const resourcesQuery = useResourcesQuery({ limit: 200 });
 
@@ -214,6 +230,47 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
       searchValue: `${c.name} ${c.transport} ${c.transportChannelId ?? ""}`,
     };
   });
+  // Mirrors the channel options above: a person the backend knows has no
+  // messenger handle is dimmed + flagged, but stays selectable — they are still
+  // mentioned in the notification, just by name instead of a clickable ping.
+  //
+  // The email stays in the description in both branches — it is the only thing
+  // that tells two people with the same display name apart, so the warning is
+  // appended to it rather than replacing it.
+  //
+  // Memoized, unlike the channel/resource option arrays next to it — this one
+  // builds a JSX element per row, and the form is a single `useState` component,
+  // so every keystroke in Title or Description would otherwise re-allocate the
+  // whole list. Measured on 200 rows: 148 µs rebuilt vs 1.1 µs for a plain-string
+  // label like `resourceOptions`. The neighbours are cheap because of their data,
+  // not their structure, so matching them here would cost 130x, and it scales with
+  // a user table that only `limit: 200` currently bounds.
+  const mentionOptions = useMemo<MultiSelectOption[]>(
+    () =>
+      (mentionable.data ?? []).map((u) => {
+        // Read once, named once: the tri-state comparison has to stay `=== false`
+        // in all three places below, and a single `!u.has_messenger_tag` slip in
+        // any one of them would warn on `undefined`.
+        const noTag = u.has_messenger_tag === false;
+        return {
+          value: u.id,
+          label: (
+            <span className={cn("flex items-center gap-1.5", noTag && "text-fg-muted")}>
+              {u.display_name}
+              {noTag ? (
+                <TriangleAlert
+                  className="size-3 shrink-0 text-[var(--impact-partial-fg)]"
+                  aria-hidden={true}
+                />
+              ) : null}
+            </span>
+          ),
+          description: noTag ? `${u.email} · No messenger tag — will appear by name` : u.email,
+          searchValue: `${u.display_name} ${u.email}`,
+        };
+      }),
+    [mentionable.data],
+  );
 
   const selectedResources = resourceIds.map((id) => {
     const fromCatalog = resourcesQuery.data?.resources.find((r) => r.id === id);
@@ -231,6 +288,22 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     () => selectedChannels.filter((c) => transportStatusCopy(c.transportStatus) != null),
     [selectedChannels],
   );
+  // MERGE, not `filter` over the options (the channel chips above do filter, and
+  // copying that here would be a bug): a selected person can legitimately be
+  // absent from the options — blocked after the draft was saved, or beyond the
+  // picker's limit. `filter` would hide them while they stay in `mentionIds`, and
+  // the operator would then save or clear a list they were never shown. See
+  // `mergeMentionChips`.
+  const selectedMentions = useMemo<MentionChip[]>(
+    () => mergeMentionChips(mentionIds, mentionable.data ?? [], detail?.mentions),
+    [mentionIds, mentionable.data, detail?.mentions],
+  );
+  // A backend that predates mentions omits the key entirely (it otherwise always
+  // sends an array), so `undefined` on an existing maintenance means "not
+  // supported" — hide the field rather than let the operator pick people whose
+  // selection would be accepted with a 200 and silently thrown away. On create
+  // there is no detail to read the capability from, so the field always shows.
+  const showMentions = creating || detail?.mentions !== undefined;
 
   const errors = useMemo<Record<string, string>>(() => {
     const e: Record<string, string> = {};
@@ -243,6 +316,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     }
     if (channelIds.length === 0) e.channels = "Pick at least one notification channel.";
     if (channelIds.length > MAX_CHANNELS) e.channels = `At most ${MAX_CHANNELS} channels.`;
+    if (mentionIds.length > MAX_MENTIONS) e.mentions = `At most ${MAX_MENTIONS} people.`;
     if (reminderOffsets.length > MAX_REMINDERS) e.reminders = `At most ${MAX_REMINDERS} reminders.`;
     const stepBad =
       steps.length === 0 ||
@@ -270,6 +344,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     steps,
     channelIds,
     creating,
+    mentionIds,
     reminderOffsets,
   ]);
 
@@ -308,6 +383,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
       resource_ids: scope === "resource" ? resourceIds : [],
       approver_user_id: approverId,
       notify_target_channel_ids: channelIds,
+      mention_user_ids: mentionIds,
       reminder_offsets_minutes: reminderOffsets,
       steps: steps.map((s, i) => ({
         order: i + 1,
@@ -510,6 +586,57 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             </Alert>
           ) : null}
         </Field>
+        {/* Mentions sit between "where" (channels) and "when" (reminders): all
+            three describe the same notification. Approver stays in Overview on
+            purpose — it answers who *approves*, not who gets warned. */}
+        {showMentions ? (
+          <Field
+            label="Mentions"
+            hint={`Optional, up to ${MAX_MENTIONS} · tagged in the notification`}
+            error={show("mentions")}
+          >
+            <MultiSelect
+              options={mentionOptions}
+              value={mentionIds}
+              onChange={setMentionIds}
+              placeholder="Pick people to tag…"
+              searchPlaceholder="Search by name or email"
+              emptyText={mentionable.isPending ? "Loading…" : "No people found."}
+              ariaLabel="Mentions"
+            />
+            {selectedMentions.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {selectedMentions.map((m) => (
+                  <span
+                    key={m.id}
+                    className="inline-flex items-center gap-1.5 rounded-sm border border-border-subtle bg-bg-elev-3 px-2 py-[3px] text-xs text-fg"
+                  >
+                    {/* Same tri-state rule as the picker option: only an explicit
+                        `false` earns the warning. */}
+                    {m.hasTag === false ? (
+                      <TriangleAlert
+                        className="size-3 shrink-0 text-[var(--impact-partial-fg)]"
+                        aria-hidden={true}
+                      />
+                    ) : null}
+                    <span className="font-medium">{m.name}</span>
+                    {/* A real icon in a grid-centred box, not a bare glyph —
+                        the glyph gives a 9×16px hit target and leaks into page
+                        search and copy-paste (see `MaintenanceRemindersField`). */}
+                    <button
+                      type="button"
+                      onClick={() => setMentionIds((ids) => ids.filter((id) => id !== m.id))}
+                      aria-label={`Remove ${m.name}`}
+                      className="ml-0.5 inline-grid size-4 shrink-0 cursor-pointer place-items-center rounded-xs text-fg-muted hover:bg-bg-elev-4 hover:text-fg"
+                    >
+                      <X className="size-3" aria-hidden={true} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </Field>
+        ) : null}
         <Field
           label="When to notify"
           hint={`Optional, up to ${MAX_REMINDERS}`}

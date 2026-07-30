@@ -23,6 +23,7 @@ import { StatusBadge } from "@/shared/ui/domain/status-badge";
 import { ImpactBadge } from "@/shared/ui/domain/impact-badge";
 import { ResourceChip } from "@/shared/ui/domain/resource-chip";
 import { ChannelChip } from "@/shared/ui/domain/channel-chip";
+import { Chip } from "@/shared/ui/domain/chip";
 import { StepRow } from "@/shared/ui/domain/step-row";
 import { ConflictCard, ConflictGridItem } from "@/shared/ui/domain/conflict-card";
 import { SectionCard } from "@/shared/ui/domain/section-card";
@@ -244,6 +245,31 @@ function MaintenanceDetailView({ id }: { id: string }) {
                     <span className="text-fg-dim">—</span>
                   )}
                 </Section>
+                {/* Mentions — names only, no messenger-tag icon: the read model
+                    deliberately carries no tag information (this endpoint is
+                    guest-readable), so "has no tag" is physically unrenderable
+                    here. That warning lives on the form only.
+
+                    Empty renders NOTHING — a deliberate divergence from
+                    Resources / Notify channels above, which show `—` when
+                    empty. There, emptiness is anomalous (a maintenance must
+                    notify at least one channel), so `—` is a signal. For
+                    mentions, nobody tagged is the normal case, and `—` would be
+                    noise on every untagged maintenance. `undefined` (a backend
+                    predating mentions) hides the section too — we don't know
+                    whether anyone is tagged. */}
+                {detail.mentions && detail.mentions.length > 0 ? (
+                  <Section label="Mentions" className="col-span-2">
+                    <div className="flex flex-wrap gap-1.5">
+                      {detail.mentions.map((m) => (
+                        // `display_name` is rendered as-is: the backend already
+                        // substitutes a human-readable "Unknown user" for
+                        // deleted or unresolved accounts.
+                        <Chip key={m.user_id}>{m.display_name}</Chip>
+                      ))}
+                    </div>
+                  </Section>
+                ) : null}
               </div>
             </SectionCard>
 

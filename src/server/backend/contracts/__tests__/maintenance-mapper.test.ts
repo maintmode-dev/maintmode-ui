@@ -378,6 +378,62 @@ describe("mapMaintenanceView", () => {
     ]);
   });
 
+  /**
+   * RUK-218, AC-14. The read view documents `mentions` as always an array, never
+   * null, so an absent key is an unambiguous "this backend predates mentions" —
+   * a free contract-version detect the form uses to hide the field. `[]` is the
+   * other answer: supported, nobody tagged. A `?? []` here would erase the
+   * difference and the form would render an empty picker against a backend that
+   * silently drops whatever it saves.
+   */
+  it("leaves mentions undefined when the backend omits the key (old deployment)", () => {
+    const detail = mapMaintenanceView(base);
+    expect(detail.mentions).toBeUndefined();
+    expect(detail.mentions).not.toEqual([]);
+  });
+
+  it("keeps an empty array as an empty array (supported, nobody tagged)", () => {
+    const detail = mapMaintenanceView({
+      ...base,
+      maintenance: { ...base.maintenance, mentions: [] },
+    });
+    expect(detail.mentions).toEqual([]);
+    expect(detail.mentions).not.toBeUndefined();
+  });
+
+  it("carries the tagged people through with their display names, for edit hydration", () => {
+    const detail = mapMaintenanceView({
+      ...base,
+      maintenance: {
+        ...base.maintenance,
+        mentions: [
+          { user_id: "u-1", display_name: "Alice Ops" },
+          { user_id: "u-2", display_name: "Unknown user" },
+        ],
+      },
+    });
+    expect(detail.mentions).toEqual([
+      { user_id: "u-1", display_name: "Alice Ops" },
+      { user_id: "u-2", display_name: "Unknown user" },
+    ]);
+  });
+
+  it("applies the 'Unknown user' fallback to a blank or missing mention name", () => {
+    const detail = mapMaintenanceView({
+      ...base,
+      maintenance: {
+        ...base.maintenance,
+        mentions: [{ user_id: "u-1", display_name: "  " }, { user_id: "u-2" }],
+      },
+    });
+    // Never dropped — a mention the operator cannot see is a mention they can
+    // accidentally clear (SPEC §5.6).
+    expect(detail.mentions).toEqual([
+      { user_id: "u-1", display_name: "Unknown user" },
+      { user_id: "u-2", display_name: "Unknown user" },
+    ]);
+  });
+
   it("maps notify_targets defensively", () => {
     const detail = mapMaintenanceView({
       ...base,
@@ -615,6 +671,67 @@ describe("mapDraftToCreateRequest", () => {
       expect(req.deferred_notifications).toHaveLength(1);
     });
   });
+
+  /**
+   * RUK-218, AC-06. The wire wants objects, not bare uuids — a `string[]` body is
+   * rejected outright, the same mistyping that silently blocked notify_targets.
+   * The criterion has two halves and both are pinned below: a non-empty selection
+   * serialises as `[{ user_id }]`, an empty one omits the key.
+   */
+  describe("mentions", () => {
+    it("wraps the selected ids into { user_id } objects (AC-06)", () => {
+      const req = mapDraftToCreateRequest({ ...base, mention_user_ids: ["u-1", "u-2"] });
+      expect(req.mentions).toEqual([{ user_id: "u-1" }, { user_id: "u-2" }]);
+    });
+
+    /**
+     * AC-06, and the reason the shape is an object: `["u-1"]` would be rejected
+     * outright by the backend binder. `toEqual` against `[{ user_id }]` passes for
+     * an object, so this asserts on the serialised bytes — a mapper that emitted
+     * bare strings must not slip through.
+     */
+    it("serialises the objects on the wire, never bare id strings (AC-06)", () => {
+      const body = JSON.stringify(mapDraftToCreateRequest({ ...base, mention_user_ids: ["u-1"] }));
+      expect(body).toContain('"mentions":[{"user_id":"u-1"}]');
+      expect(body).not.toContain('"mentions":["u-1"]');
+    });
+
+    // Create has no "unchanged" state, so `[]` and an absent key say the same
+    // thing and omitting is the tersest form. Update is the one that must send
+    // `[]` — see the mapDraftToUpdateRequest suite.
+    it("omits the field entirely for an empty selection (AC-06)", () => {
+      const req = mapDraftToCreateRequest({ ...base, mention_user_ids: [] });
+      expect(req).not.toHaveProperty("mentions");
+    });
+
+    it("omits the field when mentions are absent altogether (AC-06)", () => {
+      expect(mapDraftToCreateRequest(base)).not.toHaveProperty("mentions");
+    });
+
+    it("collapses duplicate ids the backend would reject", () => {
+      const req = mapDraftToCreateRequest({ ...base, mention_user_ids: ["u-1", "u-1", "u-2"] });
+      expect(req.mentions).toEqual([{ user_id: "u-1" }, { user_id: "u-2" }]);
+    });
+
+    // AC-06 order note: SPEC §1.1 guarantees the backend replays mentions in
+    // insertion order (`ORDER BY created_at ASC, id ASC`), so the mapper must not
+    // sort or reverse the operator's selection on the way out.
+    it("preserves the selection order (AC-06)", () => {
+      const req = mapDraftToCreateRequest({ ...base, mention_user_ids: ["u-3", "u-1", "u-2"] });
+      expect(req.mentions).toEqual([{ user_id: "u-3" }, { user_id: "u-1" }, { user_id: "u-2" }]);
+    });
+
+    it("sits alongside notify_targets and the reminders, not in place of them", () => {
+      const req = mapDraftToCreateRequest({
+        ...base,
+        mention_user_ids: ["u-1"],
+        reminder_offsets_minutes: [60],
+      });
+      expect(req.notify_targets).toEqual({ channel_ids: ["c-1", "c-2"] });
+      expect(req.deferred_notifications).toHaveLength(1);
+      expect(req.mentions).toEqual([{ user_id: "u-1" }]);
+    });
+  });
 });
 
 /**
@@ -635,17 +752,27 @@ describe("mapDraftToUpdateRequest", () => {
     notify_target_channel_ids: ["c-1"],
   };
 
-  it("matches the create body on every non-reminder field", () => {
+  it("matches the create body on every non-tri-state field", () => {
     const withReminders = { ...base, reminder_offsets_minutes: [60] };
-    const withoutReminders = (
+    // Strips BOTH tri-state fields: they are the only two whose empty-list
+    // meaning diverges between the directions, so they are also the only two the
+    // bodies are allowed to differ on. Update types `mentions` as
+    // `MentionDto[] | null`, which is why it cannot stay in a
+    // `Partial<CreateDraftMaintRequestDto>`.
+    const withoutTriState = (
       req: CreateDraftMaintRequestDto | UpdateDraftMaintRequestDto,
     ): Partial<CreateDraftMaintRequestDto> => {
-      const copy: Partial<CreateDraftMaintRequestDto> = { ...req, deferred_notifications: undefined };
+      const copy: Partial<CreateDraftMaintRequestDto> = {
+        ...req,
+        deferred_notifications: undefined,
+        mentions: undefined,
+      };
       delete copy.deferred_notifications;
+      delete copy.mentions;
       return copy;
     };
-    expect(withoutReminders(mapDraftToUpdateRequest(withReminders))).toEqual(
-      withoutReminders(mapDraftToCreateRequest(withReminders)),
+    expect(withoutTriState(mapDraftToUpdateRequest(withReminders))).toEqual(
+      withoutTriState(mapDraftToCreateRequest(withReminders)),
     );
   });
 
@@ -739,6 +866,83 @@ describe("mapDraftToUpdateRequest", () => {
     const req = mapDraftToUpdateRequest({ ...base, reminder_offsets_minutes: [60, 60] });
     expect(req.deferred_notifications).toEqual([{ fire_at: "2026-08-01T09:00:00.000Z" }]);
   });
+
+  /**
+   * RUK-218, AC-07. `mentions` is tri-state on update exactly like
+   * `deferred_notifications` — but the trap runs the OPPOSITE way round, because
+   * the reminders mapper on create omits the key when the form has none. Copying
+   * that pattern here is the bug: the backend reads an absent key as "leave
+   * unchanged", so the mentions the operator just removed would stay tagged.
+   */
+  describe("mentions", () => {
+    // THE case. Without the explicit `[]` the removal is silently discarded and
+    // the notification still tags people the operator deselected.
+    it("sends an empty array to clear, never omitting the key", () => {
+      const req = mapDraftToUpdateRequest({ ...base, mention_user_ids: [] });
+      expect(req).toHaveProperty("mentions");
+      expect(req.mentions).toEqual([]);
+    });
+
+    it("still sends the key when the form carries no mention field at all", () => {
+      expect(mapDraftToUpdateRequest(base).mentions).toEqual([]);
+    });
+
+    it("replaces the whole set with the current selection", () => {
+      const req = mapDraftToUpdateRequest({ ...base, mention_user_ids: ["u-1", "u-2"] });
+      expect(req.mentions).toEqual([{ user_id: "u-1" }, { user_id: "u-2" }]);
+    });
+
+    /**
+     * `JSON.stringify` drops an `undefined` value, so serialising is the only
+     * assertion that proves the key really reaches the backend as a clear rather
+     * than vanishing into the "leave unchanged" reading.
+     */
+    it("keeps the key through JSON serialisation, so `[]` reaches the wire as a clear", () => {
+      const body = JSON.parse(
+        JSON.stringify(mapDraftToUpdateRequest({ ...base, mention_user_ids: [] })),
+      ) as Record<string, unknown>;
+      expect(Object.keys(body)).toContain("mentions");
+      expect(body.mentions).toEqual([]);
+    });
+
+    it("never serialises to the 'leave unchanged' shape, whatever the selection", () => {
+      for (const ids of [undefined, [], ["u-1"], ["u-1", "u-2"]]) {
+        const body = JSON.parse(
+          JSON.stringify(mapDraftToUpdateRequest({ ...base, mention_user_ids: ids })),
+        ) as Record<string, unknown>;
+        expect(Object.keys(body)).toContain("mentions");
+        expect(body.mentions).not.toBeNull();
+      }
+    });
+
+    // Create is the mirror image: an empty selection must NOT serialise the key,
+    // or a create body would carry a meaning update reserves for clearing.
+    it("create drops the key on serialisation when nothing is selected (AC-06)", () => {
+      const body = JSON.parse(
+        JSON.stringify(mapDraftToCreateRequest({ ...base, mention_user_ids: [] })),
+      ) as Record<string, unknown>;
+      expect(Object.keys(body)).not.toContain("mentions");
+    });
+
+    // Unresolvable reminder offsets omit the key; mentions have no such state
+    // (nothing to resolve — the ids go out as-is), so an unparseable start must
+    // not accidentally start suppressing them.
+    it("is unaffected by a planned_start the reminders cannot resolve against", () => {
+      const req = mapDraftToUpdateRequest({
+        ...base,
+        planned_start: "",
+        reminder_offsets_minutes: [60],
+        mention_user_ids: ["u-1"],
+      });
+      expect(req).not.toHaveProperty("deferred_notifications");
+      expect(req.mentions).toEqual([{ user_id: "u-1" }]);
+    });
+
+    it("collapses duplicate ids the backend would reject", () => {
+      const req = mapDraftToUpdateRequest({ ...base, mention_user_ids: ["u-1", "u-1"] });
+      expect(req.mentions).toEqual([{ user_id: "u-1" }]);
+    });
+  });
 });
 
 describe("assertValidDraftInput", () => {
@@ -822,6 +1026,52 @@ describe("assertValidDraftInput", () => {
     }
   });
 
+  // RUK-218. Structural only, and deliberately direction-agnostic: this guard is
+  // shared by the create and the edit route, so "empty means clear vs unchanged"
+  // is not its business — that lives in the two mappers, exactly as it does for
+  // the reminder offsets above.
+  it("accepts a body with no mentions, an empty list, or a full one", () => {
+    expect(() => assertValidDraftInput(valid)).not.toThrow();
+    expect(() => assertValidDraftInput({ ...valid, mention_user_ids: [] })).not.toThrow();
+    expect(() => assertValidDraftInput({ ...valid, mention_user_ids: ["u-1", "u-2"] })).not.toThrow();
+  });
+
+  it("rejects mention ids that are not an array", () => {
+    let caught: unknown;
+    try {
+      assertValidDraftInput({ ...valid, mention_user_ids: "u-1" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(BffValidationError);
+    expect((caught as BffValidationError).fieldErrors).toContainEqual({
+      field: "mention_user_ids",
+      message: "mention_user_ids must be an array",
+    });
+  });
+
+  it("rejects more mentions than the backend cap", () => {
+    const eleven = Array.from({ length: 11 }, (_, i) => `u-${i + 1}`);
+    let caught: unknown;
+    try {
+      assertValidDraftInput({ ...valid, mention_user_ids: eleven });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as BffValidationError).fieldErrors).toContainEqual({
+      field: "mention_user_ids",
+      message: "At most 10 mentions.",
+    });
+    // The cap is inclusive.
+    expect(() => assertValidDraftInput({ ...valid, mention_user_ids: eleven.slice(0, 10) })).not.toThrow();
+  });
+
+  it("rejects blank or non-string mention ids", () => {
+    for (const bad of [[""], ["  "], [42], [null], ["u-1", ""]]) {
+      expect(() => assertValidDraftInput({ ...valid, mention_user_ids: bad })).toThrow(BffValidationError);
+    }
+  });
+
   it("requires resource_ids only for resource scope", () => {
     const withoutIds: Partial<MaintenanceDraftInput> = { ...valid };
     delete withoutIds.resource_ids;
@@ -889,6 +1139,30 @@ describe("mapAssignableUser", () => {
     expect(mapAssignableUser({ id: "u-2", email: "grace@x.io" }).display_name).toBe("grace@x.io");
     expect(mapAssignableUser({ id: "u-3" }).display_name).toBe("Unknown user");
     expect(mapAssignableUser({ id: "u-3" }).roles).toEqual([]);
+  });
+
+  /**
+   * RUK-218, AC-11. `has_messenger_tag` is tri-state and must stay that way: a
+   * `?? false` would fuse "the backend checked and found no messenger handle"
+   * with "nobody told us", and the picker would warn about an unreachable mention
+   * on data it never had (guest context, or a backend predating the flag).
+   */
+  describe("has_messenger_tag", () => {
+    it("stays undefined — NOT false — when the backend omits the field", () => {
+      const user = mapAssignableUser({ id: "u-1", display_name: "Ada" });
+      expect(user.has_messenger_tag).toBeUndefined();
+      expect(user.has_messenger_tag).not.toBe(false);
+    });
+
+    it("carries true through", () => {
+      expect(mapAssignableUser({ id: "u-1", has_messenger_tag: true }).has_messenger_tag).toBe(true);
+    });
+
+    it("carries false through as its own answer", () => {
+      const user = mapAssignableUser({ id: "u-1", has_messenger_tag: false });
+      expect(user.has_messenger_tag).toBe(false);
+      expect(user.has_messenger_tag).not.toBeUndefined();
+    });
   });
 });
 
