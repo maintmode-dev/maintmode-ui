@@ -164,6 +164,27 @@ describe("SeatsIndicator", () => {
     expect(label).toBeTruthy();
   });
 
+  // The visible line must state the condition, not leave it to be inferred from
+  // "5 of 5". That inference is exactly what made the old one-line treatment
+  // easy to miss: it looked like the passive caption above it.
+  it("says 'No seats left' in the visible text at the cap (AC-04)", async () => {
+    bffFetchMock.mockResolvedValue(seats({ seats_purchased: 5, seats_occupied: 5 }));
+    renderIndicator();
+    await waitFor(() => expect(indicatorText()).not.toBe(""));
+
+    expect(indicatorText()).toMatch(/No seats left/);
+    // …and the counts stay, so the admin sees both the verdict and the numbers.
+    expect(indicatorText()).toMatch(/5 of 5 seats/);
+  });
+
+  it("says nothing of the sort below the cap (AC-04)", async () => {
+    bffFetchMock.mockResolvedValue(seats({ seats_purchased: 10, seats_occupied: 5 }));
+    renderIndicator();
+    await waitFor(() => expect(indicatorText()).not.toBe(""));
+
+    expect(indicatorText()).not.toMatch(/No seats left/i);
+  });
+
   it("marks the at-cap state visually, not by colour alone (AC-04)", async () => {
     bffFetchMock.mockResolvedValue(seats({ seats_purchased: 5, seats_occupied: 5 }));
     renderIndicator();

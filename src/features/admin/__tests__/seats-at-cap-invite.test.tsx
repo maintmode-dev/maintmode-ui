@@ -79,6 +79,34 @@ describe("Invite button at the seat cap", () => {
    * two contradictory "N active" values, which reads as a bug rather than as
    * two different measures.
    */
+  /**
+   * The seats block belongs beside the Invite button, not stacked under the
+   * page caption. Under the caption it rendered as a second grey 12px mono line
+   * four pixels below the first and got read as more of the same — the reason
+   * this layout changed. Grouping it with the button also puts the counter next
+   * to the control whose failure it predicts.
+   */
+  it("groups the seats block with the Invite button, not with the caption", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <UsersManagementPage />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(document.querySelector('[data-testid="seats-indicator"]')).toBeTruthy());
+
+    const seats = document.querySelector('[data-testid="seats-indicator"]')!;
+    const caption = document.querySelector('[data-testid="header-counts"]')!;
+    const invite = screen.getByRole("button", { name: /Invite user/i });
+
+    expect(seats.parentElement).toBe(invite.parentElement);
+    expect(seats.parentElement).not.toBe(caption.parentElement);
+
+    // …and to its left, on the same baseline. Order matters: reading
+    // "1 of 600 seats" before reaching the button is what makes the limit part
+    // of the decision rather than an explanation found afterwards.
+    expect(seats.compareDocumentPosition(invite) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("does not put two contradictory 'N active' figures in the header (AC-09)", async () => {
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>

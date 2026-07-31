@@ -111,23 +111,28 @@ export function UsersManagementPage() {
   return (
     <TooltipProvider>
       <div className="mx-auto max-w-[1120px] p-6 space-y-4">
-        <header className="flex items-end flex-wrap gap-3">
+        <header className="flex items-center flex-wrap gap-3">
           <div className="flex-1 min-w-[200px]">
             <h1 className="h1">Users</h1>
             <p className="caption mono mt-1 text-fg-dim" data-testid="header-counts">
               {activeUserLabel} active · {pendingInviteCount} pending invitations
             </p>
-            {/*
-              Licensed seats, deliberately worded apart from the caption above:
-              its "active" counts every non-blocked account including guests,
-              while seats_used counts only seat roles. Two counters that both
-              say "active" with different numbers would read as a bug.
-            */}
-            <SeatsIndicator />
           </div>
-          <Button onClick={() => setInviteOpen(true)}>
-            <Plus className="size-3.5" aria-hidden="true" /> Invite user
-          </Button>
+          {/*
+            Seats sit inline to the left of Invite, not stacked under the title.
+            Two reasons, in order: under the caption it rendered as a second grey
+            mono line and was read as more of the same, and this is the counter
+            that predicts whether Invite will be refused — so it belongs next to
+            that control. Inline rather than above/below it so the at-cap alert,
+            which is a couple of pixels taller than the button, stays on the same
+            baseline instead of adding a row to the header.
+          */}
+          <div className="flex items-center gap-3">
+            <SeatsIndicator />
+            <Button onClick={() => setInviteOpen(true)}>
+              <Plus className="size-3.5" aria-hidden="true" /> Invite user
+            </Button>
+          </div>
         </header>
 
         {/* Filter bar — row 1: full-width search; row 2: toggle + chips. */}
