@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  ApprovalsEmpty,
+  ApprovalsError,
+  ApprovalsLoading,
+  ApprovalsPageEmptied,
   AuditEmpty,
   AuditError,
   AuditLoading,
@@ -62,6 +66,35 @@ describe("state components — canonical copy contract", () => {
     expect(screen.getByRole("button", { name: /Retry/i })).toBeTruthy();
   });
 
+  it("ApprovalsEmpty has NO CTA and does not congratulate", () => {
+    render(<ApprovalsEmpty />);
+    expect(screen.getByText("Nothing is waiting for your approval")).toBeTruthy();
+    // No CTA: there is nothing for a reviewer to do from an empty queue.
+    expect(screen.queryByRole("button")).toBeNull();
+    // And no "all caught up" framing — until the rework flow exists, a draft
+    // the reviewer won't approve and won't cancel simply stays here, so an
+    // empty queue is not reliably an achievement.
+    expect(document.body.textContent).not.toMatch(/caught up|all done|great|nice work|inbox zero/i);
+  });
+
+  it("ApprovalsError offers a Retry CTA — no HTTP code in copy", () => {
+    const { container } = render(<ApprovalsError />);
+    expect(screen.getByText("Couldn't load approvals")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Retry/i })).toBeTruthy();
+    expect(container.textContent).not.toMatch(/\b(40[0-9]|5[0-9]{2})\b/);
+  });
+
+  it("ApprovalsPageEmptied offers a way back to the first page", () => {
+    // The CTA is the whole point of this state: the offset lives in component
+    // state, so without it an emptied later page is a dead end.
+    const onBackToStart = vi.fn();
+    render(<ApprovalsPageEmptied onBackToStart={onBackToStart} />);
+    expect(screen.getByText("This page is empty now")).toBeTruthy();
+    const cta = screen.getByRole("button", { name: /first page/i });
+    cta.click();
+    expect(onBackToStart).toHaveBeenCalledOnce();
+  });
+
   it("tone: no emoji, no Oops/Sorry/Failed across all states", () => {
     const all = [
       <CalendarEmpty key="ce" />,
@@ -71,6 +104,9 @@ describe("state components — canonical copy contract", () => {
       <DetailsError key="de" />,
       <AuditEmpty key="ae" />,
       <AuditError key="aer" />,
+      <ApprovalsEmpty key="ape" />,
+      <ApprovalsError key="aper" />,
+      <ApprovalsPageEmptied key="apem" />,
     ];
     for (const el of all) {
       const { container, unmount } = render(el);
@@ -89,5 +125,10 @@ describe("state components — canonical copy contract", () => {
     expect(det.firstElementChild?.getAttribute("aria-busy")).toBe("true");
     const { container: aud } = render(<AuditLoading />);
     expect(aud.firstElementChild?.getAttribute("aria-busy")).toBe("true");
+    // Skeleton itself is aria-hidden, so without this the screen reader gets
+    // silence rather than a busy state while the queue loads.
+    const { container: apr } = render(<ApprovalsLoading />);
+    expect(apr.firstElementChild?.getAttribute("aria-busy")).toBe("true");
+    expect(apr.firstElementChild?.getAttribute("aria-live")).toBe("polite");
   });
 });

@@ -7,6 +7,7 @@ import { useTheme } from "@/app/theme-provider";
 import { useSyncExternalStore } from "react";
 
 import { signOutAction } from "@/server/auth/auth-actions";
+import { canApprove, isAdmin, type Role } from "@/domain/auth/permissions";
 import { cn } from "@/shared/ui/lib/cn";
 import { MaintMark } from "@/shared/ui/icons/brand-icons";
 import { Button } from "@/shared/ui/shadcn/button";
@@ -21,6 +22,9 @@ import {
 
 const NAV = [
   { href: "/", label: "Calendar" },
+  // Reviewer/admin only — mirrors the backend gate on GET /ui/v1/approvals.
+  // Showing it to an editor would be handing them a link into a 403.
+  { href: "/approvals", label: "Approvals", requiresApprove: true },
   { href: "/resources", label: "Resources" },
   { href: "/channels", label: "Channels" },
   { href: "/admin/users", label: "Users", adminOnly: true },
@@ -31,12 +35,24 @@ const NAV = [
 export interface AppHeaderUser {
   email: string;
   display_name: string;
-  is_admin: boolean;
+  /**
+   * The caller's roles, verbatim from `/me`. Required, not optional: the single
+   * construction site (`AppShell`) already has them in hand, and an optional
+   * field would fail silently — `canApprove(undefined)` is false, so a typo in
+   * the wiring would quietly hide the queue from every reviewer instead of
+   * breaking the build.
+   *
+   * Admin-ness is derived from this rather than carried as a second field, so
+   * there is only one source of truth for what the user may do.
+   */
+  roles: Role[];
 }
 
 export function AppHeader({ user }: { user: AppHeaderUser | null }) {
   const pathname = usePathname();
-  const isAdminUser = user?.is_admin ?? false;
+  const roles = user?.roles;
+  const isAdminUser = isAdmin(roles);
+  const mayApprove = canApprove(roles);
   return (
     <header className="sticky top-0 z-30 h-14 border-b border-border-subtle bg-bg-elev-1/95 backdrop-blur">
       <div className="mx-auto max-w-[1400px] h-full px-6 flex items-center gap-6">
@@ -50,22 +66,24 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
           <span>MaintMode</span>
         </Link>
         <nav className="flex items-center gap-1 text-sm">
-          {NAV.filter((n) => !n.adminOnly || isAdminUser).map((item) => {
-            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "px-3 h-9 inline-flex items-center rounded-sm text-fg-muted hover:text-fg hover:bg-bg-elev-2 transition-colors",
-                  active && "text-fg-strong bg-bg-elev-2",
-                )}
-                aria-current={active ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+          {NAV.filter((n) => (!n.adminOnly || isAdminUser) && (!n.requiresApprove || mayApprove)).map(
+            (item) => {
+              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "px-3 h-9 inline-flex items-center rounded-sm text-fg-muted hover:text-fg hover:bg-bg-elev-2 transition-colors",
+                    active && "text-fg-strong bg-bg-elev-2",
+                  )}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            },
+          )}
         </nav>
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />

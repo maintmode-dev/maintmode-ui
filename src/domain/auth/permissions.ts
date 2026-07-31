@@ -39,3 +39,28 @@ export function isAdmin(roles: readonly string[] | undefined): boolean {
 export function canWrite(roles: readonly string[] | undefined): boolean {
   return hasRole(roles, "editor") || hasRole(roles, "reviewer") || hasRole(roles, "admin");
 }
+
+/**
+ * Can this role set reach the approvals queue (`/approvals`)? Mirrors the
+ * server gate `scenarioMW(AuthzScenarioMaintenanceApprove)` on
+ * `GET /ui/v1/approvals`: reviewer and admin pass, editor and guest get 403.
+ * A page called "awaiting my approval" is not a page a guest sees empty — it is
+ * a page a guest does not have.
+ *
+ * Positive check for the same reason as {@link canWrite}: the backend expresses
+ * the guest→editor→reviewer→admin hierarchy as Casbin inheritance and does not
+ * inject it into `/me`'s roles array, so never gate on `guest` presence or
+ * `roles.length` — check only the roles that actually grant the right.
+ *
+ * SCOPE — read this before reusing it. This answers "may this user open the
+ * queue", a question about the role set alone. It does NOT answer "may this
+ * user approve THIS maintenance": that authority also depends on status and
+ * assignment, and the backend already computes it as
+ * `MaintenanceActions.can_approve` on the detail response. Recomputing that
+ * client-side is a frozen decision against
+ * (see `MaintenanceActions` in `@/domain/maintenance/maintenance`) — never gate
+ * an Approve button on this predicate.
+ */
+export function canApprove(roles: readonly string[] | undefined): boolean {
+  return hasRole(roles, "reviewer") || hasRole(roles, "admin");
+}

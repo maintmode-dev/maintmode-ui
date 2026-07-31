@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 
-import { isAdmin } from "@/domain/auth/permissions";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 
 import { AppHeader } from "./app-header";
@@ -21,11 +20,14 @@ import { AppHeader } from "./app-header";
 export function AppShell({ children }: { children: ReactNode }) {
   const meQuery = useMeQuery();
   const me = meQuery.data;
+  // Roles are passed through whole rather than collapsed to a boolean here:
+  // the header now gates on two different capabilities (admin, approve), and
+  // deriving each from the same array keeps one source of truth.
   const headerUser = me
     ? {
         email: me.email,
         display_name: me.display_name,
-        is_admin: isAdmin(me.roles),
+        roles: me.roles,
       }
     : null;
   return (

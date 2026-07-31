@@ -7,6 +7,8 @@ import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
 import type { CancelReason, Conflict } from "@/domain/maintenance/maintenance";
 
+import { APPROVALS_KEY_PREFIX } from "@/features/approvals/queries/use-approvals-query";
+
 import { maintenanceDetailKey } from "./use-maintenance-detail-query";
 
 export type MaintenanceAction = "approve" | "start" | "complete";
@@ -21,6 +23,24 @@ interface ActionArgs {
   revision?: number;
   /** The conflicts the operator saw, echoed back as `conflicts_snapshot`. */
   conflicts?: Conflict[];
+}
+
+/**
+ * Drop every page of the "awaiting my approval" queue (RUK-215).
+ *
+ * Bare `["approvals"]` prefix on purpose: the query key is
+ * `["approvals", offset]`, and a mutation has no idea which page the reviewer
+ * is looking at — invalidating one offset would leave the rest stale.
+ *
+ * Not optional. The quick-sheet's Approve button is reachable straight from
+ * `/approvals`, so approving never navigates away; with `staleTime: 30_000` and
+ * `refetchOnWindowFocus: false` the approved row would keep sitting in the list
+ * it was just removed from. And because a draft can legitimately linger in the
+ * queue (there is no "return for rework" transition yet), the reviewer has no
+ * way to tell a stale list from a true one.
+ */
+function invalidateApprovals(queryClient: ReturnType<typeof useQueryClient>): void {
+  queryClient.invalidateQueries({ queryKey: APPROVALS_KEY_PREFIX });
 }
 
 /**
@@ -61,6 +81,7 @@ export function useMaintenanceAction() {
       toast.success(`Maintenance ${action} succeeded`);
       queryClient.invalidateQueries({ queryKey: maintenanceDetailKey(id) });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateApprovals(queryClient);
     },
     onError: (error: unknown, { id, action }) => {
       if (error instanceof BffError) {
@@ -70,6 +91,7 @@ export function useMaintenanceAction() {
           toast.error(`Couldn't ${action}: the maintenance changed elsewhere. Refresh and try again.`);
           queryClient.invalidateQueries({ queryKey: maintenanceDetailKey(id) });
           queryClient.invalidateQueries({ queryKey: ["calendar"] });
+          invalidateApprovals(queryClient);
           return;
         }
         if (error.status === 400) {
@@ -105,6 +127,9 @@ export function useCancelMaintenance() {
       toast.success("Maintenance canceled");
       queryClient.invalidateQueries({ queryKey: maintenanceDetailKey(id) });
       queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      // Cancel is the other way a draft leaves the queue — approve and cancel
+      // are its only two exits today — so the list is just as stale after it.
+      invalidateApprovals(queryClient);
     },
     onError: (error) => {
       const msg =

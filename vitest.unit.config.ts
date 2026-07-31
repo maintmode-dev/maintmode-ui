@@ -14,6 +14,11 @@ export default defineConfig({
       "src/features/**/__tests__/**/*.test.{ts,tsx}",
       "src/shared/**/__tests__/**/*.test.{ts,tsx}",
       "src/server/**/__tests__/**/*.test.{ts,tsx}",
+      // Route shells and app chrome (`AppHeader`'s role-gated nav, RUK-215).
+      // Without this line a test under `src/app/**` is silently never run —
+      // vitest does not report a non-matching file at all, so it looks like a
+      // passing suite rather than a missing one.
+      "src/app/**/__tests__/**/*.test.{ts,tsx}",
     ],
   },
 });

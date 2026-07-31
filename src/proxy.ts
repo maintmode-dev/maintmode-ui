@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-import { canWrite } from "@/domain/auth/permissions";
+import { canApprove, canWrite } from "@/domain/auth/permissions";
 import { auth } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -33,6 +33,8 @@ function isPublicPath(pathname: string): boolean {
  * - `/login`, `/accept-invite`, `/dev/*`: public.
  * - Everything else: requires a session. Unauthenticated users are
  *   bounced to `/login?next=<original path>`.
+ * - `/approvals`: also requires an approve-capable role (reviewer/admin);
+ *   others are silently redirected to `/`.
  * - `/admin/*`: also requires `roles.includes("admin")`; non-admins
  *   are silently redirected to `/`.
  * - Signed-in users hitting `/login` are bounced to `/`.
@@ -88,6 +90,16 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
   // UI, this is defense-in-depth against a deep-link. Exact match (not
   // startsWith) so a hypothetical `/maintenance/newer` is not over-matched.
   if (pathname === "/maintenance/new" && !canWrite(session.user?.roles)) {
+    return NextResponse.redirect(new URL("/", request.nextUrl));
+  }
+
+  // `/approvals` mirrors the backend gate on GET /ui/v1/approvals, which is
+  // scoped to the approve scenario rather than to plain read: a queue called
+  // "awaiting my approval" is not a page an editor sees empty, it is a page an
+  // editor does not have. Hiding the nav item covers the UI; this turns a
+  // deep-link into a clean redirect instead of an error state. Exact match, so
+  // a future `/approvals/<id>` is not silently swept in under this rule.
+  if (pathname === "/approvals" && !canApprove(session.user?.roles)) {
     return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 

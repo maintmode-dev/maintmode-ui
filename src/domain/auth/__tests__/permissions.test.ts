@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canWrite, DEV_LOGIN_ROLES, hasRole, isAdmin, isRole } from "@/domain/auth/permissions";
+import { canApprove, canWrite, DEV_LOGIN_ROLES, hasRole, isAdmin, isRole } from "@/domain/auth/permissions";
 
 describe("permissions", () => {
   it("returns false for undefined or empty role arrays", () => {
@@ -42,6 +42,38 @@ describe("canWrite", () => {
     expect(canWrite(["someone-else"])).toBe(false);
     // Multiple read-only roles still cannot write.
     expect(canWrite(["guest", "guest"])).toBe(false);
+  });
+});
+
+describe("canApprove", () => {
+  it("returns false for undefined, empty, or non-approving role sets", () => {
+    expect(canApprove(undefined)).toBe(false);
+    expect(canApprove([])).toBe(false);
+    expect(canApprove(["guest"])).toBe(false);
+    // Editor can write but cannot approve — this is the pair the server gate
+    // separates (scenarioMW(maintenance.approve): reviewer+admin pass, editor 403).
+    expect(canApprove(["editor"])).toBe(false);
+    expect(canApprove(["guest", "editor"])).toBe(false);
+  });
+
+  it("returns true for reviewer", () => {
+    expect(canApprove(["reviewer"])).toBe(true);
+    expect(canApprove(["guest", "reviewer"])).toBe(true);
+  });
+
+  it("returns true for an admin that carries NO reviewer role", () => {
+    // Asymmetric on purpose. The backend expresses guest→editor→reviewer→admin
+    // as Casbin inheritance and does NOT flatten it into /me's roles array, so
+    // an admin-only set is the real wire shape. A fixture of
+    // ["admin", "reviewer"] would pass against both the correct implementation
+    // and one narrowed to hasRole(roles, "reviewer") — it cannot fail, so it
+    // must not be the only admin case.
+    expect(canApprove(["admin"])).toBe(true);
+  });
+
+  it("is a positive check — never derives from guest presence or roles.length", () => {
+    expect(canApprove(["someone-else"])).toBe(false);
+    expect(canApprove(["guest", "guest"])).toBe(false);
   });
 });
 
