@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 import { canApprove, canWrite } from "@/domain/auth/permissions";
+import { isPublicPath } from "@/domain/auth/public-paths";
 import { auth } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -12,17 +13,10 @@ export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|assets|fonts).*)"],
 };
 
-/**
- * Public path prefixes. A request is public if its pathname is the bare
- * prefix OR is a child of the prefix (i.e. `${p}/...`). Bare prefix without
- * a trailing slash (e.g. `/loginfoo`) does NOT match — that's intentional
- * to close a previous startsWith() over-match.
- */
-const PUBLIC_PREFIXES = ["/login", "/accept-invite", "/dev"];
-
-function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-}
+// The prefix list moved to `@/domain/auth/public-paths` so the client can share
+// it: `TimezoneProvider` mounts on public pages and must NOT ask for `/api/me`
+// there — that 401 sends `bffFetch` to `/login`, which on `/login` is a refresh
+// loop. Two copies of this list would drift into exactly that bug.
 
 /**
  * Auth gate (Next.js 16 `proxy` convention — replaces the legacy

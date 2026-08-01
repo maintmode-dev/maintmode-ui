@@ -13,16 +13,27 @@ const nextConfig: NextConfig = {
       {
         // Force page HTML documents to be uncacheable.
         //
-        // Every page here is auth-gated in `proxy.ts` and renders fully static
-        // (the user comes from a client `useMeQuery`, so no page touches
-        // `cookies()`/`headers()` and Next prerenders the HTML as static). Next
-        // then serves that HTML with `Cache-Control: s-maxage=31536000`, so the
-        // edge (Caddy) caches a year-old document that still references the JS
+        // TWO reasons now, and the second one is easy to miss.
+        //
+        // 1. Stale HTML → ChunkLoadError. Pages used to render fully static, and
+        // Next served that HTML with `Cache-Control: s-maxage=31536000`, so the
+        // edge (Caddy) cached a year-old document that still referenced the JS
         // chunk hashes of the build that produced it. After the next deploy the
         // chunks are rebuilt with new hashes and the old files are gone, so the
         // stale HTML requests them and gets 404s — the page fails to hydrate
         // (ChunkLoadError). Observed on /admin/audit-log: 6 chunk 404s against a
         // year-cached document.
+        //
+        // 2. Per-viewer content. Since RUK-233 the root layout reads the `mm.tz`
+        // cookie to render the first frame in the viewer's timezone, so a page
+        // document now VARIES BY COOKIE. `no-store` is what keeps the edge from
+        // handing one operator's zone to another; we deliberately do not add
+        // `Vary: Cookie`, because it is redundant while nothing is cached at all.
+        //
+        // Consequence: do NOT relax this to a cacheable policy without first
+        // solving (2). Reason 1 alone no longer describes what this guards — the
+        // pages it named are dynamic now, since `cookies()` opts the whole tree
+        // into dynamic rendering.
         //
         // `no-store` on the document keeps the browser/edge from ever reusing a
         // stale HTML→chunk mapping. Static assets under /_next/static keep their

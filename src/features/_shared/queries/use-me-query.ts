@@ -26,10 +26,19 @@ export function meKey() {
   return ["me"] as const;
 }
 
-export function useMeQuery() {
+/**
+ * `enabled: false` keeps the request from being made at all — for callers that
+ * mount where there is no session to fetch. Needed because a 401 here is not
+ * inert: `bffFetch` answers `AUTH_REQUIRED` by navigating to
+ * `/login?next=<path>`, so asking from a public page like `/login` is an infinite
+ * refresh loop, not a failed query. Callers that only mount behind the auth gate
+ * should leave it alone.
+ */
+export function useMeQuery({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: meKey(),
     queryFn: () => bffFetch<User>("/api/me"),
+    enabled,
     staleTime: 60_000,
     retry: (failureCount, error) => {
       if (error instanceof BffError && (error.status === 401 || error.status === 403)) {

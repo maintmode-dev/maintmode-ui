@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
 import { AppProviders } from "./providers";
 import { ThemeInitScript } from "./theme-provider";
+import { TzInitScript } from "@/features/_shared/timezone/timezone-provider";
+import { TZ_COOKIE } from "@/features/_shared/timezone/tz-cookie";
+import { isValidZone } from "@/features/_shared/timezone/convert";
 import { DEV_BYPASS_ENABLED } from "@/server/auth/auth-config";
 import { devLoginAsAction } from "@/server/auth/auth-actions";
 import "./globals.css";
@@ -29,6 +33,19 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     devToolbar = <DevLoginAs loginAsAction={devLoginAsAction} />;
   }
 
+  // Display timezone for the FIRST frame (RUK-233). Without it every screen
+  // rendered event times in UTC until mount, then re-rendered in the viewer's
+  // zone — a visible 3-hour jump for an operator in UTC+3.
+  //
+  // `isValidZone` is not optional: `mm.tz` is deliberately not httpOnly (the
+  // browser writes it), so its value is untrusted input. A forged or stale zone
+  // degrades to `null` = "the server doesn't know", yielding the UTC placeholder.
+  //
+  // Reading the cookie here is what makes the whole tree render dynamically;
+  // that cost is accepted and measured (see the spec's build baseline).
+  const cookieZone = (await cookies()).get(TZ_COOKIE)?.value;
+  const serverZone = isValidZone(cookieZone) ? cookieZone : null;
+
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
@@ -37,9 +54,13 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
             swaps the script type client-side to dodge React 19's "script tag
             while rendering" error. */}
         <ThemeInitScript />
+        {/* Seeds `mm.tz` from `Intl` on a first visit, before hydration, so the
+            NEXT full load is already server-rendered in the viewer's zone (it
+            cannot fix the very first frame — see the component's docblock). */}
+        <TzInitScript />
       </head>
       <body>
-        <AppProviders>{children}</AppProviders>
+        <AppProviders serverZone={serverZone}>{children}</AppProviders>
         {devToolbar}
       </body>
     </html>

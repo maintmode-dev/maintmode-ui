@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useContext } from "react";
 
-import { useMeQuery } from "@/features/_shared/queries/use-me-query";
-import { isValidZone } from "./convert";
+import { TimezoneContext } from "./timezone-provider";
+import { FALLBACK_ZONE, type ResolvedTimezone } from "./tz-cookie";
 
 /**
  * The IANA zone used for rendering and converting event **windows** across the
@@ -15,66 +15,33 @@ import { isValidZone } from "./convert";
  * stay in UTC and must NOT consume this hook.
  */
 
-/** Last-resort zone when nothing else is known (matches the SSR container). */
-export const FALLBACK_ZONE = "UTC";
-
 /**
- * The browser's autodetected IANA zone, or {@link FALLBACK_ZONE} if the runtime
- * can't report one. Call only on the client (it reads `Intl`), which is why the
- * hook below defers it to an effect.
+ * Re-exported for `settings/timezone-card.tsx`, which imports `browserZone` from
+ * here. It lives in `tz-cookie.ts` because the provider needs it too and
+ * importing it back from this file would create a cycle — see `tz-cookie.ts`.
+ * Anything else from that module is imported from it directly (as
+ * `app/layout.tsx` does with `TZ_COOKIE`).
  */
-export function browserZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || FALLBACK_ZONE;
-  } catch {
-    return FALLBACK_ZONE;
-  }
-}
-
-export interface ResolvedTimezone {
-  /** IANA zone to render/convert in. */
-  zone: string;
-  /**
-   * `false` during SSR and the first client render (zone is still the
-   * hydration-safe `FALLBACK_ZONE`); `true` once the real zone is resolved
-   * post-mount. Gate any localStorage/DOM-affecting use on this, exactly like
-   * the calendar page gates its stored view/filters, to avoid a React #418
-   * hydration mismatch.
-   */
-  ready: boolean;
-}
+export { browserZone, type ResolvedTimezone } from "./tz-cookie";
 
 /**
- * Resolve the display/conversion zone with a hydration-safe handoff:
+ * Read the display/conversion zone resolved once per document by
+ * `TimezoneProvider` (RUK-233). Priority order is `me.timezone` → cookie →
+ * browser autodetect: the provider's post-mount zone always overrides the
+ * cookie's.
  *
- *   1. SSR + first client render → `FALLBACK_ZONE` (`UTC`), `ready: false`.
- *      The server has no way to know the viewer's zone (no cookie yet — see the
- *      RUK-201 spec's deferred SSR-cookie item), so it must render something
- *      deterministic that the first client render reproduces exactly.
- *   2. After mount → the real zone, `ready: true`. Preference order:
- *        user's saved zone (`me.timezone`, from RUK-202) → browser autodetect.
- *
- * When RUK-202 ships and `me.timezone` is populated, this hook picks it up with
- * no other change; until then it transparently falls back to browser autodetect.
+ * With no provider in the tree we degrade to UTC instead of throwing (`useTheme`
+ * throws; the difference is explained on `TimezoneContext`). In dev a missing
+ * provider is almost always a mistake, so it warns; in tests rendering a consumer
+ * bare is normal and the UTC fallback is what they expect.
  */
 export function useTimezone(): ResolvedTimezone {
-  const meQuery = useMeQuery();
-  // Only trust a saved zone the runtime can actually resolve — a bad value from
-  // the backend must degrade to autodetect, never flow into the converters.
-  const savedZone = isValidZone(meQuery.data?.timezone) ? meQuery.data.timezone : null;
-
-  // Deferred to an effect so SSR and the first client render both see the
-  // fallback; adopting the resolved zone here (once mounted) is the canonical
-  // hydration-safe pattern this codebase already uses for calendar prefs.
-  const [resolved, setResolved] = useState<string | null>(null);
-  useEffect(() => {
-    // Mount-time adoption of a client-only value (the resolved zone) — the same
-    // hydration-safe pattern calendar-page uses for stored view/filters, so the
-    // synchronous setState here is intentional (SSR + first render use the
-    // fallback, then we adopt the real zone once).
-    /* eslint-disable-next-line react-hooks/set-state-in-effect */
-    setResolved(savedZone || browserZone());
-  }, [savedZone]);
-
-  return resolved === null ? { zone: FALLBACK_ZONE, ready: false } : { zone: resolved, ready: true };
+  const ctx = useContext(TimezoneContext);
+  if (ctx === undefined) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("useTimezone: no TimezoneProvider; falling back to UTC");
+    }
+    return { zone: FALLBACK_ZONE, ready: false };
+  }
+  return ctx;
 }
