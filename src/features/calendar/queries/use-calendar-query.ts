@@ -55,9 +55,27 @@ export function calendarKey(p: CalendarQueryParams) {
   ] as const;
 }
 
-export function useCalendarQuery(params: CalendarQueryParams) {
+export interface CalendarQueryOptions {
+  /**
+   * Gate the request. Defaults to `true` — pass `false` while the caller's
+   * `params` are still provisional, so no fetch goes out for a window that is
+   * about to be replaced. The calendar page uses this: it renders SSR-safe
+   * defaults first and only learns the stored view/filters after mount, so
+   * firing on the first render would spend a request on a window nobody reads
+   * (see calendar-page.tsx). Callers whose params are correct from the first
+   * render (the resource/channel detail pages) omit it.
+   *
+   * NOTE: a disabled query stays `isPending` — it never resolves on its own.
+   * Only gate on a flag that is guaranteed to flip, or the caller's loading
+   * state never ends.
+   */
+  enabled?: boolean;
+}
+
+export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQueryOptions = {}) {
   return useQuery({
     queryKey: calendarKey(params),
+    enabled: options.enabled ?? true,
     queryFn: async (): Promise<Maintenance[]> => {
       if (DATA_SOURCE.calendar === "mock") {
         return MOCK_MAINTENANCES;

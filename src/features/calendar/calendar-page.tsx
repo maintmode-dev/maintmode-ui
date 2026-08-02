@@ -46,7 +46,12 @@ export function CalendarPage() {
   // Server-render the default view, then adopt the stored view after mount —
   // reading localStorage during render would diverge from SSR and cause a
   // hydration mismatch. `hydrated` gates persistence so the stored value isn't
-  // overwritten by the default before it's read back.
+  // overwritten by the default before it's read back, AND gates the calendar
+  // query: until the stored view/filters are known, `range`/`statusParam` still
+  // hold the defaults, so fetching would spend a request on a window that the
+  // very next render replaces (a Day+default-statuses call whose response is
+  // never read). Gating costs nothing — the real request is already triggered
+  // by the same mount effect, so it goes out no later than it did before.
   const [view, setView] = useState<View>(DEFAULT_VIEW);
   const [anchor, setAnchor] = useState(() => anchorFor(DEFAULT_VIEW, new Date()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -112,11 +117,17 @@ export function CalendarPage() {
   // only when the set actually changes. Scope/resource stay client-side below.
   const statusParam = useMemo(() => Array.from(filters.statuses).sort(), [filters.statuses]);
 
-  const query = useCalendarQuery({
-    from: toDateParam(range.from),
-    to: toDateParam(range.to),
-    statuses: statusParam,
-  });
+  const query = useCalendarQuery(
+    {
+      from: toDateParam(range.from),
+      to: toDateParam(range.to),
+      statuses: statusParam,
+    },
+    // `hydrated` always flips in the mount effect above, so the query is
+    // disabled for exactly one commit and `isPending` stays true across it —
+    // the page shows CalendarLoading, which is what it would show anyway.
+    { enabled: hydrated },
+  );
 
   const items = useMemo(() => query.data ?? [], [query.data]);
   // `items` is already status-filtered by the server; here we apply only the
