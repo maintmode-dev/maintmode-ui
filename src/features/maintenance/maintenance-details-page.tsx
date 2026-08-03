@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   ArrowLeft,
   Check,
@@ -33,67 +33,61 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { cn } from "@/shared/ui/lib/cn";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
-import { CancelMaintenanceDialog } from "./cancel-maintenance-dialog";
 import { MaintenanceQuickSheet } from "./maintenance-quick-sheet";
-import { MaintenanceEditMode } from "./maintenance-edit-mode";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useCancelMaintenance, useMaintenanceAction } from "./queries/use-maintenance-actions";
 import { useStepAction } from "./queries/use-step-actions";
 import type { CancelReason, MaintenanceDetail } from "@/domain/maintenance/maintenance";
 
-export interface MaintenanceDetailsPageProps {
-  /** Existing maintenance id. Omit when `creating` (no entity exists yet). */
-  id?: string;
-  /**
-   * Render the create-draft flow (`/maintenance/new`): the page in edit-mode
-   * with empty fields, a create-specific top bar/footer, and a neutral
-   * conflicts note — no detail fetch. Per the design, there is no separate
-   * "Create maintenance" screen; creating IS this page in the `creating` state.
-   */
-  creating?: boolean;
-}
+/**
+ * The edit form lives behind the "Edit" tab, so it is not on this page's
+ * critical path — `react-day-picker` (via date-time-picker → calendar) used to
+ * be, because a static import is traced whether or not the tab is ever opened.
+ *
+ * `ssr: false` is safe: `mode` starts as `"view"`, the edit branch is reachable
+ * only by a user gesture, and the whole component returns `DetailsLoading`
+ * while the detail query is pending — which is always the case on the server.
+ * `DetailsLoading` is reused as the loading state rather than inventing a new
+ * spinner.
+ *
+ * `/maintenance/new` deliberately does the opposite and imports this statically
+ * (see maintenance-create-view.tsx): there the form is the whole page.
+ */
+const MaintenanceEditMode = dynamic(
+  () => import("./maintenance-edit-mode").then((m) => m.MaintenanceEditMode),
+  { ssr: false, loading: () => <DetailsLoading /> },
+);
 
-export function MaintenanceDetailsPage({ id, creating = false }: MaintenanceDetailsPageProps) {
-  if (creating) return <MaintenanceCreateView />;
-  return <MaintenanceDetailView id={id as string} />;
+/**
+ * Second heavy import on this page, and the one easy to miss: the cancel dialog
+ * reaches `cmdk` through combobox → command. It was statically imported AND
+ * rendered unconditionally, so splitting only the edit form above would have
+ * left cmdk eagerly reachable and the bundle guardrail still red.
+ *
+ * Both halves are needed. `dynamic()` is the bundler boundary; the `cancelOpen`
+ * gate at the render site is a runtime concern that splits nothing on its own,
+ * but keeps the Radix dialog tree from mounting for the common case where the
+ * operator never cancels anything.
+ */
+const CancelMaintenanceDialog = dynamic(
+  () => import("./cancel-maintenance-dialog").then((m) => m.CancelMaintenanceDialog),
+  { ssr: false },
+);
+
+export interface MaintenanceDetailsPageProps {
+  /** Existing maintenance id. */
+  id: string;
 }
 
 /**
- * The `creating` state — this page rendered as a new-draft form. Reuses the
- * shared edit/create form (`MaintenanceEditMode` in create mode) inside the
- * same 60/40 shell, with a back-to-calendar top bar and a conflicts panel that
- * just notes conflicts are computed after the draft is saved.
+ * `/maintenance/[id]` — the maintenance detail page. The create flow is a
+ * separate route entry (`maintenance-create-view.tsx`), not a `creating` prop
+ * on this component: a runtime branch inside one module is not a bundler
+ * boundary, so both views were traced into both routes and the two shipped
+ * byte-identical payloads.
  */
-function MaintenanceCreateView() {
-  const router = useRouter();
-  return (
-    <article className="grid grid-cols-[60%_40%] min-h-[calc(100vh-56px)]">
-      {/* LEFT */}
-      <div className="p-8 overflow-auto space-y-6">
-        <header className="space-y-3">
-          <div className="flex items-center gap-3 text-xs font-mono text-fg-dim">
-            <Link href="/" className="hover:text-fg flex items-center gap-1">
-              <ArrowLeft className="size-3" aria-hidden="true" /> Back to calendar
-            </Link>
-          </div>
-          <h1 className="h1">New maintenance</h1>
-          <p className="text-sm text-fg-muted m-0">
-            Plan a maintenance window. It’s saved as a draft you can review and submit for approval.
-          </p>
-        </header>
-
-        <MaintenanceEditMode creating onClose={() => router.push("/")} />
-      </div>
-
-      {/* RIGHT */}
-      <aside className="p-7 bg-bg-elev-2 border-l border-border-subtle overflow-auto space-y-4">
-        <header className="flex items-baseline gap-3">
-          <h2 className="h2">Conflicts</h2>
-        </header>
-        <p className="caption">Conflicts are checked after you save the draft.</p>
-      </aside>
-    </article>
-  );
+export function MaintenanceDetailsPage({ id }: MaintenanceDetailsPageProps) {
+  return <MaintenanceDetailView id={id} />;
 }
 
 function MaintenanceDetailView({ id }: { id: string }) {
@@ -359,20 +353,22 @@ function MaintenanceDetailView({ id }: { id: string }) {
         )}
       </aside>
 
-      <CancelMaintenanceDialog
-        open={cancelOpen}
-        onOpenChange={setCancelOpen}
-        maintenanceTitle={detail.title}
-        maintenanceRef={detail.reference ?? undefined}
-        maintenanceStatus={detail.status}
-        pending={cancelMutation.isPending}
-        onConfirm={(reason: CancelReason, comment: string) => {
-          cancelMutation.mutate(
-            { id: detail.id, reason, comment },
-            { onSuccess: () => setCancelOpen(false) },
-          );
-        }}
-      />
+      {cancelOpen ? (
+        <CancelMaintenanceDialog
+          open={cancelOpen}
+          onOpenChange={setCancelOpen}
+          maintenanceTitle={detail.title}
+          maintenanceRef={detail.reference ?? undefined}
+          maintenanceStatus={detail.status}
+          pending={cancelMutation.isPending}
+          onConfirm={(reason: CancelReason, comment: string) => {
+            cancelMutation.mutate(
+              { id: detail.id, reason, comment },
+              { onSuccess: () => setCancelOpen(false) },
+            );
+          }}
+        />
+      ) : null}
 
       <MaintenanceQuickSheet
         maintenanceId={conflictPeekId}

@@ -23,11 +23,21 @@ snapshots in `maintmode-docs/design-snapshots/` (see `RUK-121`).
 npm install
 npm run dev            # http://localhost:3000
 npm run lint
+npm run typecheck      # tsc --noEmit; covers test files, which the build does not
 npm run test:contracts # static import-boundary check
 npm run test           # unit + component tests
 npm run build
-npm run verify         # lint + contracts + tests + build
+npm run test:bundle    # heavy deps must not be eagerly reachable (needs a build)
+npm run verify         # all of the above, in that order
 ```
+
+`node scripts/measure-bundle.mjs` prints per-route eager JS and CSS from the
+last build — the before/after instrument for any change that moves bundle
+weight. `npm run test:bundle` is the CI guardrail built on the same manifests:
+it fails when a heavy dependency (FullCalendar, luxon, cmdk, react-day-picker)
+becomes reachable through a route's _synchronous_ import graph. It is
+one-directional by design and cannot see a dependency that is wrongly
+deferred, so its allowlist marks permanent exceptions explicitly.
 
 `MAINTMODE_DISABLE_AUTH_GUARD=1 npm run dev` skips the auth proxy gate
 (`src/proxy.ts`) locally — useful while the OAuth flow is being wired

@@ -5,7 +5,7 @@ import { ChevronRight, History } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
-import { useCalendarQuery } from "@/features/calendar/queries/use-calendar-query";
+import type { RelatedMaintenanceFeed } from "@/features/calendar/queries/use-related-maintenance-query";
 import { Stack } from "@/shared/ui/domain/stack";
 import { StatusBadge } from "@/shared/ui/domain/status-badge";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
@@ -21,28 +21,13 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
  * `useCalendarQuery`).
  *
  * Source intent: maintmode-docs/design-snapshots/channel-detail (Section 2).
- */
-
-/**
- * Window for the related feed. The calendar endpoint requires `from`/`to` AND
- * caps the interval at 90 days. The cap is checked AFTER the backend expands
- * `to` to end-of-day, so a span of exactly 90 calendar dates is ~90d+24h and
- * gets rejected (`invalid period interval: should be less or equal than 90
- * days`) — empirically the largest accepted `to − from` is **89 dates**. We
- * stay safely under it (59 + 30 = 89) and bias toward the recent past + near
- * future to surface just-finished and soon-upcoming maintenance — the two
- * cohorts the Active / Past tabs care about.
  *
- * NOTE: this is a bounded view, not "all maintenance ever for this channel".
- * A wider history would need either a paginated channel-maintenances endpoint
- * or multiple stitched ≤89-day calendar calls.
+ * Presentational: the window and the query live in `useRelatedMaintenanceQuery`,
+ * called by NotifyChannelDetailPage above its early returns, and arrive here as
+ * `feed`. Owning the hook here is what created the request waterfall — the page
+ * renders this section below a pending-skeleton return, so the fetch could not
+ * start until the detail query resolved. Do not reintroduce a query here.
  */
-const PAST_WINDOW_DAYS = 59;
-const FUTURE_WINDOW_DAYS = 30;
-
-function toIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
 
 /** Active = not-yet-finished (draft / planned / in_progress). Past = terminal. */
 const ACTIVE_STATUSES: ReadonlySet<MaintenanceStatus> = new Set(["draft", "planned", "in_progress"]);
@@ -51,20 +36,10 @@ function isActive(m: Maintenance): boolean {
   return ACTIVE_STATUSES.has(m.status);
 }
 
-export function NotifyChannelRelatedMaintenance({ channelId }: { channelId: string }) {
+export function NotifyChannelRelatedMaintenance({ feed }: { feed: RelatedMaintenanceFeed }) {
+  const { from, to, query } = feed;
   const [tab, setTab] = useState<"active" | "past">("active");
   const { zone } = useTimezone();
-
-  const { from, to } = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now);
-    start.setDate(start.getDate() - PAST_WINDOW_DAYS);
-    const end = new Date(now);
-    end.setDate(end.getDate() + FUTURE_WINDOW_DAYS);
-    return { from: toIsoDate(start), to: toIsoDate(end) };
-  }, []);
-
-  const query = useCalendarQuery({ from, to, channelIds: [channelId] });
 
   const { active, past, total } = useMemo(() => {
     const items = query.data ?? [];

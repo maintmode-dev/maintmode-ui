@@ -35,14 +35,23 @@ export function globalAuditKey(params: AuditQueryParams) {
   return ["global-audit", params] as const;
 }
 
+/**
+ * Per-maintenance audit envelope. `reference`/`title` head the audit page; the
+ * BFF derives both from the same events, so the page needs no second request
+ * for the maintenance detail (see the route's note).
+ */
+export interface MaintenanceAuditPage {
+  events: AuditEvent[];
+  reference?: string;
+  title?: string;
+}
+
 export function useMaintenanceAuditQuery(id: string) {
   return useQuery({
     queryKey: maintenanceAuditKey(id),
-    queryFn: async (): Promise<AuditEvent[]> => {
-      const data = await bffFetch<{ events: AuditEvent[] }>(
-        `/api/maintenance/${encodeURIComponent(id)}/audit`,
-      );
-      return data.events;
+    queryFn: async (): Promise<MaintenanceAuditPage> => {
+      const data = await bffFetch<MaintenanceAuditPage>(`/api/maintenance/${encodeURIComponent(id)}/audit`);
+      return { events: data.events ?? [], reference: data.reference, title: data.title };
     },
   });
 }

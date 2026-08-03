@@ -2,14 +2,11 @@
 
 import { CalendarDays, ChevronRight, ScrollText, Search, X } from "lucide-react";
 import { useState } from "react";
-
-import type { DateRange as RDPDateRange } from "react-day-picker";
+import dynamic from "next/dynamic";
 
 import { Input } from "@/shared/ui/shadcn/input";
 import { Button } from "@/shared/ui/shadcn/button";
-import { Calendar } from "@/shared/ui/shadcn/calendar";
-import { Label } from "@/shared/ui/shadcn/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/shadcn/popover";
+import { Popover, PopoverTrigger } from "@/shared/ui/shadcn/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/shared/ui/shadcn/select";
 import { Chip } from "@/shared/ui/domain/chip";
 import { Stack } from "@/shared/ui/domain/stack";
@@ -26,9 +23,36 @@ import {
   auditActionLabel,
 } from "@/domain/audit/audit-presentation";
 
+// Type-only: erased at compile time, so it does not put the picker's chunk back
+// on this page's eager graph.
+import type { AuditDateRange } from "./audit-custom-range-picker";
+
 import { AuditExpandedDetail } from "./audit-expanded-detail";
 
 import { useGlobalAuditQuery } from "./queries/use-audit-queries";
+
+/**
+ * Loaded on demand: the popover body pulls in `react-day-picker` + `date-fns`,
+ * 18.9 KB gzip against this page's own 125.7 KB, downloaded and parsed by every
+ * visitor. The page defaults to the preset chips with no custom range, so the
+ * median visit never opens the calendar at all.
+ *
+ * Only the *content* is dynamic — the trigger button below stays static. This
+ * is the one split in this page whose `ssr: false` would otherwise change the
+ * prerendered HTML: nothing gates the filter bar on a query state, so the
+ * trigger is in the server markup today and dropping it would reflow the preset
+ * chips beside it. Splitting at `PopoverContent` keeps the row byte-identical.
+ *
+ * Radix content lives in a portal and reads the popover's state through React
+ * context, so the boundary between trigger and content costs nothing. `ssr:
+ * false` is likewise free here: closed content is unmounted by Radix, so it is
+ * absent from the prerendered HTML either way. The chunk fetch moves into the
+ * click, which the hover/focus prefetch on the trigger covers.
+ */
+const AuditCustomRangePicker = dynamic(
+  () => import("./audit-custom-range-picker").then((m) => m.AuditCustomRangePicker),
+  { ssr: false },
+);
 
 // Date-range presets (frozen contract: default 7d). `hours` is turned into a
 // `created_from` RFC3339 bound for the server query; `null` = All time.
@@ -44,10 +68,7 @@ const PAGE_SIZES = [25, 50, 100];
 const DEFAULT_PAGE_SIZE = 50;
 
 /** Inclusive custom date window, `yyyy-mm-dd` strings from `<input type=date>`. */
-interface DateRange {
-  from: string;
-  to: string;
-}
+type DateRange = AuditDateRange;
 
 /**
  * Resolve the active date window to RFC3339 `{ from, to }` for the server.
@@ -420,25 +441,12 @@ function InitialAvatar({ label }: { label: string }) {
 }
 
 /**
- * `Custom range ▾` — a Popover with two native date inputs (from / to). Apply
- * is enabled only for a valid, non-inverted range. Local draft state is seeded
- * from the active range each time the popover opens.
+ * `Custom range ▾` — the trigger for the date-range popover. The trigger stays
+ * here, statically imported: it is part of the filter row's first paint, and
+ * making it lazy would reflow the preset chips beside it. Everything behind the
+ * click — the calendar, the From/To inputs, Apply — lives in
+ * `./audit-custom-range-picker` and arrives with its chunk.
  */
-// `yyyy-mm-dd` <-> local Date helpers. We parse at local midnight so the
-// calendar day a user clicks matches the `yyyy-mm-dd` string (no UTC drift).
-function ymdToDate(ymd: string): Date | undefined {
-  if (!ymd) return undefined;
-  const [y, m, d] = ymd.split("-").map(Number);
-  if (!y || !m || !d) return undefined;
-  return new Date(y, m - 1, d);
-}
-function dateToYmd(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function CustomRangePicker({
   value,
   onApply,
@@ -447,101 +455,44 @@ function CustomRangePicker({
   onApply: (range: DateRange) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [from, setFrom] = useState(value?.from ?? "");
-  const [to, setTo] = useState(value?.to ?? "");
 
-  const onOpenChange = (next: boolean) => {
-    if (next) {
-      // Seed the draft from the active range whenever the popover opens.
-      setFrom(value?.from ?? "");
-      setTo(value?.to ?? "");
-    }
-    setOpen(next);
+  /**
+   * Warm the chunk when the pointer or focus reaches the trigger, so the click
+   * has nothing left to wait for. Anyone travelling to "Custom range" has
+   * committed; cheap to be wrong, since an unused prefetch is one cached script.
+   */
+  const prefetch = () => {
+    void import("./audit-custom-range-picker");
   };
-
-  // Calendar <-> input sync. The calendar drives both fields; typing in a field
-  // re-seeds the calendar via the derived `selected` range below.
-  const selected: RDPDateRange | undefined = from
-    ? { from: ymdToDate(from), to: ymdToDate(to) || undefined }
-    : undefined;
-
-  const onSelectRange = (range: RDPDateRange | undefined) => {
-    setFrom(range?.from ? dateToYmd(range.from) : "");
-    setTo(range?.to ? dateToYmd(range.to) : range?.from ? dateToYmd(range.from) : "");
-  };
-
-  const valid = from !== "" && to !== "" && from <= to;
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
           size="xs"
           variant="outline"
           className="whitespace-nowrap px-2.5"
           aria-label="Set a custom date range"
+          onMouseEnter={prefetch}
+          onFocus={prefetch}
         >
           <CalendarDays className="size-3" aria-hidden="true" />
           Custom range
           <ChevronRight className="size-3 rotate-90" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      {/* Grafana-style: range calendar on the left, From/To + Apply on the right. */}
-      <PopoverContent align="start" className="flex w-auto gap-0 p-0">
-        <div className="border-r border-border-subtle">
-          <Calendar
-            mode="range"
-            selected={selected}
-            onSelect={onSelectRange}
-            defaultMonth={ymdToDate(from)}
-            numberOfMonths={1}
-          />
-        </div>
-        <div className="flex w-[220px] flex-col gap-3 p-4">
-          <p className="text-sm font-medium text-fg-strong">Absolute time range</p>
-          <div className="space-y-1.5">
-            <Label htmlFor="audit-range-from" className="text-xs text-fg-muted">
-              From
-            </Label>
-            <Input
-              id="audit-range-from"
-              type="date"
-              value={from}
-              max={to || undefined}
-              onChange={(e) => setFrom(e.target.value)}
-              className="text-xs"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="audit-range-to" className="text-xs text-fg-muted">
-              To
-            </Label>
-            <Input
-              id="audit-range-to"
-              type="date"
-              value={to}
-              min={from || undefined}
-              onChange={(e) => setTo(e.target.value)}
-              className="text-xs"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-1">
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              disabled={!valid}
-              onClick={() => {
-                onApply({ from, to });
-                setOpen(false);
-              }}
-            >
-              Apply time range
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
+      {/* Radix unmounts closed content, so the body's mount *is* the open state:
+          its draft seeds from `value` on every open, with no reset effect. */}
+      {open ? (
+        <AuditCustomRangePicker
+          value={value}
+          onApply={(range) => {
+            onApply(range);
+            setOpen(false);
+          }}
+          onCancel={() => setOpen(false)}
+        />
+      ) : null}
     </Popover>
   );
 }

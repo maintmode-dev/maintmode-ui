@@ -33,6 +33,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
+      # Type-checks test files too, which `next build` does not: it only covers
+      # what the app graph reaches, and vitest transpiles without checking.
+      # Placed here so a type error fails before the slower steps.
+      - run: npm run typecheck
       # `npm run format` (prettier --check) is intentionally NOT a gate yet —
       # the tree has pre-existing style drift. Re-add once it's clean.
       - run: npm run test:contracts
@@ -46,6 +50,10 @@ jobs:
           MAINTMODE_APP_BASE_URL: http://localhost:3000
           MAINTMODE_GOOGLE_OAUTH_CLIENT_ID: build-time-placeholder
           MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: build-time-placeholder
+      # Must follow `build`: it reads the RSC manifests out of `.next/`. Fails
+      # when a heavy dependency (FullCalendar, luxon, cmdk, react-day-picker)
+      # becomes reachable through a route's synchronous import graph.
+      - run: npm run test:bundle
 
   image:
     name: Build image (ui)

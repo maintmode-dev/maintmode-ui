@@ -35,9 +35,10 @@ vi.mock("../queries/use-maintenance-actions", () => ({
 vi.mock("../queries/use-step-actions", () => ({
   useStepAction: () => ({ mutate: vi.fn(), isPending: false }),
 }));
-// The cancel dialog and the conflict quick-sheet stay mounted on the page even
-// while closed, and each pulls its own query — stub them so the render needs no
-// QueryClient.
+// The conflict quick-sheet stays mounted on the page even while closed and
+// pulls its own query — stub it so the render needs no QueryClient. The cancel
+// dialog no longer mounts while closed (it is `dynamic()` behind a `cancelOpen`
+// gate), but its query stub is kept so these tests stay independent of that.
 vi.mock("../queries/use-cancel-reasons-query", () => ({
   useCancelReasonsQuery: () => ({ data: [], isPending: false }),
 }));

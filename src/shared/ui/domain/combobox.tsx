@@ -20,8 +20,14 @@ export interface ComboboxOption {
   label: ReactNode;
   /** Optional searchable text (defaults to stringified label). */
   searchValue?: string;
-  /** Optional secondary line shown under label. */
-  description?: ReactNode;
+  /**
+   * Optional secondary line shown under label. Pass a thunk to defer the work
+   * to the moment the row actually renders — the popover's content is not
+   * mounted while it is closed, so an expensive description costs nothing
+   * until the user opens it. Note the thunk is *not* part of the search path
+   * (see `value` below), so cmdk's filter never forces it to evaluate.
+   */
+  description?: ReactNode | (() => ReactNode);
 }
 
 export interface ComboboxProps {
@@ -35,6 +41,17 @@ export interface ComboboxProps {
   className?: string;
   /** Aria-label for the trigger when no value is selected. */
   ariaLabel?: string;
+}
+
+/**
+ * Renders an option's secondary line, resolving the thunk form lazily. This
+ * runs only when the row itself renders, which is what lets a caller keep an
+ * expensive per-option computation out of its own render pass.
+ */
+function ComboboxDescription({ description }: { description: ComboboxOption["description"] }) {
+  const resolved = typeof description === "function" ? description() : description;
+  if (!resolved) return null;
+  return <span className="text-xs text-fg-muted truncate">{resolved}</span>;
 }
 
 /**
@@ -90,9 +107,7 @@ export function Combobox({
                 >
                   <div className="flex flex-col min-w-0 flex-1">
                     <span className="truncate">{option.label}</span>
-                    {option.description ? (
-                      <span className="text-xs text-fg-muted truncate">{option.description}</span>
-                    ) : null}
+                    <ComboboxDescription description={option.description} />
                   </div>
                   <Check
                     className={cn(

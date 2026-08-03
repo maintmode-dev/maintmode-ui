@@ -24,6 +24,8 @@ import {
 import { formatUtc } from "@/shared/ui/lib/format";
 import { isResourceArchived, type Resource, type ResourceActor } from "@/domain/resource/resource";
 
+import { useRelatedMaintenanceQuery } from "@/features/calendar/queries/use-related-maintenance-query";
+
 import { useArchiveResource, useResourceDetailQuery, useUpdateResource } from "./queries/use-resources-query";
 import { ResourceField } from "./resource-field";
 import { ResourceRelatedMaintenance } from "./resource-related-maintenance";
@@ -35,6 +37,14 @@ export function ResourceDetailPage({ id }: { id: string }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const archiveResource = useArchiveResource();
+
+  // Related maintenance is fetched HERE, above the early returns, and handed to
+  // the section as a prop. It only needs `id` — already in props — and hits an
+  // unrelated endpoint, so gating it on the detail query (as it was when the
+  // hook lived inside the section, rendered below the skeleton return and
+  // behind `mode === "view"`) serialized two independent double hops. Both
+  // requests now start on the same render. Do not move this below a `return`.
+  const related = useRelatedMaintenanceQuery({ resourceId: id });
 
   if (query.isPending) {
     return (
@@ -139,7 +149,7 @@ export function ResourceDetailPage({ id }: { id: string }) {
 
       {/* Section 2 — Related maintenance. View-mode only; edit-mode replaces the
           identity grid with the form, so the related list is hidden there. */}
-      {mode === "view" ? <ResourceRelatedMaintenance resourceId={resource.id} /> : null}
+      {mode === "view" ? <ResourceRelatedMaintenance feed={related} /> : null}
 
       {/* View-mode footer only. Edit-mode is entered via the header View/Edit
           tablist (not a footer button), so the footer carries just the

@@ -4,17 +4,21 @@ import Link from "next/link";
 import { AlertTriangle, Mail, RefreshCw } from "lucide-react";
 
 import { Button } from "@/shared/ui/shadcn/button";
-import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { Stack } from "@/shared/ui/domain/stack";
 
-import {
-  type InviteStatus,
-  type SuggestedProvider,
-  useInvitationPreview,
-} from "./queries/use-invitation-preview";
+import type { InviteStatus, SuggestedProvider } from "./invitation-preview-types";
 
 export interface AcceptInvitePageProps {
   token?: string;
+  /**
+   * Invitation preview resolved on the server by
+   * `src/server/backend/invitations/resolve-invitation-preview.ts` and passed
+   * down as a prop. Resolving server-side removes a client round-trip and the
+   * loading skeleton, and it is what keeps this public route free of any
+   * React Query dependency — the page must render without a
+   * `QueryClientProvider` (see `accept-invite-no-query-provider.test.tsx`).
+   */
+  preview: InvitationPreviewResult;
   /**
    * Server action that stashes the invitation token and starts the OAuth
    * sign-in via NextAuth `signIn` (so CSRF is attached). Bound with the token
@@ -23,40 +27,42 @@ export interface AcceptInvitePageProps {
   acceptAction: (token: string) => Promise<void>;
 }
 
+export interface InvitationPreviewResult {
+  status: InviteStatus | "unknown_error";
+  suggested_provider?: SuggestedProvider | string;
+}
+
 /**
  * Frozen tone: NEVER surface email or roles in error states. Preview exposes
  * only `status` and (when valid) `suggested_provider`; everything else is a
  * single recovery-first explanation.
  */
-export function AcceptInvitePage({ token, acceptAction }: AcceptInvitePageProps) {
-  const query = useInvitationPreview(token);
-
-  // A missing token can never resolve to a valid invite — render the `missing`
-  // error stack directly rather than a blank card (the query may not even run
-  // without a token).
-  const noToken = !token || token.trim() === "";
-
+export function AcceptInvitePage({ token, preview, acceptAction }: AcceptInvitePageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
-        {noToken ? (
-          <InvalidInvite status="missing" />
-        ) : query.isPending ? (
-          <Skeleton type="block" />
-        ) : query.isError ? (
-          <InvalidInvite status="unknown_error" onRetry={() => query.refetch()} />
-        ) : query.data.status === "valid" ? (
+        {preview.status === "valid" ? (
           <ValidInvite
             token={token}
-            suggestedProvider={query.data.suggested_provider}
+            suggestedProvider={asSuggestedProvider(preview.suggested_provider)}
             acceptAction={acceptAction}
           />
         ) : (
-          <InvalidInvite status={query.data.status} />
+          <InvalidInvite status={preview.status} token={token} />
         )}
       </div>
     </main>
   );
+}
+
+/**
+ * The server projection types `suggested_provider` as a bare string (it only
+ * guarantees the field is a string, never that it is a provider we wire).
+ * Narrow it here; anything unrecognized falls through to `undefined`, which
+ * `ValidInvite` treats as the Google default.
+ */
+function asSuggestedProvider(value: string | undefined): SuggestedProvider | undefined {
+  return value === "google" || value === "github" ? value : undefined;
 }
 
 function ValidInvite({
@@ -107,10 +113,11 @@ function ValidInvite({
 
 function InvalidInvite({
   status,
-  onRetry,
+  token,
 }: {
   status: Exclude<InviteStatus, "valid"> | "unknown_error";
-  onRetry?: () => void;
+  /** Present only so the retry link can re-request the same invite. */
+  token?: string;
 }) {
   const copy: Record<typeof status, { title: string; body: string }> = {
     invalid: {
@@ -143,6 +150,10 @@ function InvalidInvite({
   // Centered icon-stack (mirrors empty-states). `unknown_error` is the only
   // retryable state — it offers Try again; every other terminal/error state
   // offers the single recovery route off this public page: Go to login.
+  //
+  // The preview now resolves on the server, so retrying means re-requesting the
+  // page (which re-runs the resolve) rather than refetching a client query. The
+  // token is carried through so the retry targets the same invite.
   return (
     <Stack
       className="py-4"
@@ -150,9 +161,11 @@ function InvalidInvite({
       title={c.title}
       caption={c.body}
       cta={
-        status === "unknown_error" && onRetry ? (
-          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
-            <RefreshCw className="size-3.5" aria-hidden="true" /> Try again
+        status === "unknown_error" && token ? (
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/accept-invite?token=${encodeURIComponent(token)}`} prefetch={false}>
+              <RefreshCw className="size-3.5" aria-hidden="true" /> Try again
+            </Link>
           </Button>
         ) : (
           <Button asChild variant="outline" size="sm">

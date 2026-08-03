@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Filter, MessageCircle, Plus, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -21,8 +22,26 @@ import { formatUtc } from "@/shared/ui/lib/format";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 
 import { useNotifyChannelsQuery } from "./queries/use-notify-channels-query";
-import { NotifyChannelCreateDialog } from "./notify-channel-create-dialog";
 import { transportStatusCopy } from "./transports";
+
+/**
+ * Loaded on demand: the dialog is behind a click *and* behind `canCreate`, but
+ * statically imported it shipped in the page's first-load payload — 10.7 KB
+ * gzip of cmdk plus Radix Popover and Dialog, downloaded and parsed by every
+ * viewer including read-only ones who can never open it.
+ *
+ * `ssr: false` costs nothing: `createOpen` starts false, so Radix renders
+ * nothing, and `canCreate` derives from `/me` — undefined on the server — so
+ * the dialog is absent from the prerendered HTML either way.
+ *
+ * The runtime `canCreate` gate below is a separate concern: it is not a
+ * bundler boundary and splits nothing on its own, but it keeps a read-only
+ * viewer from mounting the dialog's Radix tree and query hooks at all.
+ */
+const NotifyChannelCreateDialog = dynamic(
+  () => import("./notify-channel-create-dialog").then((m) => m.NotifyChannelCreateDialog),
+  { ssr: false },
+);
 
 /**
  * Channels catalog (`/channels`) — verbatim sibling of the resources list, with
@@ -38,9 +57,19 @@ export function NotifyChannelsListPage() {
 
   // Gate the create affordances on write-capable roles. Fail-closed: while
   // `/me` is pending or errored, `data` is undefined → `canWrite` false → the
-  // CTAs stay hidden, so no guest ever sees a create action they can't use.
+  // CTAs stay hidden and the dialog below stays unmounted, so no guest ever
+  // sees a create action they can't use.
   const me = useMeQuery().data;
   const canCreate = canWrite(me?.roles);
+
+  /**
+   * Warm the dialog's chunk on hover so the click has nothing left to wait for.
+   * Pointer travel to the button is usually long enough to cover the fetch, and
+   * being wrong is cheap: an unused prefetch is one cached asset.
+   */
+  const prefetchCreateDialog = () => {
+    void import("./notify-channel-create-dialog");
+  };
 
   const channelsQuery = useNotifyChannelsQuery({ archived: showArchived });
   const channelsData = channelsQuery.data;
@@ -72,7 +101,11 @@ export function NotifyChannelsListPage() {
           ) : null}
         </div>
         {canCreate ? (
-          <Button onClick={() => setCreateOpen(true)}>
+          <Button
+            onClick={() => setCreateOpen(true)}
+            onMouseEnter={prefetchCreateDialog}
+            onFocus={prefetchCreateDialog}
+          >
             <Plus className="size-3.5" aria-hidden="true" /> New channel
           </Button>
         ) : null}
@@ -146,7 +179,12 @@ export function NotifyChannelsListPage() {
             }
             cta={
               canCreate ? (
-                <Button onClick={() => setCreateOpen(true)} size="sm">
+                <Button
+                  onClick={() => setCreateOpen(true)}
+                  onMouseEnter={prefetchCreateDialog}
+                  onFocus={prefetchCreateDialog}
+                  size="sm"
+                >
                   <Plus className="size-3" aria-hidden="true" /> New channel
                 </Button>
               ) : undefined
@@ -237,7 +275,7 @@ export function NotifyChannelsListPage() {
         </div>
       )}
 
-      <NotifyChannelCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {canCreate ? <NotifyChannelCreateDialog open={createOpen} onOpenChange={setCreateOpen} /> : null}
     </div>
   );
 }

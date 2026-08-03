@@ -4,7 +4,7 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { assignableUsersKey } from "../use-assignable-users-query";
+import { assignableUsersKey, useAssignableUsersQuery } from "../use-assignable-users-query";
 import { mentionableUsersKey, useMentionableUsersQuery } from "../use-mentionable-users-query";
 
 const bffFetchMock = vi.fn();
@@ -109,6 +109,114 @@ describe("useMentionableUsersQuery", () => {
     const query = new URLSearchParams(path.split("?")[1]);
     expect(query.get("limit")).toBe("200");
     expect(query.getAll("roles")).toEqual([]);
+  });
+
+  /**
+   * PERF (perf-remediation §8.3, item 1). Edit mode mounts the mentions picker
+   * and the approver picker side by side; both are backed by
+   * `/api/users/assignable`. It used to cost two requests to that one endpoint.
+   * The approver list is now derived from the mentions fetch via `select`.
+   *
+   * This asserts on `bffFetch` call paths, which is where a regression would
+   * show up: re-adding a `queryFn` of its own to the approver hook would put a
+   * second `/api/users/assignable` call in this list, and re-adding a `roles`
+   * query param would make the surviving call the filtered one.
+   */
+  describe("approver/mentions request dedup", () => {
+    const assignableCalls = () =>
+      bffFetchMock.mock.calls.filter((call) => String(call[0]).includes("/api/users/assignable"));
+
+    const RESPONSE = {
+      users: [
+        { id: "u-admin", display_name: "Admin", email: "a@x", roles: ["admin"], has_messenger_tag: true },
+        { id: "u-rev", display_name: "Rev", email: "r@x", roles: ["reviewer"], has_messenger_tag: true },
+        { id: "u-guest", display_name: "Guest", email: "g@x", roles: ["guest"], has_messenger_tag: false },
+        { id: "u-ed", display_name: "Ed", email: "e@x", roles: ["editor"], has_messenger_tag: false },
+      ],
+    };
+
+    it("mounts both pickers with exactly one request to the endpoint", async () => {
+      bffFetchMock.mockResolvedValue(RESPONSE);
+      // Both hooks in ONE component, mirroring `maintenance-edit-mode.tsx`.
+      const { result } = renderHook(
+        () => ({ approvers: useAssignableUsersQuery(), mentions: useMentionableUsersQuery() }),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.approvers.isSuccess).toBe(true));
+      await waitFor(() => expect(result.current.mentions.isSuccess).toBe(true));
+
+      expect(assignableCalls()).toHaveLength(1);
+      // The surviving request must be the UNFILTERED one — if it carried
+      // `roles`, the mentions picker would silently lose its guests.
+      const query = new URLSearchParams(String(assignableCalls()[0]?.[0]).split("?")[1]);
+      expect(query.getAll("roles")).toEqual([]);
+      expect(query.get("limit")).toBe("200");
+    });
+
+    it("still derives the right two lists from that one response", async () => {
+      bffFetchMock.mockResolvedValue(RESPONSE);
+      const { result } = renderHook(
+        () => ({ approvers: useAssignableUsersQuery(), mentions: useMentionableUsersQuery() }),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.approvers.isSuccess).toBe(true));
+      await waitFor(() => expect(result.current.mentions.isSuccess).toBe(true));
+
+      // Approvers: reviewer + admin only. Guest and editor must NOT be offered.
+      expect(result.current.approvers.data?.map((u) => u.id)).toEqual(["u-admin", "u-rev"]);
+      // Mentions: everyone, guests included (AC-02).
+      expect(result.current.mentions.data?.map((u) => u.id)).toEqual(["u-admin", "u-rev", "u-guest", "u-ed"]);
+    });
+
+    /**
+     * The dedup must not leak the narrowed list back into the shared cache
+     * entry: `select` transforms per observer, on read. If the approver filter
+     * were ever written back, the mentions picker mounting SECOND would find a
+     * guest-less cache entry and render an incomplete list.
+     */
+    it("does not write the approver filter back into the shared cache entry", async () => {
+      bffFetchMock.mockResolvedValue(RESPONSE);
+      const first = renderHook(() => useAssignableUsersQuery(), { wrapper });
+      await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
+      expect(first.result.current.data?.map((u) => u.id)).toEqual(["u-admin", "u-rev"]);
+
+      // Same client, mentions mounts afterwards onto the already-populated entry.
+      const second = renderHook(() => useMentionableUsersQuery(), { wrapper });
+      await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
+
+      expect(second.result.current.data?.map((u) => u.id)).toEqual(["u-admin", "u-rev", "u-guest", "u-ed"]);
+      // Raw cache entry is the unfiltered list, matching what its key claims.
+      expect(
+        queryClient.getQueryData<typeof RESPONSE.users>(mentionableUsersKey(""))?.map((u) => u.id),
+      ).toEqual(["u-admin", "u-rev", "u-guest", "u-ed"]);
+      expect(assignableCalls()).toHaveLength(1);
+    });
+
+    /**
+     * The dedup is scoped to the default shape. A `search` or a custom `roles`
+     * argument is a different question and keeps its own request + own key, so
+     * the collision guard above still has something to guard.
+     */
+    it("keeps a separate request and key for a parameterized call", async () => {
+      bffFetchMock.mockResolvedValue(RESPONSE);
+      const { result } = renderHook(
+        () => ({
+          plain: useAssignableUsersQuery(),
+          searched: useAssignableUsersQuery({ search: "ali" }),
+        }),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.plain.isSuccess).toBe(true));
+      await waitFor(() => expect(result.current.searched.isSuccess).toBe(true));
+
+      expect(assignableCalls()).toHaveLength(2);
+      const searched = assignableCalls().find((call) => String(call[0]).includes("search=ali"));
+      expect(searched).toBeDefined();
+      expect(new URLSearchParams(String(searched?.[0]).split("?")[1]).getAll("roles")).toEqual([
+        "reviewer",
+        "admin",
+      ]);
+    });
   });
 
   // No client-side re-filter: whatever the backend returns reaches the picker.

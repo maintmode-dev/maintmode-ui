@@ -8,6 +8,7 @@ import type {
   CreateInvitationRequest,
   CreateInvitationResponse,
   Invitation,
+  InvitationStatus,
   ListUsersPage,
   User,
 } from "@/domain/admin/user";
@@ -30,8 +31,8 @@ export function usersKey(params?: UsersQueryParams) {
 export function rolesKey() {
   return ["roles"] as const;
 }
-export function invitationsKey() {
-  return ["invitations"] as const;
+export function invitationsKey(status?: InvitationStatus) {
+  return status ? (["invitations", status] as const) : (["invitations"] as const);
 }
 export function seatsKey() {
   return ["seats"] as const;
@@ -85,14 +86,32 @@ export function useRolesQuery() {
  * Admin invitations list. Wired to the auth BFF: the route proxies
  * `GET /api/v1/users/invitations` and returns the backend-shaped
  * `{ invitations: Invitation[] }` directly.
+ *
+ * `status` maps to the route's `?status=` filter (validated server-side against
+ * `pending|expired|accepted|revoked`), and it also partitions the cache key, so
+ * a filtered read never overwrites the unfiltered list or vice versa.
+ *
+ * `enabled` exists because the full, unfiltered list is only rendered on the
+ * Invitations tab; the header needs a count, not the rows. A disabled query
+ * still returns `isPending: true`, so callers must not treat pending as
+ * "loading" without also checking that the query is on.
+ *
+ * **Invalidation note:** the mutations below invalidate `invitationsKey()` —
+ * `["invitations"]` — which TanStack matches as a PREFIX, so every filtered
+ * variant (`["invitations","pending"]`) is invalidated too. That is load-bearing:
+ * the header's pending count must move when an invite is sent or revoked, and it
+ * is the reason those call sites were left keyless rather than enumerated.
  */
-export function useInvitationsQuery() {
+export function useInvitationsQuery(options: { status?: InvitationStatus; enabled?: boolean } = {}) {
+  const { status, enabled } = options;
   return useQuery({
-    queryKey: invitationsKey(),
+    queryKey: invitationsKey(status),
     queryFn: async (): Promise<Invitation[]> => {
-      const data = await bffFetch<{ invitations: Invitation[] }>("/api/admin/invitations");
+      const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+      const data = await bffFetch<{ invitations: Invitation[] }>(`/api/admin/invitations${qs}`);
       return data.invitations ?? [];
     },
+    enabled,
   });
 }
 

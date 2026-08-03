@@ -13,13 +13,12 @@ import { auditActionDotToken, auditActionLabel } from "@/domain/audit/audit-pres
 
 import { AuditExpandedDetail } from "./audit-expanded-detail";
 import { useMaintenanceAuditQuery } from "./queries/use-audit-queries";
-import { useMaintenanceDetailQuery } from "@/features/maintenance/queries/use-maintenance-detail-query";
 
 export function MaintenanceAuditPage({ id }: { id: string }) {
-  const detailQuery = useMaintenanceDetailQuery(id);
-  const detail = detailQuery.data;
+  // Single request: the audit envelope carries the heading strings alongside the
+  // feed, so this page never fetches the (much larger) maintenance detail.
   const auditQuery = useMaintenanceAuditQuery(id);
-  const events = useMemo(() => auditQuery.data ?? [], [auditQuery.data]);
+  const events = useMemo(() => auditQuery.data?.events ?? [], [auditQuery.data]);
   const status: "loading" | "error" | "empty" | "ready" = auditQuery.isPending
     ? "loading"
     : auditQuery.isError
@@ -32,7 +31,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
 
   // The mono maintenance id (MNT-xxxx) names the back-link and heads the page;
   // fall back to the raw id when the backend hasn't assigned a reference yet.
-  const reference = detail?.reference;
+  const reference = auditQuery.data?.reference;
   const backLabel = reference ? `Back to ${reference}` : "Back to maintenance";
   // `Last activity` reads from the newest event (the feed is newest-first).
   const lastActivity = events.length > 0 ? events[0].created_at : null;
@@ -54,7 +53,7 @@ export function MaintenanceAuditPage({ id }: { id: string }) {
               ·
             </span>
           ) : null}
-          <h1 className="h1">{detail?.title ?? id}</h1>
+          <h1 className="h1">{auditQuery.data?.title ?? id}</h1>
         </div>
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim">

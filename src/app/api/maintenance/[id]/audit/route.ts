@@ -29,12 +29,27 @@ const MAX_AUTH_LOG_LIMIT = 100;
  * actor, created_at range). A maintenance with audit rows older than the newest
  * 100 global entries can still be under-reported; that's a backend-contract
  * limitation, not something the BFF can paper over.
+ *
+ * The envelope also carries `{ reference, title }` so the audit page can head
+ * itself without a second round-trip for `GET /api/maintenance/{id}`. Both are
+ * derived from the events we already hold — no extra backend call:
+ *  - title     : `metadata.maint_title`, the title snapshot the auth service
+ *                writes on every `maintenance.*` / `maintenance_step.*` row.
+ *                Read newest-first so a renamed maintenance heads with its
+ *                current name rather than the one it was created under.
+ *  - reference : always `undefined` today. The audit rows carry no MNT-id, and
+ *                neither does the maintenance read view (`mapMaintenanceView`
+ *                never sets `reference`), so the detail fetch this replaced
+ *                could not populate it either — the page's existing
+ *                no-reference fallback was the only live behaviour. It stays in
+ *                the envelope as the single place to fill in once the backend
+ *                emits one.
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     if (!id) {
-      return NextResponse.json({ events: [] });
+      return NextResponse.json({ events: [], reference: undefined, title: undefined });
     }
 
     const incoming = new URL(request.url).searchParams;
@@ -54,7 +69,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const events = mapAuditLogResponse(dto).events.filter((event) => event.entity_id === id);
 
-    return NextResponse.json({ events });
+    // Newest-first feed, so the first row carrying a snapshot holds the most
+    // recent title. `undefined` when no row does (the page falls back to the id).
+    const title = events.find((event) => event.metadata?.maint_title)?.metadata?.maint_title;
+
+    return NextResponse.json({ events, reference: undefined, title });
   } catch (error) {
     return routeErrorResponse(error);
   }

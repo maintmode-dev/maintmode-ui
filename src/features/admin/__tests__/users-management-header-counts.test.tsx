@@ -109,7 +109,14 @@ function renderPage(opts: {
     }
     if (path.startsWith("/api/admin/invitations")) {
       state.invitationsResolved = true;
-      return { invitations: opts.invitations };
+      // Honour `?status=` the way the BFF route does (it validates the value
+      // and forwards it to the backend, which returns only matching rows). A
+      // mock that ignored the filter would hand the header's pending-count
+      // query the FULL set, so a regression that dropped the filter — the exact
+      // thing this file guards — would still read the right number here.
+      const status = new URL(path, "http://t").searchParams.get("status");
+      const invitations = status ? opts.invitations.filter((i) => i.status === status) : opts.invitations;
+      return { invitations };
     }
     if (path.startsWith("/api/admin/users")) {
       // The active-count probe carries `active=true`; everything else is the
@@ -179,7 +186,7 @@ describe("UsersManagementPage header counts", () => {
     // loaded". Wait for the invitation fetch to resolve, then let React flush,
     // so the badge reflects the loaded set — where the bug would show 1.
     await waitFor(() => expect(state.invitationsResolved).toBe(true));
-    await waitFor(() => expect(bffFetchMock).toHaveBeenCalledWith("/api/admin/invitations"));
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalledWith("/api/admin/invitations?status=pending"));
     await Promise.resolve();
     await waitFor(() => expect(captionText()).toMatch(/pending invitations/));
 

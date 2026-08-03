@@ -1,9 +1,18 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { signIn } from "@/server/auth/auth-config";
 import { setInvitationToken } from "@/server/auth/invitation-cookie";
+import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
   const sp = await searchParams;
+
+  /**
+   * Resolve the preview here rather than in a client `useQuery`. Two reasons:
+   * it removes a client round-trip and the loading skeleton, and it leaves
+   * `/accept-invite` with no React Query dependency at all — a precondition for
+   * serving public routes without `QueryClientProvider`.
+   */
+  const preview = await resolveInvitationPreview(sp.token);
 
   /**
    * Start the invitation-accept sign-in via the NextAuth v5 `signIn` server
@@ -21,5 +30,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
     await signIn("google", { redirectTo: "/" });
   }
 
-  return <AcceptInvitePage token={sp.token} acceptAction={acceptInviteAction} />;
+  return <AcceptInvitePage token={sp.token} preview={preview} acceptAction={acceptInviteAction} />;
 }

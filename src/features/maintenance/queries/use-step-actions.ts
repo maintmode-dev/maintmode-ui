@@ -31,6 +31,14 @@ const VERB: Record<StepAction, string> = {
  * maintenance detail refetches so the step row — and, once every step is
  * terminal, the maintenance-level `can_complete` flag — reflect the new state.
  *
+ * Deliberately does NOT invalidate `["calendar"]`. A step transition changes no
+ * field the calendar renders — not the window, the title, the scope, nor the
+ * maintenance status — and the bare prefix would drop every cached month, not
+ * just the visible one. Stepping through 8 steps would cost 8 needless calendar
+ * refetches precisely while the operator watches a live run. Contrast
+ * `useMaintenanceAction`, where invalidating the calendar IS correct: a
+ * maintenance-level start/complete moves the status the calendar paints.
+ *
  * Mirrors `useMaintenanceAction`: step endpoints take no body and return 204
  * (handled by `bffFetch`). 409 (forbidden transition / order) and 400/404 map
  * to operator-readable toasts.
@@ -51,7 +59,6 @@ export function useStepAction() {
     onSuccess: (_, { maintenanceId, action }) => {
       toast.success(`Step ${VERB[action]} succeeded`);
       queryClient.invalidateQueries({ queryKey: maintenanceDetailKey(maintenanceId) });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
     },
     onError: (error: unknown, { maintenanceId, action }) => {
       if (error instanceof BffError) {

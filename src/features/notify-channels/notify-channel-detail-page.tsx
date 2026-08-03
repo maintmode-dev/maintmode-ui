@@ -31,6 +31,8 @@ import {
 } from "@/shared/ui/shadcn/alert-dialog";
 import { formatUtc } from "@/shared/ui/lib/format";
 
+import { useRelatedMaintenanceQuery } from "@/features/calendar/queries/use-related-maintenance-query";
+
 import {
   useArchiveNotifyChannel,
   useNotifyChannelDetailQuery,
@@ -52,6 +54,14 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [archiveOpen, setArchiveOpen] = useState(false);
   const archiveChannel = useArchiveNotifyChannel();
+
+  // Related maintenance is fetched HERE, above the early returns, and handed to
+  // the section as a prop. It only needs `id` — already in props — and hits an
+  // unrelated endpoint, so gating it on the detail query (as it was when the
+  // hook lived inside the section, rendered below the skeleton return and
+  // behind `mode === "view"`) serialized two independent double hops. Both
+  // requests now start on the same render. Do not move this below a `return`.
+  const related = useRelatedMaintenanceQuery({ channelId: id });
 
   if (query.isPending) {
     return (
@@ -170,7 +180,7 @@ export function NotifyChannelDetailPage({ id }: { id: string }) {
 
       {/* Section 2 — Related maintenance. View-mode only; edit-mode replaces the
           identity grid with the form, so the related list is hidden there. */}
-      {mode === "view" ? <NotifyChannelRelatedMaintenance channelId={channel.id} /> : null}
+      {mode === "view" ? <NotifyChannelRelatedMaintenance feed={related} /> : null}
 
       {/* View-mode footer only. Edit-mode is entered via the header View/Edit
           tablist (not a footer button), so the footer carries just the

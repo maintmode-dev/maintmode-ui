@@ -190,8 +190,13 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
 
   const assignable = useAssignableUsersQuery();
   // A separate hook from `assignable`, deliberately: that one re-filters to
-  // approver roles client-side, and mentions answer "who should be warned", not
-  // "who can approve" — guests belong here. See `useMentionableUsersQuery`.
+  // approver roles, and mentions answer "who should be warned", not "who can
+  // approve" — guests belong here. See `useMentionableUsersQuery`.
+  //
+  // Two hooks and two derived lists, but ONE request: both pickers are fed by
+  // this hook's unfiltered fetch, and `assignable` narrows it via `select`
+  // rather than hitting `/api/users/assignable` a second time. Order matters
+  // only for readability — react-query dedupes either way.
   const mentionable = useMentionableUsersQuery();
   const channelsQuery = useNotifyChannelsQuery();
   const resourcesQuery = useResourcesQuery({ limit: 200 });

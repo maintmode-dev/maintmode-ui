@@ -5,7 +5,7 @@ import { ChevronRight, History } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
-import { useCalendarQuery } from "@/features/calendar/queries/use-calendar-query";
+import type { RelatedMaintenanceFeed } from "@/features/calendar/queries/use-related-maintenance-query";
 import { Stack } from "@/shared/ui/domain/stack";
 import { StatusBadge } from "@/shared/ui/domain/status-badge";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
@@ -21,21 +21,13 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
  *
  * Source intent: maintmode-docs/design-snapshots/resource-detail (Section 2).
  * Mirrors the channel-detail Related section.
+ *
+ * Presentational: the window and the query live in `useRelatedMaintenanceQuery`,
+ * called by ResourceDetailPage above its early returns, and arrive here as
+ * `feed`. Owning the hook here is what created the request waterfall — the page
+ * renders this section below a pending-skeleton return, so the fetch could not
+ * start until the detail query resolved. Do not reintroduce a query here.
  */
-
-/**
- * Window for the related feed. The calendar endpoint requires `from`/`to` AND
- * caps the interval at 90 days (checked after `to` is expanded to end-of-day,
- * so a span of exactly 90 calendar dates is rejected — the largest accepted
- * `to − from` is 89 dates). Stay safely under it (59 + 30 = 89) and bias toward
- * the recent past + near future, the two cohorts the Active / Past tabs show.
- */
-const PAST_WINDOW_DAYS = 59;
-const FUTURE_WINDOW_DAYS = 30;
-
-function toIsoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
 
 /** Active = not-yet-finished (draft / planned / in_progress). Past = terminal. */
 const ACTIVE_STATUSES: ReadonlySet<MaintenanceStatus> = new Set(["draft", "planned", "in_progress"]);
@@ -44,20 +36,10 @@ function isActive(m: Maintenance): boolean {
   return ACTIVE_STATUSES.has(m.status);
 }
 
-export function ResourceRelatedMaintenance({ resourceId }: { resourceId: string }) {
+export function ResourceRelatedMaintenance({ feed }: { feed: RelatedMaintenanceFeed }) {
+  const { from, to, query } = feed;
   const [tab, setTab] = useState<"active" | "past">("active");
   const { zone } = useTimezone();
-
-  const { from, to } = useMemo(() => {
-    const now = new Date();
-    const start = new Date(now);
-    start.setDate(start.getDate() - PAST_WINDOW_DAYS);
-    const end = new Date(now);
-    end.setDate(end.getDate() + FUTURE_WINDOW_DAYS);
-    return { from: toIsoDate(start), to: toIsoDate(end) };
-  }, []);
-
-  const query = useCalendarQuery({ from, to, resourceIds: [resourceId] });
 
   const { active, past, total } = useMemo(() => {
     const items = query.data ?? [];

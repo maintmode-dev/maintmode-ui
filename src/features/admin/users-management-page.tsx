@@ -69,11 +69,32 @@ export function UsersManagementPage() {
   const selfId = meQuery.data?.id ?? null;
 
   const usersQuery = useUsersQuery({ search: debouncedQuery || undefined, limit: PAGE_SIZE, offset });
-  const invitationsQuery = useInvitationsQuery();
+  // Two invitation reads, deliberately split by what each surface needs.
+  //
+  // The header shows a pending COUNT on first paint, so that one is filtered
+  // server-side (`?status=pending`) — it used to fetch every invitation ever
+  // sent (accepted, revoked, expired) and filter client-side, which grows
+  // without bound on a mature org to render one integer.
+  //
+  // The Invitations TAB still needs the unfiltered set, because its chips offer
+  // Accepted and All alongside Pending, and those views are filtered from this
+  // one list. So it stays unfiltered but is gated on the tab being open: the
+  // operator who never leaves the Users tab never pays for it.
+  //
+  // Both dispatch in the same tick as the queries around them — this is a
+  // narrower fetch plus a deferred one, NOT a chain.
+  const pendingInvitationsQuery = useInvitationsQuery({ status: "pending" });
+  const invitationsQuery = useInvitationsQuery({ enabled: tab === "invitations" });
   // Dataset-wide active count for the header caption. A dedicated `active=true`
   // query (limit 1, no search) reports the true total via `total`, so the
   // caption doesn't shrink to "non-blocked rows on the current page" once the
   // list paginates or a search narrows it.
+  //
+  // NOT replaceable by the seats indicator's `seats_used`, though both look like
+  // "how many active users". `seats_used` counts active users on a SEAT role
+  // (admin/reviewer/editor) and is guest-free by contract — see `SeatsUsage` —
+  // so on any org with guests it is strictly smaller than the active-account
+  // count this caption reports.
   const activeCountQuery = useUsersQuery({ active: true, limit: 1 });
 
   const page = usersQuery.data;
@@ -86,10 +107,10 @@ export function UsersManagementPage() {
   // so degrade to an em dash while it's loading or on error rather than assert a
   // false "0 active" next to a fully-rendered table.
   const activeUserLabel = activeCountQuery.data != null ? String(activeCountQuery.data.total) : "—";
-  const pendingInviteCount = useMemo(
-    () => allInvitations.filter((i) => i.status === "pending").length,
-    [allInvitations],
-  );
+  // Straight off the filtered query — the server already applied `status=pending`,
+  // so there is nothing left to filter. Defaults to 0 before it resolves, which
+  // is what the client-side count also showed pre-fetch.
+  const pendingInviteCount = pendingInvitationsQuery.data?.length ?? 0;
 
   // Role chips filter the loaded page client-side (server search is name/email).
   const visibleUsers = useMemo(
@@ -211,6 +232,12 @@ export function UsersManagementPage() {
             </>
           )
         ) : invitationsQuery.isPending ? (
+          // Safe despite the `enabled` gate, though it looks like it shouldn't
+          // be: a disabled query does report `isPending` forever, but this
+          // branch is only reachable with the tab open, and opening the tab is
+          // what enables the query. `isPending` also goes false as soon as
+          // there is cached data, so a revisit renders rows rather than a
+          // skeleton. Verified both states rather than reasoned about.
           <Skeleton type="block" />
         ) : (
           <InvitationsTable invitations={allInvitations} filter={inviteFilter} />
@@ -222,7 +249,14 @@ export function UsersManagementPage() {
           open={activeUser !== null}
           onOpenChange={(o) => !o && setActiveUserId(null)}
         />
-        <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+        {/* Mounted only while open. Radix renders no content for a closed dialog,
+            so this changes nothing visually — but `InviteUserDialog` itself holds
+            `useRolesQuery`, which fired a BFF round-trip on every page load for a
+            dropdown nobody had opened. The component already falls back to the
+            static `ROLE_ORDER`, which is the same four roles the query's own
+            `FALLBACK_ROLES` supplies, so the network answer and the constant
+            agree. */}
+        {inviteOpen ? <InviteUserDialog open={inviteOpen} onOpenChange={setInviteOpen} /> : null}
       </div>
     </TooltipProvider>
   );

@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { cookies } from "next/headers";
-import { AppProviders } from "./providers";
 import { ThemeInitScript } from "./theme-provider";
 import { TzInitScript } from "@/features/_shared/timezone/timezone-provider";
-import { TZ_COOKIE } from "@/features/_shared/timezone/tz-cookie";
-import { isValidZone } from "@/features/_shared/timezone/convert";
 import { DEV_BYPASS_ENABLED } from "@/server/auth/auth-config";
 import { devLoginAsAction } from "@/server/auth/auth-actions";
 import "./globals.css";
@@ -15,6 +11,23 @@ export const metadata: Metadata = {
   description: "Maintenance operations frontend",
 };
 
+/**
+ * Document shell only. The provider stack is split one level down, by route
+ * group, so the two public routes stop paying for the authenticated app:
+ *
+ *   (public)/layout.tsx → ThemeProvider only        [/login, /accept-invite]
+ *   (app)/layout.tsx    → cookies() + AppProviders  [every other route]
+ *
+ * `/suspended` is deliberately in `(app)`, not `(public)`: it is reached only
+ * via a 403 `organization_suspended` from a browser that HAS a live session
+ * (`bff-fetch.ts`), so it is an authenticated route without chrome. It is
+ * likewise absent from `PUBLIC_PREFIXES`, and the two must NOT be "reconciled":
+ * the directory answers "which providers does this route need", while
+ * `PUBLIC_PREFIXES` answers "is this route reachable without a session".
+ *
+ * This is a payload win, not a rendering-mode one — both public routes await
+ * `searchParams`, itself a dynamic API, so they stay dynamic either way.
+ */
 export default async function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   // Dev-only floating "Login as {role}" toolbar, available on every screen.
   //
@@ -33,34 +46,49 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     devToolbar = <DevLoginAs loginAsAction={devLoginAsAction} />;
   }
 
-  // Display timezone for the FIRST frame (RUK-233). Without it every screen
-  // rendered event times in UTC until mount, then re-rendered in the viewer's
-  // zone — a visible 3-hour jump for an operator in UTC+3.
-  //
-  // `isValidZone` is not optional: `mm.tz` is deliberately not httpOnly (the
-  // browser writes it), so its value is untrusted input. A forged or stale zone
-  // degrades to `null` = "the server doesn't know", yielding the UTC placeholder.
-  //
-  // Reading the cookie here is what makes the whole tree render dynamically;
-  // that cost is accepted and measured (see the spec's build baseline).
-  const cookieZone = (await cookies()).get(TZ_COOKIE)?.value;
-  const serverZone = isValidZone(cookieZone) ? cookieZone : null;
-
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <head>
-        {/* Anti-flash: applies the stored theme to data-theme before first
-            paint (Next.js "preventing flash before hydration"). The component
-            swaps the script type client-side to dodge React 19's "script tag
-            while rendering" error. */}
+        {/* Roman face, preloaded. Without this the font is discovered only
+            after the CSS that declares `@font-face` has been fetched AND
+            parsed, so with `font-display: swap` every cold load paints
+            fallback text first and reflows — a guaranteed FOUT.
+
+            The `href` MUST stay byte-identical to the `src` URL in
+            globals.css: the preload cache is keyed on the resolved URL, so any
+            divergence (even a query string) buys a second, wasted download
+            plus a "preloaded but not used" console warning.
+
+            `crossOrigin` is mandatory even though the file is same-origin.
+            Fonts are always fetched in CORS mode, and a preload without it is
+            treated as a DIFFERENT request than the one `@font-face` makes —
+            again two downloads. React renders the bare attribute for `""`.
+
+            Only the roman face is preloaded. The italic face is used on a
+            single placeholder in `/approvals`; preloading it would cost every
+            visitor ~100 KB to save one screen a lazy fetch. */}
+        <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossOrigin="" />
+        {/* Both init scripts stay HERE, in the root, and must not be pushed
+            down into the route groups.
+
+            ThemeInitScript has to run in `<head>` before first paint, and only
+            the root layout renders `<head>` — from a group layout it would land
+            in `<body>`, i.e. after paint, giving a theme flash on every route.
+
+            TzInitScript looks out of place on `/login`, which renders no times
+            at all, but that is exactly where it does its job: it seeds `mm.tz`
+            on a FIRST visit so the NEXT full load is server-rendered in the
+            viewer's zone (it cannot fix the current frame — see its docblock).
+            For most users the first page ever loaded is `/login`. Move it into
+            `(app)` and the cookie is only seeded after sign-in, so the first
+            authenticated frame renders in UTC — a partial RUK-233 regression
+            that no test catches and only new users ever see. The cost of
+            keeping it is one ~200-byte inline script, no chunk. */}
         <ThemeInitScript />
-        {/* Seeds `mm.tz` from `Intl` on a first visit, before hydration, so the
-            NEXT full load is already server-rendered in the viewer's zone (it
-            cannot fix the very first frame — see the component's docblock). */}
         <TzInitScript />
       </head>
       <body>
-        <AppProviders serverZone={serverZone}>{children}</AppProviders>
+        {children}
         {devToolbar}
       </body>
     </html>

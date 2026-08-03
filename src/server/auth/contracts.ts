@@ -52,7 +52,7 @@ export class BackendAuthError extends Error {
 
 /**
  * Stable codes the frontend surfaces on `/login` after a failed sign-in. The
- * server page (`src/app/login/page.tsx`) reads `?code=` (falling back to
+ * server page (`src/app/(public)/login/page.tsx`) reads `?code=` (falling back to
  * `?error=`) and the messages map lives in
  * `src/features/auth/login-page.tsx`. Keep this enum in sync with that map.
  */

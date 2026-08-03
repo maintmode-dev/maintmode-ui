@@ -7,14 +7,22 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --check .",
     "test": "npm run test:unit",
     "test:unit": "vitest run -c vitest.unit.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run -c vitest.unit.config.ts --coverage",
     "test:contracts": "node scripts/check-boundaries.mjs",
-    "verify": "npm run lint && npm run format && npm run test:contracts && npm run test:unit && npm run build"
+    "test:bundle": "node scripts/check-bundle-budget.mjs",
+    "verify": "npm run lint && npm run typecheck && npm run format && npm run test:contracts && npm run test:unit && npm run build && npm run test:bundle"
   },
+  "browserslist": [
+    "chrome >= 111",
+    "edge >= 111",
+    "firefox >= 111",
+    "safari >= 16.4"
+  ],
   "dependencies": {
     "@date-fns/tz": "^1.5.0",
     "@fullcalendar/core": "^6.1.20",

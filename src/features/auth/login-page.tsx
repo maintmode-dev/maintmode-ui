@@ -10,7 +10,7 @@ export interface LoginPageProps {
   error?: string;
   /**
    * Server action that starts an OAuth sign-in for the given provider id.
-   * Supplied by the server page (`src/app/login/page.tsx`) so this
+   * Supplied by the server page (`src/app/(public)/login/page.tsx`) so this
    * browser-owned component never imports the server auth boundary. It must
    * wrap NextAuth's `signIn` so the CSRF token is attached — a plain form POST
    * to `/api/auth/signin/<id>` omits it and fails with `MissingCSRF`.

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -9,7 +10,6 @@ import { CalendarEmpty, CalendarError, CalendarLoading } from "@/shared/ui/state
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
 
-import { CalendarGrid } from "./calendar-grid";
 import { CalendarSidebar } from "./calendar-sidebar";
 import {
   applyCalendarFilters,
@@ -21,7 +21,6 @@ import {
 import { useCalendarQuery } from "./queries/use-calendar-query";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
-import { MaintenanceQuickSheet } from "@/features/maintenance/maintenance-quick-sheet";
 import {
   anchorFor,
   anchorOnViewSwitch,
@@ -34,6 +33,43 @@ import {
 
 const VIEW_STORAGE_KEY = "maintmode.calendar.view";
 const DEFAULT_VIEW: View = "day";
+
+/**
+ * Loaded on demand: FullCalendar + Luxon is 97.9 KB gzip against the whole
+ * route's 202.4 KB own JS — statically imported it sat on the critical path of
+ * the app's DEFAULT route, and the browser had to parse it before it could even
+ * issue the calendar data request.
+ *
+ * `ssr: false` costs nothing: the query is `enabled: hydrated`, `hydrated` only
+ * flips in the mount effect below, so on the server `isPending` is true and the
+ * page returns `CalendarLoading` — the `renderGrid` branch is unreachable
+ * server-side (verified against the built HTML, byte-identical).
+ *
+ * No `loading` placeholder on purpose: the grid never renders into empty space.
+ * It replaces either `CalendarLoading` or the static gradient backdrop below,
+ * which deliberately matches the grid's exact height. A placeholder would
+ * insert a THIRD visual state. The mount-effect prefetch covers the fetch.
+ */
+const CalendarGrid = dynamic(() => import("./calendar-grid").then((m) => m.CalendarGrid), {
+  ssr: false,
+});
+
+/**
+ * Loaded on demand, exactly as `/approvals` already does with this same
+ * component — 12 KB gzip that every calendar viewer downloaded and parsed,
+ * including those who never open an event.
+ *
+ * `ssr: false` costs nothing only BECAUSE the render site below is gated on
+ * `selectedId !== null`. Without that gate this renders unconditionally and
+ * `next/dynamic` emits a client-bailout placeholder into every server render of
+ * the route — `selectedId` starting null does not prevent that, and Radix
+ * unmounting closed content is a DOM concern, not an SSR one. The two are easy
+ * to conflate; the gate is what makes the claim true.
+ */
+const MaintenanceQuickSheet = dynamic(
+  () => import("@/features/maintenance/maintenance-quick-sheet").then((m) => m.MaintenanceQuickSheet),
+  { ssr: false },
+);
 
 /** Read the last-used view from localStorage (survives refresh + logout). */
 function readStoredView(): View {
@@ -72,6 +108,11 @@ export function CalendarPage() {
     setFilters(readStoredFilters());
     setHydrated(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+    // Start the grid chunk here rather than on a hover affordance — there isn't
+    // one, since the grid IS the default content. Kicking it off from the same
+    // effect that enables the query makes the 98 KB download run PARALLEL to the
+    // calendar request instead of serially before it.
+    void import("./calendar-grid");
   }, []);
 
   // Persist the chosen view (after hydration) so a refresh restores it — a
@@ -285,11 +326,13 @@ export function CalendarPage() {
         </div>
       )}
 
-      <MaintenanceQuickSheet
-        maintenanceId={selectedId}
-        open={selectedId !== null}
-        onOpenChange={(o) => !o && setSelectedId(null)}
-      />
+      {selectedId !== null ? (
+        <MaintenanceQuickSheet
+          maintenanceId={selectedId}
+          open
+          onOpenChange={(o) => !o && setSelectedId(null)}
+        />
+      ) : null}
     </div>
   );
 }

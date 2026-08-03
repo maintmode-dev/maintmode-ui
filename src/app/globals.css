@@ -26,7 +26,22 @@
      • accent               → indigo (focus, selection)
    ========================================================================== */
 
-/* Inter Variable — brand sans. Local files; no network fetch. */
+/* Inter Variable — brand sans. Local files; no network fetch.
+
+   Both faces are SUBSET to the glyphs this `lang="en"` console can render:
+   Latin-1 + Latin Extended-A (so accented names from backend data are safe)
+   plus the arrows/quotes/math symbols the UI hard-codes. Roman 352 KB -> ~93 KB,
+   italic 388 KB -> ~102 KB. Regenerate with `scripts/subset-fonts.py` after
+   introducing any new symbol glyph; that script's `--check` mode asserts
+   coverage and that the `wght` 100-900 axis survived.
+
+   `⇄ ─ ▾ ✕` are NOT in these files and never were — Inter does not contain
+   them, so they render from the system fallback stack. Subsetting did not
+   change that; see scripts/subset-fonts.py `NOT_IN_INTER`.
+
+   The roman `src` URL is mirrored by a `<link rel="preload">` in
+   src/app/layout.tsx — keep the two byte-identical or the browser downloads
+   the file twice. */
 @font-face {
   font-family: "Inter Variable";
   font-style: normal;
