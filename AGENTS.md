@@ -75,4 +75,5 @@
 - Browser must never receive `access_token` or `refresh_token`. Tokens stay inside the NextAuth jwt cookie and are read only via `src/server/auth/session-token.ts` from server-only code.
 - BFF route handlers under `src/app/api/**` (other than `src/app/api/auth/**`) must use `authenticatedBackendRequest` from `src/server/backend/client/authenticated-backend-request.ts` instead of `backendRequest` directly.
 - A backend `401` must be normalized to `{ status: 401, code: "AUTH_REQUIRED" }`; the browser fetcher then redirects to `/login?next=<current path>`.
-- The Google OAuth code↔token exchange runs on the backend (`/api/v1/login/oauth/google/callback` with `Accept: application/json`); the frontend must not implement Google OAuth on its own.
+- The Google OAuth code↔token exchange runs **here**, in NextAuth — this app is the OAuth client and holds the only copy of `MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET`. Do not add a second implementation of the Google flow alongside it.
+- What the backend gets is the resulting `id_token`, POSTed to `/api/v1/login/oauth/exchange/google` (see `src/server/auth/backend-token-exchange.ts`); it verifies that token offline against Google's JWKS and returns the app token pair. The backend holds no client secret — deliberately, so the credential lives in exactly one place. Don't "move" the secret there.

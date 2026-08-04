@@ -24,7 +24,11 @@ import { cn } from "@/shared/ui/lib/cn";
 
 import { APPROVALS_PAGE_SIZE, useApprovalsQuery } from "./queries/use-approvals-query";
 
-const COLUMNS = ["Maintenance", "Window", "Impact", "Scope", "Requested by", "Waiting"];
+// "Requested", not "Waiting": the cell shows `created_at`, and the backend has
+// no submitted-for-review stamp to derive an actual wait from. Under a "Waiting"
+// header the number reads as time-in-queue, which it is not — visibly so once
+// the edited sub-line lands, where "4h ago / edited just now" contradict.
+const COLUMNS = ["Maintenance", "Window", "Impact", "Scope", "Requested by", "Requested"];
 
 /**
  * Loaded on demand: the peek is behind a click, but statically imported it
@@ -197,14 +201,60 @@ function ApprovalsTable({ rows, onOpen }: { rows: ApprovalRow[]; onOpen: (row: A
               >
                 {row.created_by ?? "Unknown user"}
               </td>
-              <td className="px-3 py-2.5 text-fg-muted text-xs" title={formatUtc(row.created_at)}>
-                {formatRelative(row.created_at)}
+              <td className="px-3 py-2.5 text-fg-muted text-xs">
+                <span title={formatUtc(row.created_at)}>{formatRelative(row.created_at)}</span>
+                <EditedStamp row={row} />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Edits within this window of creation are treated as the author still
+ * assembling the draft, not as a change a reviewer could have missed.
+ *
+ * Without a floor the stamp fires on nearly every row — a create is routinely
+ * followed within seconds by the edit that fills the draft in (the backend
+ * touches `updated_at` on any write), and a marker present everywhere is read
+ * as decoration. The exact number is a judgement call, not a contract: five
+ * minutes covers "finished typing it in" without swallowing a revision made
+ * after someone had a chance to look.
+ */
+const EDIT_GRACE_MS = 5 * 60_000;
+
+/**
+ * "edited …" sub-line under the waiting time.
+ *
+ * Scope note: this says the record CHANGED, not what changed, who changed it,
+ * or that it was changed in response to review. The wire carries only
+ * `updated_at` — no author, no diff — and the backend has no request-changes
+ * transition at all, so a stronger claim would be invented here rather than
+ * observed. The tooltip stays literal ("Updated <stamp>") for the same reason:
+ * a reviewer acts on it by opening the row, which is the point.
+ */
+function EditedStamp({ row }: { row: ApprovalRow }) {
+  const updated = row.updated_at;
+  if (!updated) return null;
+
+  // Both stamps come from the same backend clock, so comparing them needs no
+  // reference to the viewer's — unlike `formatRelative`, which is against `now`.
+  const createdMs = Date.parse(row.created_at);
+  const updatedMs = Date.parse(updated);
+  if (Number.isNaN(createdMs) || Number.isNaN(updatedMs)) return null;
+  if (updatedMs - createdMs < EDIT_GRACE_MS) return null;
+
+  // Colour note: `fg-dim` would read as the more secondary of the two lines,
+  // but at 11px it measures 3.4:1 — under WCAG AA for body text. The
+  // `text-2xs fg-dim` pairs elsewhere in this codebase are all uppercase
+  // semibold headings, held to 3:1 instead; this is prose and does not qualify.
+  return (
+    <span className="block text-2xs text-fg-muted" title={`Updated ${formatUtc(updated)}`}>
+      edited {formatRelative(updated)}
+    </span>
   );
 }
 

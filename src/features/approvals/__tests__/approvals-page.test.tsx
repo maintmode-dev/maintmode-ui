@@ -128,6 +128,68 @@ describe("ApprovalsPage — open-ended windows (AC-05 render half)", () => {
   });
 });
 
+describe("ApprovalsPage — edited stamp", () => {
+  // The fixtures below are fixed dates while `formatRelative` measures against
+  // the wall clock, so "5d ago" silently becomes an absolute date once real
+  // time drifts a week past them — a test that passes today and fails on its
+  // own later. Pin `Date.now` alone rather than `vi.useFakeTimers()`: freezing
+  // the whole clock also freezes the timers `waitFor` polls on, which deadlocks
+  // every assertion in this block.
+  beforeEach(() => {
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-30T13:40:00Z").getTime());
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("marks a row edited well after creation, without claiming what changed", async () => {
+    serve(
+      page([
+        approval({
+          id: "touched",
+          created_at: "2026-07-30T09:15:00Z",
+          updated_at: "2026-07-30T11:40:00Z",
+        }),
+      ]),
+    );
+    renderPage();
+
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    const stamp = screen.getByText(/^edited /);
+    // The tooltip is the literal wire fact. It must not grow into "author
+    // responded" — the backend has no request-changes transition to justify it.
+    expect(stamp.getAttribute("title")).toBe("Updated 2026-07-30 11:40 UTC");
+  });
+
+  it("stays silent for an edit inside the grace window", async () => {
+    // The author finishing the draft two minutes after creating it is not a
+    // change a reviewer could have missed. Firing here would light up nearly
+    // every row and turn the marker into decoration.
+    serve(
+      page([
+        approval({
+          id: "fresh",
+          created_at: "2026-07-30T09:15:00Z",
+          updated_at: "2026-07-30T09:17:00Z",
+        }),
+      ]),
+    );
+    renderPage();
+
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(screen.queryByText(/^edited /)).toBeNull();
+  });
+
+  it("stays silent when the maintenance was never touched", async () => {
+    serve(page([approval({ id: "untouched", updated_at: undefined })]));
+    renderPage();
+
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(screen.queryByText(/^edited /)).toBeNull();
+    // The em-dash placeholder means a formatter received the empty value —
+    // the stamp must be absent entirely, not rendered blank.
+    expect(screen.queryByText(/^edited —/)).toBeNull();
+  });
+});
+
 describe("ApprovalsPage — states", () => {
   it("shows the empty state rather than a bare table header", async () => {
     serve(page([], 0));

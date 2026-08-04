@@ -1,6 +1,8 @@
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 
-const COLUMNS = ["Maintenance", "Window", "Impact", "Scope", "Requested by", "Waiting"];
+// Kept in sync by hand with the real table's COLUMNS in `approvals-page`; the
+// two files must not drift or the skeleton stops matching what it stands in for.
+const COLUMNS = ["Maintenance", "Window", "Impact", "Scope", "Requested by", "Requested"];
 
 /**
  * Approvals queue loading state — mirrors the real table's chrome so the swap
