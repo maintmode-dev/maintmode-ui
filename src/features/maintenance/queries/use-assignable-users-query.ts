@@ -6,7 +6,7 @@ import { bffFetch } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
 import { MOCK_USERS } from "@/shared/mock/users";
 import type { AssignableUser } from "@/domain/maintenance/maintenance";
-import { mentionableUsersQueryOptions } from "./use-mentionable-users-query";
+import { ASSIGNABLE_USERS_LIMIT, warnOnce } from "./assignable-users-limit";
 
 /**
  * Roles that hold the `maintenance.approve` permission — only these users may
@@ -22,17 +22,30 @@ export interface AssignableUsersParams {
 }
 
 export function assignableUsersKey(params: AssignableUsersParams) {
-  const roles = (params.roles ?? APPROVER_ROLES).join(",");
+  // Must resolve `roles` exactly as the hook does — empty falls back too, not
+  // just absent. Were this a bare `??`, `roles: []` would key as
+  // `["assignable-users","",""]` while the request sent the approver roles: one
+  // cache entry claiming "no role filter" holding role-filtered data, which is
+  // the collision `mentionableUsersKey` is built to make impossible.
+  const roles = (params.roles?.length ? params.roles : APPROVER_ROLES).join(",");
   return ["assignable-users", params.search ?? "", roles] as const;
 }
 
 /**
- * The one authoritative approver predicate. `useAssignableUsersQuery` applied
- * this client-side even when it sent `roles` to the backend ("belt-and-
- * suspenders": the backend `roles` filter isn't reliably applied, so a user
- * without an approver role could still come back — never offer them as an
- * approver). Because the client filter was already the deciding one, dropping
- * the server-side `roles` request narrows nothing.
+ * The approver predicate — the SECOND line of defence, not the first.
+ *
+ * The deciding filter is the one the backend applies, because it runs BEFORE
+ * the row limit while this one runs AFTER it. Sorting is `display_name ASC`
+ * with role playing no part (measured, SPEC §1.2), so filtering a truncated
+ * page client-side yields an arbitrary subset of approvers whose size depends
+ * on nothing but how the names happened to fall alphabetically.
+ *
+ * Keeping it is deliberate but it is a MUFFLER, not a belt-and-braces bonus:
+ * without it a query that lost its `roles` param would offer 200 guests as
+ * approvers — obviously wrong, loud, fixed in an hour. With it, that same
+ * failure renders an empty picker that reads as "there are no approvers". That
+ * is precisely how this bug survived. Hence the dev warning at the call site:
+ * if the server filter applied, this one cannot possibly drop a row.
  */
 function hasApproverRole(user: { roles: readonly string[] }, roles: readonly string[]): boolean {
   return user.roles.some((r) => roles.includes(r));
@@ -44,61 +57,94 @@ function hasApproverRole(user: { roles: readonly string[] }, roles: readonly str
  * maintenance create/edit form — defaults to the roles that can approve so
  * users without the permission never appear in the list.
  *
- * PERF: in the default shape (no `search`, no custom `roles` — the only shape
- * the edit form uses) this does NOT issue its own request. The mentions picker
- * mounts alongside it and already fetches the SAME endpoint unfiltered, so this
- * hook subscribes to that one cache entry and narrows it with `select`. Edit
- * mode therefore costs one request to `/api/users/assignable`, not two.
+ * `roles` MUST go to the server, and an explicit `limit` MUST go with it — an
+ * invariant this hook enforces rather than merely assumes (see the empty-array
+ * guard below). The server applies `roles` before truncating to `limit`;
+ * anything filtered on the client is filtered after truncation, over whatever
+ * arbitrary slice came back.
+ * On a roster of ~10 742 users with ~3 214 approvers that difference is the
+ * whole feature: server-side, the picker sees 200 approvers; client-side, it
+ * saw ~60 in production and exactly zero on the local seed (SPEC §0.1, §1.1).
  *
- * That is strictly not a narrowing of the result: the shared fetch asks for
- * `limit=200` where this hook's own request carried no limit at all and so ran
- * at the backend default of 50 (`list_assignable.go:32`) — it scans MORE rows
- * than before, and the approver predicate is unchanged.
+ * Omitting `limit` is the quiet version of the same mistake — the backend then
+ * answers with its default of 50 (SPEC §1.1 row 3), which no smoke test and no
+ * "is the list non-empty" assertion can tell from a correct 200.
  *
- * The cache entry it reads holds the unfiltered list and is keyed as such
- * (`mentionableUsersKey`); `select` is a per-observer transform on read and is
- * never written back, so no approver-shaped key ever resolves to unfiltered
- * data. See the long note on `mentionableUsersKey` — that invariant is what
- * this optimization rests on, not something it relaxes.
- *
- * A `search` or a custom `roles` argument is a genuinely different question and
- * still gets its own request under its own key.
+ * This hook owns its own cache key and its own request. It deliberately does
+ * NOT share the mentions picker's fetch: that entry holds the UNFILTERED list,
+ * and deriving approvers from it means filtering after truncation — the bug
+ * above. The extra request is the price, and it is the right trade (SPEC §2.5).
  */
 export function useAssignableUsersQuery(params: AssignableUsersParams = {}) {
-  const roles = params.roles ?? APPROVER_ROLES;
-  const isDefaultShape = !params.search && !params.roles;
+  // `?? ` is NOT enough here: it only defaults on nullish, so `roles: []` would
+  // survive, append nothing to the query string, and send `?limit=200` with no
+  // `roles` at all — reproducing the exact bug this hook exists to prevent
+  // (verified: wire `/api/users/assignable?limit=200`, data `[]`). The client
+  // filter then rejects every row, so the picker is empty. Fall back on empty,
+  // not just on absent. Same hazard the `mentionableUsersKey` docblock names:
+  // `[].join(",") === ""` diverges from the approver key only by accident.
+  const roles = params.roles?.length ? params.roles : APPROVER_ROLES;
 
-  // Own request, own key. Only reached for a `search`/custom-`roles` call — the
-  // default shape is served by the shared fetch below and never runs this.
-  const ownQueryFn = async (): Promise<AssignableUser[]> => {
+  const queryFn = async (): Promise<AssignableUser[]> => {
     if (DATA_SOURCE.assignableUsers === "mock") {
       const q = params.search?.trim().toLowerCase();
       return MOCK_USERS.filter(
         (u) =>
           (!q || u.display_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
           hasApproverRole(u, roles),
-      ).map((u) => ({ id: u.id, display_name: u.display_name, email: u.email, roles: u.roles }));
+      ).map((u) => ({
+        id: u.id,
+        display_name: u.display_name,
+        email: u.email,
+        roles: u.roles,
+        // Mirrors the mentions branch and the backend aggregate exactly. The
+        // projection lists fields explicitly, so a field omitted here silently
+        // becomes `undefined` — and this branch is reachable again now that the
+        // default shape runs its own `queryFn`.
+        has_messenger_tag: Boolean(u.telegram_tag ?? u.slack_tag),
+      }));
     }
-    const qs = new URLSearchParams();
+
+    const qs = new URLSearchParams({ limit: String(ASSIGNABLE_USERS_LIMIT) });
     if (params.search) qs.set("search", params.search);
     for (const role of roles) qs.append("roles", role);
-    const data = await bffFetch<{ users: AssignableUser[] }>(`/api/users/assignable?${qs.toString()}`);
-    return data.users.filter((u) => hasApproverRole(u, roles));
+
+    const data = await bffFetch<{ users: AssignableUser[]; total?: number }>(
+      `/api/users/assignable?${qs.toString()}`,
+    );
+
+    // `total` counts what the FILTER matched, so on a `search` query a value
+    // over the limit is expected and says nothing about the picker being
+    // truncated. Only warn for the unsearched roster, which is the shape the
+    // form actually uses.
+    if (!params.search && (data.total ?? 0) > ASSIGNABLE_USERS_LIMIT) {
+      warnOnce(
+        "partial-slice",
+        `[approver-picker] total=${data.total} > limit=${ASSIGNABLE_USERS_LIMIT} — ` +
+          `picker shows a partial slice; server-side search needed (RUK-251)`,
+      );
+    }
+
+    // `?? []` for the same reason `total` is optional above: a malformed
+    // response should degrade to an empty picker with an error state, not throw
+    // a TypeError out of the queryFn.
+    const returned = data.users ?? [];
+    const users = returned.filter((u) => hasApproverRole(u, roles));
+    // If the server filter applied, this one is a no-op by construction. Any
+    // row it drops means `roles` did not reach the backend — the exact silent
+    // failure that produced an empty picker (SPEC §2.4).
+    if (users.length !== returned.length) {
+      warnOnce(
+        "filter-did-not-apply",
+        "[approver-picker] server roles filter did not apply — check the query string",
+      );
+    }
+    return users;
   };
 
-  const shared = mentionableUsersQueryOptions();
-  // Widened to `readonly unknown[]` deliberately: the two branches produce key
-  // tuples of different lengths, and a union of the two option shapes matches
-  // no single `useQuery` overload. The widening is only about the TYPE — the
-  // runtime key is still exactly one of the two key functions' output.
-  const queryKey: readonly unknown[] = isDefaultShape ? shared.queryKey : assignableUsersKey(params);
-
   return useQuery({
-    queryKey,
-    queryFn: isDefaultShape ? shared.queryFn : ownQueryFn,
-    select: isDefaultShape
-      ? (users: AssignableUser[]) => users.filter((u) => hasApproverRole(u, roles))
-      : undefined,
+    queryKey: assignableUsersKey(params),
+    queryFn,
     staleTime: 60_000,
   });
 }

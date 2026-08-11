@@ -58,6 +58,25 @@ describe("mentionableUsersKey", () => {
     expect(mentionableUsersKey("ali")).toContain("ali");
   });
 
+  /**
+   * The approver key must vary with `roles`, not just with `search`. Both hooks
+   * accept a `roles` override, and two different role sets are two different
+   * lists — collapsing them onto one entry serves an `admin`-only query from a
+   * `reviewer,admin` cache entry and vice versa. The docblock on
+   * `mentionableUsersKey` argues the prefixes cannot converge; this pins the
+   * other half, that the segments actually discriminate. Dropping the roles
+   * segment entirely left the suite green.
+   */
+  it("gives different approver role sets different cache keys", () => {
+    expect(JSON.stringify(assignableUsersKey({ roles: ["admin"] }))).not.toEqual(
+      JSON.stringify(assignableUsersKey({ roles: ["reviewer", "admin"] })),
+    );
+    // The default must resolve to the approver roles, not to an empty segment.
+    expect(JSON.stringify(assignableUsersKey({}))).toEqual(
+      JSON.stringify(assignableUsersKey({ roles: ["reviewer", "admin"] })),
+    );
+  });
+
   it("carries no undefined segment", () => {
     // A raw `undefined` in a key is a serialisation hazard for react-query;
     // the hook normalises an omitted search to "" before building the key.
@@ -112,17 +131,23 @@ describe("useMentionableUsersQuery", () => {
   });
 
   /**
-   * PERF (perf-remediation §8.3, item 1). Edit mode mounts the mentions picker
-   * and the approver picker side by side; both are backed by
-   * `/api/users/assignable`. It used to cost two requests to that one endpoint.
-   * The approver list is now derived from the mentions fetch via `select`.
+   * Edit mode mounts the mentions picker and the approver picker side by side,
+   * both backed by `/api/users/assignable`. A perf pass once deduplicated them
+   * onto ONE unfiltered fetch, deriving approvers with `select`
+   * (perf-remediation §8.3, item 1). That was reverted: the shared fetch
+   * truncates at `limit` BEFORE the client-side role filter runs, so the
+   * approver picker saw an arbitrary slice of approvers — ~60 of 3 214 in
+   * production, exactly zero on the local seed (SPEC §0.1).
    *
-   * This asserts on `bffFetch` call paths, which is where a regression would
-   * show up: re-adding a `queryFn` of its own to the approver hook would put a
-   * second `/api/users/assignable` call in this list, and re-adding a `roles`
-   * query param would make the surviving call the filtered one.
+   * TWO requests is now the correct answer, not a regression. What these tests
+   * guard is that the two stay DISTINGUISHABLE: the mentions request must carry
+   * no `roles` (or guests vanish from that picker), and the approver request
+   * must carry both `roles` AND an explicit `limit` — drop the latter and the
+   * backend quietly answers 50 (SPEC §1.1 row 3), which nothing else here can
+   * see. Assertions find their request by predicate, never by index: two
+   * requests are in flight and their order is not guaranteed.
    */
-  describe("approver/mentions request dedup", () => {
+  describe("approver/mentions requests are separate and correctly parameterized", () => {
     const assignableCalls = () =>
       bffFetchMock.mock.calls.filter((call) => String(call[0]).includes("/api/users/assignable"));
 
@@ -135,7 +160,20 @@ describe("useMentionableUsersQuery", () => {
       ],
     };
 
-    it("mounts both pickers with exactly one request to the endpoint", async () => {
+    /**
+     * The ONE assignable request matching `predicate` — asserting there is
+     * exactly one, so a selector that accidentally matches both pickers fails
+     * loudly instead of silently testing whichever came back first.
+     */
+    const theRequestWhere = (predicate: (query: URLSearchParams) => boolean) => {
+      const matches = assignableCalls()
+        .map((call) => new URLSearchParams(String(call[0]).split("?")[1] ?? ""))
+        .filter(predicate);
+      expect(matches).toHaveLength(1);
+      return matches[0];
+    };
+
+    it("mounts both pickers as two separately parameterized requests", async () => {
       bffFetchMock.mockResolvedValue(RESPONSE);
       // Both hooks in ONE component, mirroring `maintenance-edit-mode.tsx`.
       const { result } = renderHook(
@@ -145,15 +183,26 @@ describe("useMentionableUsersQuery", () => {
       await waitFor(() => expect(result.current.approvers.isSuccess).toBe(true));
       await waitFor(() => expect(result.current.mentions.isSuccess).toBe(true));
 
-      expect(assignableCalls()).toHaveLength(1);
-      // The surviving request must be the UNFILTERED one — if it carried
-      // `roles`, the mentions picker would silently lose its guests.
-      const query = new URLSearchParams(String(assignableCalls()[0]?.[0]).split("?")[1]);
-      expect(query.getAll("roles")).toEqual([]);
-      expect(query.get("limit")).toBe("200");
+      expect(assignableCalls()).toHaveLength(2);
+
+      // The mentions request must stay UNFILTERED — with `roles` on it, that
+      // picker silently loses its guests (AC-3).
+      const mentions = theRequestWhere((q) => q.getAll("roles").length === 0);
+      expect(mentions.get("limit")).toBe("200");
+
+      // The approver request carries `roles` — and `limit` must ride along on
+      // THAT request specifically (AC-2). Without it the backend serves 50 and
+      // the picker shows a truncated roster with no visible symptom.
+      const approvers = theRequestWhere((q) => q.getAll("roles").length > 0);
+      expect(approvers.getAll("roles")).toEqual(["reviewer", "admin"]);
+      expect(approvers.get("limit")).toBe("200");
     });
 
-    it("still derives the right two lists from that one response", async () => {
+    // The mock answers both requests with the same rows, so this isolates the
+    // client-side narrowing: approvers keep only reviewer/admin (AC-5), mentions
+    // keep everyone (AC-3). Truncation is covered separately, by the endpoint
+    // model in `use-assignable-users-truncation.test.ts` (SPEC §4.2).
+    it("derives the right two lists from the same rows", async () => {
       bffFetchMock.mockResolvedValue(RESPONSE);
       const { result } = renderHook(
         () => ({ approvers: useAssignableUsersQuery(), mentions: useMentionableUsersQuery() }),
@@ -169,33 +218,69 @@ describe("useMentionableUsersQuery", () => {
     });
 
     /**
-     * The dedup must not leak the narrowed list back into the shared cache
-     * entry: `select` transforms per observer, on read. If the approver filter
-     * were ever written back, the mentions picker mounting SECOND would find a
-     * guest-less cache entry and render an incomplete list.
+     * Successor to the old "the dedup must not write `select`'s narrowed list
+     * back into the shared entry" test (SPEC §4.4). That invariant retired with
+     * `select`; the replacement is stronger and simpler — the two lists live in
+     * two cache entries, and each entry holds exactly what its key claims.
+     *
+     * Mounting the approver hook FIRST is the load-bearing part: under the old
+     * dedup it populated the entry the mentions picker then read, so a
+     * guest-less approver list could reach that picker. Now it cannot, because
+     * it never touches that key at all.
      */
-    it("does not write the approver filter back into the shared cache entry", async () => {
+    it("gives each picker its own cache entry holding exactly what its key claims", async () => {
       bffFetchMock.mockResolvedValue(RESPONSE);
       const first = renderHook(() => useAssignableUsersQuery(), { wrapper });
       await waitFor(() => expect(first.result.current.isSuccess).toBe(true));
       expect(first.result.current.data?.map((u) => u.id)).toEqual(["u-admin", "u-rev"]);
 
-      // Same client, mentions mounts afterwards onto the already-populated entry.
+      // Same client, mentions mounts afterwards — and must NOT inherit the
+      // approver-narrowed list.
       const second = renderHook(() => useMentionableUsersQuery(), { wrapper });
       await waitFor(() => expect(second.result.current.isSuccess).toBe(true));
 
       expect(second.result.current.data?.map((u) => u.id)).toEqual(["u-admin", "u-rev", "u-guest", "u-ed"]);
-      // Raw cache entry is the unfiltered list, matching what its key claims.
+      // The mentions key holds the unfiltered list, matching what it claims.
       expect(
         queryClient.getQueryData<typeof RESPONSE.users>(mentionableUsersKey(""))?.map((u) => u.id),
       ).toEqual(["u-admin", "u-rev", "u-guest", "u-ed"]);
-      expect(assignableCalls()).toHaveLength(1);
+      // The approver key holds ONLY approvers — a "reviewer,admin" key must
+      // never resolve to everyone (AC-9).
+      expect(
+        queryClient.getQueryData<typeof RESPONSE.users>(assignableUsersKey({}))?.map((u) => u.id),
+      ).toEqual(["u-admin", "u-rev"]);
+      // Two entries, two requests.
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(2);
+      expect(assignableCalls()).toHaveLength(2);
     });
 
     /**
-     * The dedup is scoped to the default shape. A `search` or a custom `roles`
-     * argument is a different question and keeps its own request + own key, so
-     * the collision guard above still has something to guard.
+     * A custom `roles` argument must steer BOTH filters — the one on the wire
+     * and the client-side second line of defence. Hardcoding `APPROVER_ROLES`
+     * into the client filter passed everything here, because every other test
+     * calls the hook with its default roles, where the two are identical.
+     */
+    it("honours a custom roles argument on the wire and in the client filter", async () => {
+      bffFetchMock.mockResolvedValue(RESPONSE);
+      const { result } = renderHook(() => useAssignableUsersQuery({ roles: ["editor"] }), { wrapper });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+      const query = theRequestWhere((q) => q.getAll("roles").length > 0);
+      expect(query.getAll("roles")).toEqual(["editor"]);
+      // The mock answers with all four rows regardless, so what survives here is
+      // decided by the client filter — and it must respect the argument, not the
+      // approver default, or the editor is dropped from his own query.
+      expect(result.current.data?.map((u) => u.id)).toEqual(["u-ed"]);
+    });
+
+    /**
+     * Every shape now issues its own request under its own key — the default
+     * one included, which is the whole fix. What still needs pinning is that a
+     * `search` argument does not collapse onto the default entry, and that it
+     * carries the SAME `roles` + `limit` discipline: a searched approver query
+     * that lost its `limit` would truncate just as silently.
+     *
+     * Three calls here, not two: plain approvers, searched approvers, mentions.
      */
     it("keeps a separate request and key for a parameterized call", async () => {
       bffFetchMock.mockResolvedValue(RESPONSE);
@@ -203,19 +288,26 @@ describe("useMentionableUsersQuery", () => {
         () => ({
           plain: useAssignableUsersQuery(),
           searched: useAssignableUsersQuery({ search: "ali" }),
+          mentions: useMentionableUsersQuery(),
         }),
         { wrapper },
       );
       await waitFor(() => expect(result.current.plain.isSuccess).toBe(true));
       await waitFor(() => expect(result.current.searched.isSuccess).toBe(true));
+      await waitFor(() => expect(result.current.mentions.isSuccess).toBe(true));
 
-      expect(assignableCalls()).toHaveLength(2);
-      const searched = assignableCalls().find((call) => String(call[0]).includes("search=ali"));
-      expect(searched).toBeDefined();
-      expect(new URLSearchParams(String(searched?.[0]).split("?")[1]).getAll("roles")).toEqual([
-        "reviewer",
-        "admin",
-      ]);
+      expect(assignableCalls()).toHaveLength(3);
+      // Three distinct cache entries — the searched call must not share the
+      // default approver entry, or "ali" results would be served as the full list.
+      expect(queryClient.getQueryCache().getAll()).toHaveLength(3);
+
+      const searched = theRequestWhere((q) => q.get("search") === "ali");
+      expect(searched.getAll("roles")).toEqual(["reviewer", "admin"]);
+      expect(searched.get("limit")).toBe("200");
+
+      // The plain approver call is the roles-carrying one WITHOUT a search.
+      const plain = theRequestWhere((q) => q.getAll("roles").length > 0 && !q.get("search"));
+      expect(plain.get("limit")).toBe("200");
     });
   });
 

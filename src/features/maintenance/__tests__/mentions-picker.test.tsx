@@ -42,10 +42,10 @@ const updateMutate = vi.fn();
 // importing `useAssignableUsersQuery` from a module that no longer exports it —
 // the form then crashes on render, well before any mentions assertion runs.
 vi.mock("../queries/use-assignable-users-query", () => ({
-  useAssignableUsersQuery: () => ({ data: approverData(), isPending: false }),
+  useAssignableUsersQuery: () => ({ data: approverData(), isPending: false, isError: false }),
 }));
 vi.mock("../queries/use-mentionable-users-query", () => ({
-  useMentionableUsersQuery: () => ({ data: mentionableData(), isPending: mentionablePending() }),
+  useMentionableUsersQuery: () => ({ data: mentionableData(), isPending: mentionablePending(), isError: false }),
 }));
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
   useNotifyChannelsQuery: () => ({ data: [], isPending: false }),

@@ -34,13 +34,13 @@ vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
   useNotifyChannelsQuery: () => ({ data: channelsData(), isPending: false }),
 }));
 vi.mock("../queries/use-assignable-users-query", () => ({
-  useAssignableUsersQuery: () => ({ data: [], isPending: false }),
+  useAssignableUsersQuery: () => ({ data: [], isPending: false, isError: false }),
 }));
 // The form has two user pickers on two separate hooks (approver vs. mentions,
 // RUK-218). Both must be stubbed: an unmocked one reaches the real `useQuery`
 // and fails with "No QueryClient set" before any channel assertion runs.
 vi.mock("../queries/use-mentionable-users-query", () => ({
-  useMentionableUsersQuery: () => ({ data: [], isPending: false }),
+  useMentionableUsersQuery: () => ({ data: [], isPending: false, isError: false }),
 }));
 vi.mock("@/features/resources/queries/use-resources-query", () => ({
   useResourcesQuery: () => ({ data: { resources: [] }, isPending: false }),

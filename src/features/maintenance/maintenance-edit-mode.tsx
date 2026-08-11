@@ -193,19 +193,33 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // approver roles, and mentions answer "who should be warned", not "who can
   // approve" — guests belong here. See `useMentionableUsersQuery`.
   //
-  // Two hooks and two derived lists, but ONE request: both pickers are fed by
-  // this hook's unfiltered fetch, and `assignable` narrows it via `select`
-  // rather than hitting `/api/users/assignable` a second time. Order matters
-  // only for readability — react-query dedupes either way.
+  // Two hooks, two requests to `/api/users/assignable`, on purpose. They were
+  // once deduped onto one unfiltered fetch; that made the approver list a
+  // client-side filter over a truncated page and emptied the picker (SPEC §0.1).
+  // The approver query must be narrowed by the SERVER, which means its own
+  // request under its own key.
   const mentionable = useMentionableUsersQuery();
   const channelsQuery = useNotifyChannelsQuery();
   const resourcesQuery = useResourcesQuery({ limit: 200 });
 
-  const approverOptions = (assignable.data ?? []).map((u) => ({
-    value: u.id,
-    label: u.display_name,
-    description: u.email,
-  }));
+  // Memoised for the same reason `mentionOptions` below is: this list now holds
+  // up to 200 rows where before the fix it was routinely empty, and without this
+  // every keystroke in Title/Description rebuilds all 200 objects.
+  //
+  // `searchValue` carries the email because cmdk matches on it: two people can
+  // share a display name, and the email is the only thing that tells them apart
+  // — it was visible in the description but not searchable. Mirrors
+  // `resourceOptions` directly below. (Fuller server-side search: RUK-251.)
+  const approverOptions = useMemo(
+    () =>
+      (assignable.data ?? []).map((u) => ({
+        value: u.id,
+        label: u.display_name,
+        description: u.email,
+        searchValue: `${u.display_name} ${u.email}`,
+      })),
+    [assignable.data],
+  );
   const resourceOptions: MultiSelectOption[] = (resourcesQuery.data?.resources ?? []).map((r) => ({
     value: r.id,
     label: r.name,
@@ -486,7 +500,19 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             onChange={setApproverId}
             placeholder={detail?.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
             searchPlaceholder="Search people…"
-            emptyText={assignable.isPending ? "Loading…" : "No people found."}
+            // Three states, three strings. `isError` used to be unread here, so
+            // a 403 (the normal answer for a guest — the endpoint is permission
+            // gated), a 500, and a genuinely empty roster all rendered "No
+            // people found." That is the sentence this picker's outage hid
+            // behind for its whole life, and it reads as a fact about the
+            // company rather than a failure to load (SPEC §2.2).
+            emptyText={
+              assignable.isPending
+                ? "Loading…"
+                : assignable.isError
+                  ? "Couldn't load people. Retry or check your access."
+                  : "No people found."
+            }
             ariaLabel="Approver"
           />
         </Field>

@@ -55,13 +55,13 @@ vi.mock("@/features/_shared/queries/use-me-query", () => ({
 // deliberately NOT wrapped in here (see the file header — `useMeQuery` is the
 // only query seam this test wants).
 vi.mock("../queries/use-assignable-users-query", () => ({
-  useAssignableUsersQuery: () => ({ data: [], isPending: false }),
+  useAssignableUsersQuery: () => ({ data: [], isPending: false, isError: false }),
 }));
 vi.mock("../queries/use-mentionable-users-query", () => ({
-  useMentionableUsersQuery: () => ({ data: [], isPending: false }),
+  useMentionableUsersQuery: () => ({ data: [], isPending: false, isError: false }),
 }));
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
-  useNotifyChannelsQuery: () => ({ data: [], isPending: false }),
+  useNotifyChannelsQuery: () => ({ data: [], isPending: false, isError: false }),
 }));
 vi.mock("@/features/resources/queries/use-resources-query", () => ({
   useResourcesQuery: () => ({ data: { resources: [] }, isPending: false }),

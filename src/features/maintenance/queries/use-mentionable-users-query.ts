@@ -6,17 +6,7 @@ import { bffFetch } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
 import { MOCK_USERS } from "@/shared/mock/users";
 import type { AssignableUser } from "@/domain/maintenance/maintenance";
-
-/**
- * Max rows the endpoint will return (SPEC §1.6); its default is only 50, which
- * would leave user #51 alphabetically unreachable because `MultiSelect` filters
- * client-side through cmdk and never re-queries. Ask for the maximum instead.
- * Precedent: `useResourcesQuery({ limit: 200 })`. Server-side `search` is
- * deliberately not forwarded in RUK-218 (SPEC §13.1) — client filtering over
- * 200 loaded rows is enough, and the dangerous half of the problem (an
- * unreachable id silently dropping a chip) is closed by `mergeMentionChips`.
- */
-const MENTIONABLE_USERS_LIMIT = 200;
+import { ASSIGNABLE_USERS_LIMIT, warnOnce } from "./assignable-users-limit";
 
 /**
  * Cache key for the UNFILTERED user list — a DIFFERENT first segment from
@@ -34,15 +24,12 @@ const MENTIONABLE_USERS_LIMIT = 200;
  *
  * A distinct literal prefix makes the collision structurally impossible.
  *
- * The approver picker now READS this same cache entry (see
- * `useAssignableUsersQuery`) to avoid a second request to the one endpoint both
- * pickers hit. That does NOT weaken the reasoning above — it depends on it.
- * What is cached here stays the unfiltered list; the approver picker narrows it
- * through react-query `select`, which is a per-observer transform on read and
- * is never written back into the cache. So this entry has exactly one meaning
- * ("everyone"), and no code path can make an approver-shaped key resolve to it.
- * Unifying the two KEY FUNCTIONS would still reintroduce the collision, because
- * the hazard is a key that CLAIMS "reviewer,admin" while holding everyone.
+ * This entry has exactly one meaning — "everyone" — and the approver picker
+ * keeps well away from it: it issues its own role-filtered request under its own
+ * key. Deriving approvers from this entry was tried and reverted; it filters
+ * after the row limit instead of before it, which empties the picker (SPEC §0.1).
+ * Unifying the two KEY FUNCTIONS would reintroduce the collision, because the
+ * hazard is a key that CLAIMS "reviewer,admin" while holding everyone.
  */
 export function mentionableUsersKey(search: string) {
   return ["mentionable-users", search] as const;
@@ -54,20 +41,17 @@ export function mentionableUsersKey(search: string) {
  * create/edit form.
  *
  * A separate hook rather than a parameter on `useAssignableUsersQuery`: that
- * hook re-filters the response by approver roles client-side ("belt-and-
- * suspenders", because the backend `roles` filter is unreliable). That is
- * approver policy, and it must not run for mentions under any arguments —
- * mentions answer "who should be warned", not "who holds a permission", so
- * guests belong in this list (SPEC §2.2.1). Hence: no `roles` sent, no client
- * re-filter, and its own cache key (see `mentionableUsersKey`).
- */
-/**
- * Shared query options for the one unfiltered `/api/users/assignable` fetch.
+ * hook restricts the request to approver roles. That is approver policy, and it
+ * must not run for mentions under any arguments — mentions answer "who should be
+ * warned", not "who holds a permission", so guests belong in this list
+ * (SPEC §2.2.1). Hence: no `roles` sent, no client re-filter, and its own cache
+ * key (see `mentionableUsersKey`).
  *
- * Exported so `useAssignableUsersQuery` can mount an observer on the SAME cache
- * entry instead of firing a second request to the same endpoint. Both hooks
- * must pass identical `queryKey`/`queryFn`/`staleTime`, or react-query would
- * open a second entry and the dedup would silently stop working.
+ * Server-side `search` is deliberately not forwarded (RUK-218 SPEC §13.1):
+ * client filtering over the loaded rows is enough HERE, because the dangerous
+ * half of the problem — an unreachable id silently dropping a chip — is closed
+ * by `mergeMentionChips`. The approver picker has no such merge, so the same
+ * argument does NOT transfer to it (SPEC §9.1, tracked as RUK-251).
  */
 export function mentionableUsersQueryOptions(search?: string) {
   return {
@@ -89,9 +73,20 @@ export function mentionableUsersQueryOptions(search?: string) {
           has_messenger_tag: Boolean(u.telegram_tag ?? u.slack_tag),
         }));
       }
-      const qs = new URLSearchParams({ limit: String(MENTIONABLE_USERS_LIMIT) });
-      const data = await bffFetch<{ users: AssignableUser[] }>(`/api/users/assignable?${qs.toString()}`);
-      return data.users;
+      const qs = new URLSearchParams({ limit: String(ASSIGNABLE_USERS_LIMIT) });
+      const data = await bffFetch<{ users: AssignableUser[]; total?: number }>(
+        `/api/users/assignable?${qs.toString()}`,
+      );
+      if ((data.total ?? 0) > ASSIGNABLE_USERS_LIMIT) {
+        warnOnce(
+          "mentions-partial-slice",
+          `[mentions-picker] total=${data.total} > limit=${ASSIGNABLE_USERS_LIMIT} — ` +
+            `picker shows a partial slice; server-side search needed (RUK-251)`,
+        );
+      }
+      // `?? []` so a malformed response degrades to an empty picker with an
+      // error state rather than throwing out of the queryFn.
+      return data.users ?? [];
     },
     staleTime: 60_000,
   };
