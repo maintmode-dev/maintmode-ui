@@ -11,7 +11,8 @@
  *  - flat times   : `*_time_start/end` → `Period`.
  *  - user summary : `created_by`/`approver` → display string, "Unknown user" fallback.
  *  - steps        : `description` → `title`, `order` → 1-based number.
- *  - conflicts    : `ConflictView` (no reference/resolved) → domain `Conflict`.
+ *  - conflicts    : `ConflictView` (no reference/resolved) → domain `Conflict`,
+ *                   carrying `scope`/`resources` through for the approve echo.
  */
 
 import type {
@@ -182,13 +183,26 @@ export function mapMention(mention: MentionViewDto): MaintenanceMention {
   };
 }
 
-/** `ConflictView` → domain `Conflict`. No `reference`/`resolved` on the wire. */
+/**
+ * `ConflictView` → domain `Conflict`. No `reference`/`resolved` on the wire.
+ *
+ * `scope` and `resources` are carried through even though nothing renders them:
+ * approve echoes them back in `conflicts_snapshot` and the backend fingerprints
+ * the echo. Dropping them here is what made every approve of a conflicted
+ * maintenance fail with 400 (RUK-247).
+ */
 export function mapConflict(conflict: ConflictViewDto): Conflict {
   return {
     maintenance_id: conflict.maintenance_id,
     title: conflict.title ?? "Untitled maintenance",
     overlap_start: conflict.overlap_start ?? "",
     overlap_end: conflict.overlap_end ?? "",
+    scope: mapScope(conflict.scope),
+    resources: (conflict.resources ?? []).map(mapResource),
+    // Absent → `false` (not reviewed). Never `?? true`: that would assert the
+    // approver saw a conflict on the strength of a field the backend didn't
+    // send (RUK-178).
+    known_at_approval: conflict.known_at_approval ?? false,
   };
 }
 

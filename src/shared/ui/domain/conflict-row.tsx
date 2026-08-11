@@ -7,6 +7,12 @@ export interface ConflictRowProps {
   meta?: ReactNode;
   trailing?: ReactNode;
   resolved?: boolean;
+  /**
+   * The approver never saw this conflict — it either appeared after approval or
+   * nobody has approved yet. Renders a badge ahead of `trailing` (it composes
+   * with it rather than replacing it).
+   */
+  unreviewed?: boolean;
   onClick?: () => void;
   /**
    * Drop the row's own fuchsia accent rail + elevated background — use when the
@@ -27,6 +33,7 @@ export function ConflictRow({
   meta,
   trailing,
   resolved,
+  unreviewed,
   onClick,
   flush,
   className,
@@ -55,6 +62,13 @@ export function ConflictRow({
         </div>
         {meta ? <div className="text-xs text-fg-dim mt-0.5 font-mono">{meta}</div> : null}
       </div>
+      {unreviewed ? (
+        // The words matter as much as the colour: a bare coloured dot says
+        // nothing to a screen reader, and the label is the whole claim.
+        <span className="shrink-0 rounded-sm border border-[var(--conflict-border)] bg-[var(--conflict-bg)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.04em] text-[var(--conflict-fg)]">
+          Not seen at approval
+        </span>
+      ) : null}
       {trailing}
       {onClick ? <ChevronRight className="size-3.5 text-fg-dim shrink-0" aria-hidden="true" /> : null}
     </Element>

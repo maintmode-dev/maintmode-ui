@@ -151,18 +151,57 @@ export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefi
       can_start: base.status === "planned",
       can_complete: base.status === "in_progress",
     },
+    // Deliberately asymmetric on two axes, because a uniform fixture cannot
+    // tell correct code from broken code here:
+    //
+    //  - scope: one `resource` neighbour and one `global` one that still
+    //    carries a resource intersection, so both halves of the approve echo
+    //    are exercised (SPEC §3.2.1).
+    //  - known_at_approval: `m-1002` (planned) mixes false + true, so a UI that
+    //    flags everything is distinguishable from one that reads the flag.
+    //    Unreviewed comes FIRST, mirroring the server's own ordering.
+    //
+    // `m-1006` is the only draft, and it carries all-`false` conflicts on
+    // purpose: that is exactly the input where a missing status gate would
+    // wrongly render "not seen at approval" markers.
     conflicts:
       base.id === "m-1002"
         ? [
+            {
+              maintenance_id: "m-1100",
+              reference: "MNT-1100",
+              title: "Region-wide network drill",
+              overlap_start: todayAt(18, 45, 1),
+              overlap_end: todayAt(19, 30, 1),
+              scope: "global" as const,
+              resources: [{ id: "r-1", name: "orders-db" }],
+              known_at_approval: false,
+            },
             {
               maintenance_id: "m-1099",
               reference: "MNT-1099",
               title: "Edge node restart",
               overlap_start: todayAt(18, 30, 1),
               overlap_end: todayAt(19, 0, 1),
+              scope: "resource" as const,
+              resources: [{ id: "r-2", name: "edge-eu" }],
+              known_at_approval: true,
             },
           ]
-        : [],
+        : base.id === "m-1006"
+          ? [
+              {
+                maintenance_id: "m-1101",
+                reference: "MNT-1101",
+                title: "Object storage compaction",
+                overlap_start: todayAt(10, 30, 5),
+                overlap_end: todayAt(11, 0, 5),
+                scope: "resource" as const,
+                resources: [{ id: "r-8", name: "object-storage" }],
+                known_at_approval: false,
+              },
+            ]
+          : [],
     revision: 1,
   };
 }

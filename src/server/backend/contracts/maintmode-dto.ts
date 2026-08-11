@@ -73,6 +73,19 @@ export interface ConflictViewDto {
   overlap_start?: string;
   overlap_end?: string;
   resources?: MaintenanceViewResourceDto[];
+  /**
+   * Did the approver already see this conflict when they approved?
+   *
+   * Optional here only because the generated Go client types it `*bool` with
+   * `omitempty` — the server field is a plain `bool` and is ALWAYS serialized.
+   * So `undefined` means "backend predates RUK-178", not "backend chose to omit
+   * it"; do not drop the `?` on the assumption that it is always present.
+   *
+   * `false` is deliberately ambiguous on the backend side: it covers both "the
+   * conflict appeared after approval" and "the snapshot read failed". Tell the
+   * two apart via the maintenance status, never by inventing a third state.
+   */
+  known_at_approval?: boolean;
 }
 
 /** `uimodels.MaintenanceActions` — already 1:1 with the domain shape. */

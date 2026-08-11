@@ -87,6 +87,45 @@ export interface Conflict {
   overlap_end: string;
   /** Resolved when the conflicting maintenance is canceled or moved out of the window. */
   resolved?: boolean;
+  /**
+   * The conflicting maintenance's OWN scope. Nothing renders it — it exists so
+   * approve can echo it back in `conflicts_snapshot`, where the backend
+   * fingerprints it. Do not delete it as unused (RUK-247).
+   */
+  scope: MaintenanceScope;
+  /**
+   * Resources this conflict is about: the INTERSECTION of the neighbour's
+   * resources with ours, not the neighbour's full set. Populated for every
+   * conflict regardless of `scope` — a `global` neighbour can carry a non-empty
+   * intersection — and echoed back on approve unconditionally. Gating the echo
+   * on `scope` yields a 409 (SPEC §3.2.1).
+   */
+  resources: MaintenanceResource[];
+  /**
+   * Whether the approver had already seen this conflict at the moment they
+   * approved (RUK-178). `false` means nobody reviewed it — either it appeared
+   * after approval, or the maintenance is still a draft, which the UI tells
+   * apart by the maintenance status.
+   *
+   * An absent wire value maps to `false`, never `true`: claiming the approver
+   * saw something on the strength of missing data would be a false audit
+   * statement.
+   */
+  known_at_approval: boolean;
+}
+
+/**
+ * Should this conflict be flagged as one the approver never reviewed?
+ *
+ * Both the detail page and the quick sheet render the marker, and both need the
+ * draft gate: a draft has never been approved, so `known_at_approval` is `false`
+ * for every one of its conflicts and flagging them would mark every row. The
+ * rule lives here rather than at the two render sites because it was duplicated
+ * across them and only one copy was covered — deleting the gate from the quick
+ * sheet left the entire suite green.
+ */
+export function isUnreviewedConflict(status: MaintenanceStatus, conflict: Conflict): boolean {
+  return status !== "draft" && !conflict.known_at_approval;
 }
 
 export interface Maintenance {

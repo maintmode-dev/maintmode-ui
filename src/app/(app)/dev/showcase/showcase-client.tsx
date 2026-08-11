@@ -168,7 +168,7 @@ export default function ShowcaseClient() {
               fuchsia rail; the rows don't add their own, so the stripe never
               doubles up. */}
           <div className="w-full border-l-[3px] border-[var(--conflict-fg)] pl-3 flex flex-col">
-            <ConflictRow flush title="MNT-0188 · Replica failover" meta="02:15 → 02:45" />
+            <ConflictRow flush unreviewed title="MNT-0188 · Replica failover" meta="02:15 → 02:45" />
             <ConflictRow flush title="MNT-0192 · redis cluster patch" meta="02:30 → 03:00" />
             <ConflictRow flush resolved title="MNT-0190 · api-gw cert rotation" meta="03:30 → 04:00" />
           </div>

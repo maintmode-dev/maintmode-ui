@@ -37,7 +37,11 @@ import { MaintenanceQuickSheet } from "./maintenance-quick-sheet";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useCancelMaintenance, useMaintenanceAction } from "./queries/use-maintenance-actions";
 import { useStepAction } from "./queries/use-step-actions";
-import type { CancelReason, MaintenanceDetail } from "@/domain/maintenance/maintenance";
+import {
+  isUnreviewedConflict,
+  type CancelReason,
+  type MaintenanceDetail,
+} from "@/domain/maintenance/maintenance";
 
 /**
  * The edit form lives behind the "Edit" tab, so it is not on this page's
@@ -125,9 +129,16 @@ function MaintenanceDetailView({ id }: { id: string }) {
   const detail = query.data;
 
   return (
-    <article className="grid grid-cols-[60%_40%] min-h-[calc(100vh-56px)]">
+    /* Fixed height, not `min-h`: the two columns each own their scrollbar, and
+       `overflow-auto` on a child only engages once the parent's height is
+       bounded. With `min-h` the grid grew to fit the taller column and the whole
+       page scrolled instead — painful on a maintenance with dozens of
+       conflicts, where reading the left column meant scrolling past all of
+       them. `min-h-0` on the children is what lets them shrink below their
+       content height inside a grid track. */
+    <article className="grid grid-cols-[60%_40%] h-[calc(100vh-56px)]">
       {/* LEFT */}
-      <div className="p-8 overflow-auto space-y-6">
+      <div className="p-8 overflow-auto min-h-0 space-y-6">
         <header className="space-y-3">
           <div className="flex items-center gap-3 text-xs font-mono text-fg-dim">
             <Link href="/" className="hover:text-fg flex items-center gap-1">
@@ -313,8 +324,13 @@ function MaintenanceDetailView({ id }: { id: string }) {
       </div>
 
       {/* RIGHT */}
-      <aside className="p-7 bg-bg-elev-2 border-l border-border-subtle overflow-auto space-y-4">
-        <header className="flex items-baseline gap-3">
+      <aside className="p-7 bg-bg-elev-2 border-l border-border-subtle overflow-auto min-h-0 space-y-4">
+        {/* Sticky so the count stays visible while scrolling a long list — it is
+            the context for every row below it, and these can run to dozens. The
+            negative margins + padding let the panel's own (opaque) background
+            span the full width behind it, so rows scroll under the header
+            instead of showing through beside it. */}
+        <header className="sticky top-0 z-10 -mx-7 -mt-7 px-7 pt-7 pb-3 bg-bg-elev-2 flex items-baseline gap-3">
           <h2 className="h2">Conflicts</h2>
           {detail.conflicts.length > 0 ? (
             <span className="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-[var(--conflict-bg)] text-[var(--conflict-fg)] border border-[var(--conflict-border)] text-xs font-semibold tabular-nums">
@@ -329,26 +345,36 @@ function MaintenanceDetailView({ id }: { id: string }) {
         ) : detail.conflicts.length === 0 ? (
           <p className="caption">No overlapping maintenances detected.</p>
         ) : (
+          /* Server order is meaningful — unreviewed first — so no sorting here. */
           <div className="space-y-3">
-            {detail.conflicts.map((c) => (
-              <ConflictCard
-                key={c.maintenance_id}
-                onClick={() => setConflictPeekId(c.maintenance_id)}
-                title={c.title}
-                meta={formatRange(c.overlap_start, c.overlap_end, zone)}
-                details={
-                  <>
-                    {c.reference ? <ConflictGridItem label="Maintenance" value={c.reference} mono /> : null}
-                    <ConflictGridItem
-                      label="Overlap"
-                      value={formatRange(c.overlap_start, c.overlap_end, zone)}
-                      mono
-                    />
-                  </>
-                }
-                state={c.resolved ? "resolved" : "active"}
-              />
-            ))}
+            {detail.conflicts.map((c) => {
+              const unreviewed = isUnreviewedConflict(detail.status, c);
+              return (
+                <ConflictCard
+                  key={c.maintenance_id}
+                  onClick={() => setConflictPeekId(c.maintenance_id)}
+                  title={c.title}
+                  meta={formatRange(c.overlap_start, c.overlap_end, zone)}
+                  details={
+                    <>
+                      {c.reference ? <ConflictGridItem label="Maintenance" value={c.reference} mono /> : null}
+                      <ConflictGridItem
+                        label="Overlap"
+                        value={formatRange(c.overlap_start, c.overlap_end, zone)}
+                        mono
+                      />
+                      {unreviewed ? (
+                        // Deliberately not "appeared after approval": the backend
+                        // reports the same `false` when its snapshot read fails,
+                        // so the copy must not claim a cause.
+                        <ConflictGridItem label="Review" value="Not seen at approval" />
+                      ) : null}
+                    </>
+                  }
+                  state={c.resolved ? "resolved" : unreviewed ? "new" : "active"}
+                />
+              );
+            })}
           </div>
         )}
       </aside>

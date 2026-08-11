@@ -186,10 +186,22 @@ describe("mapConflict", () => {
       title: "Untitled maintenance",
       overlap_start: "2026-06-05T18:30:00Z",
       overlap_end: "2026-06-05T19:00:00Z",
+      // Absent wire scope degrades to `global` through `mapScope`.
+      scope: "global",
+      resources: [],
+      known_at_approval: false,
     });
   });
 
-  it("keeps the title when present and drops wire-only fields (scope/resources)", () => {
+  /**
+   * RUK-247. This test previously asserted the OPPOSITE — it was named "drops
+   * wire-only fields (scope/resources)" and pinned the bug: the approve request
+   * needs both fields echoed back, and dropping them here made them
+   * unreachable, so every approve of a conflicted maintenance 400'd.
+   *
+   * `toEqual` (not `toMatchObject`) on purpose: an extra key is a regression too.
+   */
+  it("carries scope and resources through — the approve echo depends on them", () => {
     expect(
       mapConflict({
         maintenance_id: "m-1099",
@@ -197,14 +209,59 @@ describe("mapConflict", () => {
         scope: "resource",
         overlap_start: "2026-06-05T18:30:00Z",
         overlap_end: "2026-06-05T19:00:00Z",
-        resources: [{ id: "r-4", name: "edge-eu" }],
+        // Second resource has NO name — pins the `mapResource` fallback
+        // (wire `name` is optional, the domain requires it).
+        resources: [{ id: "r-4", name: "edge-eu" }, { id: "r-5" }],
       }),
     ).toEqual({
       maintenance_id: "m-1099",
       title: "Edge node restart",
       overlap_start: "2026-06-05T18:30:00Z",
       overlap_end: "2026-06-05T19:00:00Z",
+      scope: "resource",
+      resources: [
+        { id: "r-4", name: "edge-eu" },
+        { id: "r-5", name: "" },
+      ],
+      known_at_approval: false,
     });
+  });
+
+  it("keeps a global conflict's resources — they are the intersection, not the neighbour's own", () => {
+    // §3.2.1: a `global` neighbour still carries a non-empty resource
+    // intersection, and the backend fingerprints it unconditionally. Dropping
+    // it here (or gating the echo on scope) yields a 409 on approve.
+    expect(
+      mapConflict({
+        maintenance_id: "m-2001",
+        title: "Global window",
+        scope: "global",
+        overlap_start: "2026-06-05T18:30:00Z",
+        overlap_end: "2026-06-05T19:00:00Z",
+        resources: [{ id: "r-9", name: "orders-db" }],
+      }).resources,
+    ).toEqual([{ id: "r-9", name: "orders-db" }]);
+  });
+
+  it("degrades an unrecognized wire scope to global", () => {
+    // `"resources"` is the Go constant's plural name (MaintenanceScopeResources)
+    // and a plausible typo; the wire enum is singular `"resource"` (§2.2).
+    expect(mapConflict({ maintenance_id: "m-3", scope: "resources" }).scope).toBe("global");
+  });
+
+  /**
+   * RUK-178. `known_at_approval` answers "did the approver see this conflict
+   * when they approved". An absent field must read as `false` (not reviewed),
+   * never `true`: the backend always sends it, so absence means an older build
+   * — and defaulting to `true` would assert an audit fact we do not have.
+   */
+  it("maps known_at_approval through", () => {
+    expect(mapConflict({ maintenance_id: "m-1", known_at_approval: true }).known_at_approval).toBe(true);
+    expect(mapConflict({ maintenance_id: "m-1", known_at_approval: false }).known_at_approval).toBe(false);
+  });
+
+  it("defaults a missing known_at_approval to false, never true", () => {
+    expect(mapConflict({ maintenance_id: "m-1" }).known_at_approval).toBe(false);
   });
 });
 

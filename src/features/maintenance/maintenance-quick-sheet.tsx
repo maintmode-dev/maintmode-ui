@@ -16,7 +16,7 @@ import { ConflictRow } from "@/shared/ui/domain/conflict-row";
 import { formatDuration, formatRange, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
-import type { MaintenanceDetail } from "@/domain/maintenance/maintenance";
+import { isUnreviewedConflict, type MaintenanceDetail } from "@/domain/maintenance/maintenance";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useMaintenanceAction } from "./queries/use-maintenance-actions";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
@@ -153,8 +153,8 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
           </div>
           {detail.conflicts.length > 0 ? (
             // Rows sit flush inside the section's single accent bar (no per-row
-            // rail — that would double the stripe). Conflicts can repeat the
-            // same maintenance_id, so key by index.
+            // rail — that would double the stripe). Server order is meaningful
+            // (unreviewed first), so this maps without sorting.
             <div className="flex flex-col">
               {detail.conflicts.map((c, i) => (
                 <ConflictRow
@@ -163,6 +163,7 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
                   title={c.title}
                   meta={formatRange(c.overlap_start, c.overlap_end, zone)}
                   resolved={c.resolved}
+                  unreviewed={isUnreviewedConflict(detail.status, c)}
                 />
               ))}
             </div>
