@@ -11,6 +11,7 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
 
 import { CalendarSidebar } from "./calendar-sidebar";
+import { CalendarTruncationNotice } from "./calendar-truncation-notice";
 import {
   applyCalendarFilters,
   defaultFilterState,
@@ -189,10 +190,6 @@ export function CalendarPage() {
     setView(next);
   };
 
-  const renderGrid = (gridItems: typeof items) => (
-    <CalendarGrid view={view} anchor={anchor} items={gridItems} onSelect={setSelectedId} timeZone={zone} />
-  );
-
   return (
     <div className="mx-auto max-w-[1400px] p-6 space-y-4">
       <header className="flex items-center gap-3 flex-wrap">
@@ -255,66 +252,81 @@ export function CalendarPage() {
         // populated states so the filter controls don't disappear when a view's
         // window happens to be empty — only the left column's content swaps.
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,76fr)_minmax(220px,24fr)]">
-          <div className="relative min-w-0">
-            {filteredItems.length === 0 ? (
-              // The grid renders the client-filtered set, so the empty overlay
-              // keys off `filteredItems`. We distinguish the two reasons it's
-              // empty: the server returned nothing for the active statuses
-              // (`items` empty) vs. scope/resource hid everything (`items` has
-              // rows). A lightweight STATIC backdrop stands in for the grid — we
-              // no longer mount a second live FullCalendar just for decoration.
-              <>
-                {/* Static backdrop standing in for the grid. Uses the SAME
+          <div className="min-w-0 space-y-2">
+            {/* Truncation signal (RUK-252). It rides WITH the grid column rather
+                than replacing the view, so no third visual state appears between
+                CalendarLoading and the grid (see the note above on the
+                deliberately matched heights). It renders only when the window is
+                KNOWN to be truncated and returns null otherwise, so the
+                not-truncated case adds no node and shifts no layout. */}
+            <CalendarTruncationNotice meta={query.meta} />
+            <div className="relative min-w-0">
+              {filteredItems.length === 0 ? (
+                // The grid renders the client-filtered set, so the empty overlay
+                // keys off `filteredItems`. We distinguish the two reasons it's
+                // empty: the server returned nothing for the active statuses
+                // (`items` empty) vs. scope/resource hid everything (`items` has
+                // rows). A lightweight STATIC backdrop stands in for the grid — we
+                // no longer mount a second live FullCalendar just for decoration.
+                <>
+                  {/* Static backdrop standing in for the grid. Uses the SAME
                     viewport-bound height as the populated grid (see
                     calendar-grid.tsx) so the empty↔populated transition doesn't
                     change the page height or introduce a page scroll. */}
-                <div
-                  aria-hidden="true"
-                  className="h-[calc(100vh-13rem)] rounded-md border border-border-subtle bg-bg-elev-1 bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_47px,var(--border-subtle)_47px,var(--border-subtle)_48px)] opacity-40"
-                />
-                <div className="absolute inset-0 grid place-items-center">
-                  <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
-                    {items.length === 0 ? (
-                      <CalendarEmpty
-                        // Guest: neutral empty state, no create link. `cta={false}`
-                        // (not undefined) suppresses CalendarEmpty's default
-                        // "New maintenance" button — `??` only falls back on nullish.
-                        caption={canCreate ? undefined : "No maintenance is scheduled for this period."}
-                        cta={
-                          canCreate ? (
-                            <Button asChild size="sm">
-                              <Link href="/maintenance/new">
-                                <Plus className="size-3" aria-hidden="true" /> New maintenance
-                              </Link>
+                  <div
+                    aria-hidden="true"
+                    className="h-[calc(100vh-13rem)] rounded-md border border-border-subtle bg-bg-elev-1 bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_47px,var(--border-subtle)_47px,var(--border-subtle)_48px)] opacity-40"
+                  />
+                  <div className="absolute inset-0 grid place-items-center">
+                    <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
+                      {items.length === 0 ? (
+                        <CalendarEmpty
+                          // Guest: neutral empty state, no create link. `cta={false}`
+                          // (not undefined) suppresses CalendarEmpty's default
+                          // "New maintenance" button — `??` only falls back on nullish.
+                          caption={canCreate ? undefined : "No maintenance is scheduled for this period."}
+                          cta={
+                            canCreate ? (
+                              <Button asChild size="sm">
+                                <Link href="/maintenance/new">
+                                  <Plus className="size-3" aria-hidden="true" /> New maintenance
+                                </Link>
+                              </Button>
+                            ) : (
+                              false
+                            )
+                          }
+                        />
+                      ) : (
+                        <CalendarEmpty
+                          title="No maintenance matches your filters"
+                          caption={`${items.length} hidden by the current Scope or Resource filters.`}
+                          cta={
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setFilters(defaultFilterState())}
+                            >
+                              Reset filters
                             </Button>
-                          ) : (
-                            false
-                          )
-                        }
-                      />
-                    ) : (
-                      <CalendarEmpty
-                        title="No maintenance matches your filters"
-                        caption={`${items.length} hidden by the current Scope or Resource filters.`}
-                        cta={
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setFilters(defaultFilterState())}
-                          >
-                            Reset filters
-                          </Button>
-                        }
-                      />
-                    )}
+                          }
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              </>
-            ) : (
-              // The grid renders the client-filtered set; the sidebar reads the
-              // full status-filtered window for its options.
-              renderGrid(filteredItems)
-            )}
+                </>
+              ) : (
+                // The grid renders the client-filtered set; the sidebar reads the
+                // full status-filtered window for its options.
+                <CalendarGrid
+                  view={view}
+                  anchor={anchor}
+                  items={filteredItems}
+                  onSelect={setSelectedId}
+                  timeZone={zone}
+                />
+              )}
+            </div>
           </div>
           <CalendarSidebar
             items={items}

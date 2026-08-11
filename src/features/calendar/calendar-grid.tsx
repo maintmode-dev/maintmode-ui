@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
-import interactionPlugin from "@fullcalendar/interaction";
 import luxon3Plugin from "@fullcalendar/luxon3";
 import type { EventClickArg, EventContentArg } from "@fullcalendar/core";
 
@@ -130,7 +129,14 @@ export function CalendarGrid({ view, anchor, items, onSelect, timeZone }: Calend
         // luxon3 supplies FullCalendar's NAMED-timezone implementation. Without
         // it, FC does "UTC-coercion" — any named `timeZone` (e.g. Asia/Nicosia)
         // silently renders as UTC, which is the whole bug we're fixing here.
-        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, luxon3Plugin]}
+        // No interactionPlugin: drag/resize/select are not part of the calendar's
+        // contract — no `editable`, `selectable`, `eventDrop`, `eventResize` or
+        // `dateClick` anywhere in src/. `eventClick` and the "+N more" popover are
+        // both core (`EventClicking` is in core's DEFAULT_INTERACTIONS), so neither
+        // depends on this plugin. Dropping it saves ~9 KB gzipped off the calendar
+        // chunk (measured), NOT a perf fix: the plugin delegates its listeners and
+        // cost 0.5 ms of 2449 ms in the 2026-08-11 trace.
+        plugins={[dayGridPlugin, timeGridPlugin, luxon3Plugin]}
         initialView={VIEW_TO_FC[view]}
         initialDate={fcDate}
         timeZone={timeZone}

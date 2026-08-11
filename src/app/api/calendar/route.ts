@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
 import { mapCalendarResponse } from "@/server/backend/contracts/maintenance-mapper";
-import type { CalendarViewResponseDto } from "@/server/backend/contracts/maintmode-dto";
+import type { CalendarViewMetaDto, CalendarViewResponseDto } from "@/server/backend/contracts/maintmode-dto";
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 
 /**
@@ -17,6 +17,19 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
  * `mapCalendarResponse` adapter projects into the domain `Maintenance[]` the
  * UI's `useCalendarQuery` expects under `{ items }`.
  *
+ * `meta` (`{ count, truncated }`) is PROJECTED next to `items`, the same way
+ * `mapCalendarResponse` projects `events` — the backend caps the calendar at
+ * 1000 events and reports the cap there, so dropping it left the UI unable to
+ * tell a truncated window from a complete one and silently hiding work past the
+ * cap (RUK-252). It stays OPTIONAL: the field is omitted entirely when the
+ * backend sends none, so `items` is unaffected.
+ *
+ * Projected rather than spread verbatim because `count` reaches the DOM (the
+ * truncation notice renders the number), and this route is the boundary where
+ * backend responses stop being trusted. `truncated` narrows to a real boolean
+ * so an off-contract truthy value can't become a claim, and `count` is dropped
+ * unless it is a finite number.
+ *
  * Inputs are sanitized before forwarding: `from`/`to` must match `YYYY-MM-DD`
  * (anything else is dropped, leaving the backend to apply its defaults), and
  * the repeated `statuses`/`resource_ids`/`channel_ids` filters are capped so a
@@ -29,6 +42,25 @@ function forwardFilter(target: URLSearchParams, key: string, values: string[]): 
   for (const value of values.slice(0, MAX_FILTER_VALUES)) {
     if (value) target.append(key, value);
   }
+}
+
+/**
+ * Narrow the backend's `meta` to the two fields the UI reads, or `undefined`
+ * when there is nothing trustworthy to report.
+ *
+ * The DTO types both fields as optional, but this is parsed JSON — the types
+ * describe the contract, not what actually arrived. `truncated` becomes a real
+ * boolean (`=== true`), so a string or a number can never reach the UI's
+ * strict check and be mistaken for a claim; `count` survives only as a finite
+ * number, since it is rendered into the notice's copy.
+ */
+function projectMeta(meta: CalendarViewMetaDto | undefined) {
+  if (!meta) return undefined;
+  const count = meta.count;
+  return {
+    truncated: meta.truncated === true,
+    ...(typeof count === "number" && Number.isFinite(count) ? { count } : {}),
+  };
 }
 
 export async function GET(request: Request) {
@@ -50,7 +82,12 @@ export async function GET(request: Request) {
       method: "GET",
     });
 
-    return NextResponse.json({ items: mapCalendarResponse(dto) });
+    const meta = projectMeta(dto.meta);
+
+    return NextResponse.json({
+      items: mapCalendarResponse(dto),
+      ...(meta ? { meta } : {}),
+    });
   } catch (error) {
     return routeErrorResponse(error);
   }

@@ -26,6 +26,10 @@ smoke-run/
 
 *.har
 
+# DevTools performance traces — multi-MB, captured ad hoc for perf work.
+# Keep the numbers in docs/perf/, not the raw dump.
+Trace-*.json.gz
+
 SPEC.md
 
 .agents/tasks/
