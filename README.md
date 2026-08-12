@@ -24,7 +24,8 @@ npm install
 npm run dev            # http://localhost:3000
 npm run lint
 npm run typecheck      # tsc --noEmit; covers test files, which the build does not
-npm run test:contracts # static import-boundary check
+npm run test:boundaries # static import-boundary check
+npm run test:contracts # FE↔BE contract tests against captured wire fixtures
 npm run test           # unit + component tests
 npm run build
 npm run test:bundle    # heavy deps must not be eagerly reachable (needs a build)

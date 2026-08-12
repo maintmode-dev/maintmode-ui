@@ -87,6 +87,11 @@ function mockAuditPage(params: AuditQueryParams): AuditPage {
     roles: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "roles")).length,
     block: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "block")).length,
     maintenance: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "maintenance")).length,
+    // Always 0 in mock mode: `integration` is a facet the BACKEND counts, and no
+    // mock fixture produces integration events. It is not an `AuditCategory`
+    // either — rendering a tab for it needs the category vocabulary extended,
+    // which is a product decision, not a mapping fix.
+    integration: 0,
   };
   return {
     events: filtered.slice(params.offset, params.offset + params.limit),

@@ -1,0 +1,107 @@
+{
+  "logs": [
+    {
+      "id": "<uuid-1>",
+      "action": "login.success",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "user",
+      "entity_id": "<uuid-2>",
+      "details": "login success for <email-1>",
+      "created_at": "<ts-1>"
+    },
+    {
+      "id": "<uuid-3>",
+      "action": "user.blocked",
+      "actor": "add-test-<uuid-4>",
+      "entity_type": "user",
+      "created_at": "<ts-2>"
+    },
+    {
+      "id": "<uuid-5>",
+      "action": "prune-expired-<uuid-6>",
+      "actor": "tester-<uuid-7>",
+      "created_at": "<ts-3>"
+    },
+    {
+      "id": "<uuid-8>",
+      "action": "login.success",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "user",
+      "entity_id": "<uuid-2>",
+      "details": "login success for <email-1>",
+      "created_at": "<ts-4>"
+    },
+    {
+      "id": "<uuid-9>",
+      "action": "login.success",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "user",
+      "entity_id": "<uuid-2>",
+      "details": "login success for <email-1>",
+      "created_at": "<ts-5>"
+    },
+    {
+      "id": "<uuid-10>",
+      "action": "login.success",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "user",
+      "entity_id": "<uuid-2>",
+      "details": "login success for <email-1>",
+      "created_at": "<ts-6>"
+    },
+    {
+      "id": "<uuid-11>",
+      "action": "login.success",
+      "actor": "add-test-<uuid-12>",
+      "entity_type": "user",
+      "created_at": "<ts-7>"
+    },
+    {
+      "id": "<uuid-13>",
+      "action": "login.success",
+      "actor": "add-test-<uuid-12>",
+      "entity_type": "user",
+      "created_at": "<ts-8>"
+    },
+    {
+      "id": "<uuid-14>",
+      "action": "prune-none-<uuid-15>",
+      "actor": "tester-<uuid-16>",
+      "created_at": "<ts-9>"
+    },
+    {
+      "id": "<uuid-17>",
+      "action": "user.blocked",
+      "actor": "add-test-<uuid-18>",
+      "entity_type": "user",
+      "created_at": "<ts-10>"
+    },
+    {
+      "id": "<uuid-19>",
+      "action": "login.success",
+      "actor": "add-test-<uuid-20>",
+      "entity_type": "user",
+      "created_at": "<ts-11>"
+    },
+    {
+      "id": "<uuid-21>",
+      "action": "login.success",
+      "actor": "add-test-<uuid-20>",
+      "entity_type": "user",
+      "created_at": "<ts-12>"
+    }
+  ],
+  "total": 1000,
+  "facets": {
+    "all": 2562,
+    "auth": "<redacted-auth>",
+    "roles": 333,
+    "block": 40,
+    "maintenance": 334,
+    "integration": 10
+  }
+}

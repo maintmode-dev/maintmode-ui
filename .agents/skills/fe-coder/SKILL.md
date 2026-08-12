@@ -69,6 +69,7 @@ If the task affects month view:
 Before finalizing, run the minimum relevant checks for the changed scope:
 
 - `npm run lint`
+- `npm run test:boundaries`
 - `npm run test:contracts`
 - `npm run test`
 - `npm run build` (when the change can affect the build)

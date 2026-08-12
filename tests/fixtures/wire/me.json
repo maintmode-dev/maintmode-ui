@@ -1,0 +1,16 @@
+{
+  "id": "<uuid-1>",
+  "email": "<email-1>",
+  "display_name": "User Name[<uuid-2>]",
+  "roles": [
+    "guest",
+    "admin"
+  ],
+  "oauth_provider": "google",
+  "connected_providers": [
+    "google"
+  ],
+  "timezone": null,
+  "telegram_tag": null,
+  "slack_tag": null
+}

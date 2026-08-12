@@ -1,0 +1,56 @@
+{
+  "maintenance": {
+    "id": "<uuid-1>",
+    "title": "TitleTestListApprovals/ok_limit_and_offset_page_the_queue",
+    "description": "DescriptionTestListApprovals/ok_limit_and_offset_page_the_queue",
+    "planned_time_start": "<ts-1>",
+    "planned_time_end": "<ts-2>",
+    "resources": [
+      {
+        "id": "<uuid-2>",
+        "name": "Resource<uuid-3>"
+      },
+      {
+        "id": "<uuid-4>",
+        "name": "Resource<uuid-5>"
+      }
+    ],
+    "scope": "resource",
+    "impact": "full_outage",
+    "status": "draft",
+    "cancel_reason": "",
+    "cancel_reason_comment": "",
+    "created_at": "<ts-3>",
+    "updated_at": null,
+    "revision": "<revision>",
+    "created_by": null,
+    "approver": {
+      "id": "<uuid-6>",
+      "display_name": "Unknown user",
+      "email": ""
+    },
+    "steps": [
+      {
+        "id": "<uuid-7>",
+        "order": 1,
+        "description": "Step 1TestListApprovals/ok_limit_and_offset_page_the_queue",
+        "rollback_description": "Rollback Step 1TestListApprovals/ok_limit_and_offset_page_the_queue",
+        "status": "planned",
+        "duration": "1m0s",
+        "planned_time_start": "<ts-1>",
+        "planned_time_end": "<ts-4>"
+      }
+    ],
+    "notify_targets": [],
+    "deferred_notifications": [],
+    "mentions": []
+  },
+  "conflicts": [],
+  "actions": {
+    "can_edit": true,
+    "can_approve": true,
+    "can_start": false,
+    "can_cancel": true,
+    "can_complete": false
+  }
+}

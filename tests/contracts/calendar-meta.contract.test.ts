@@ -1,6 +1,8 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { CalendarViewResponseDto } from "@/server/backend/contracts/maintmode-dto";
+import { createBackendMock, readWireFixture } from "./_harness";
+
+import type { CalendarEventDto, CalendarViewResponseDto } from "@/server/backend/contracts/maintmode-dto";
 
 /**
  * Wave 2 / W1: `GET /api/calendar` forwards the backend's `meta`
@@ -19,34 +21,40 @@ import type { CalendarViewResponseDto } from "@/server/backend/contracts/maintmo
  * reaches the DOM: `truncated` narrows to a real boolean and `count` is dropped
  * unless it is a finite number, so a backend drifting off-contract cannot put
  * an arbitrary value in front of the operator.
+ *
+ * RUK-254: the events fed in are RECORDED ones
+ * (`tests/fixtures/wire/calendar.json`), not the hand-typed `{id: "m-1", title:
+ * "Core switch upgrade", …}` literal this file used to carry. That literal was
+ * an author's belief about the endpoint, and a belief agrees with the code even
+ * when both are wrong about the wire (SPEC §4.1, point 4). The `meta` cases
+ * below still construct their meta values by hand on purpose: they exercise
+ * OFF-CONTRACT input (`truncated: "yes"`, `count: null`), which by definition
+ * cannot be captured from a backend behaving correctly.
  */
 
-const backendRequest = vi.fn<(opts: { path: string }) => Promise<CalendarViewResponseDto>>();
+const wire = readWireFixture<CalendarViewResponseDto>("calendar.json");
+const recordedEvents = wire.events ?? [];
+
+// No default response: every case here supplies its own body, because the point
+// of the suite is how the route treats OFF-CONTRACT `meta` values.
+const backendRequest = createBackendMock<CalendarViewResponseDto>();
 vi.mock("@/server/backend/client/authenticated-backend-request", () => ({
   authenticatedBackendRequest: (opts: { path: string }) => backendRequest(opts),
 }));
 
-import { GET } from "../route";
+const { GET } = await import("@/app/api/calendar/route");
 
-beforeEach(() => {
-  // Both calls are required: under vitest 4, `mockReset()` alone leaves a
-  // queued-but-unconsumed `...Once` implementation in place, which then fires
-  // inside whichever test runs next as an uncaught error. Same fix as
-  // audit-route-envelope.test.ts.
-  backendRequest.mockReset();
-  backendRequest.mockClear();
-});
-
-/** One wire-shaped calendar event. */
-function event(overrides: Record<string, unknown> = {}) {
-  return {
-    id: "m-1",
-    title: "Core switch upgrade",
-    start: "2026-06-01T10:00:00Z",
-    end: "2026-06-01T12:00:00Z",
-    status: "planned",
-    ...overrides,
-  };
+/**
+ * One RECORDED calendar event, optionally varied.
+ *
+ * The base is the first event the backend actually returned, so every field
+ * this test relies on exists because the wire carries it — not because someone
+ * typed it here.
+ */
+function event(overrides: Partial<CalendarEventDto> = {}): CalendarEventDto {
+  const [first] = recordedEvents;
+  if (!first) throw new Error("calendar.json recorded no events — refresh the fixture");
+  return { ...first, ...overrides };
 }
 
 function call(query = "from=2026-06-01&to=2026-06-30") {
@@ -80,14 +88,16 @@ describe("GET /api/calendar meta pass-through (wave 2 W1)", () => {
   });
 
   it("still answers with intact `items` when the backend omits `meta`", async () => {
-    backendRequest.mockResolvedValue({ events: [event(), event({ id: "m-2" })] });
+    backendRequest.mockResolvedValue({ events: [event(), event({ id: "second-event" })] });
 
     const response = await call();
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body.items).toHaveLength(2);
-    expect(body.items[0].id).toBe("m-1");
+    // Identity must survive the projection, and in wire order: a route that
+    // reordered or re-keyed events would put the operator on the wrong record.
+    expect(body.items.map((item: { id: string }) => item.id)).toEqual([event().id, "second-event"]);
     expect(body.meta).toBeUndefined();
   });
 
@@ -126,7 +136,16 @@ describe("GET /api/calendar meta pass-through (wave 2 W1)", () => {
 
     const body = await (await call()).json();
 
-    expect(body.items[0]).toMatchObject({ id: "m-1", title: "Core switch upgrade", status: "planned" });
+    // Domain-side field NAMES are independent literals — the mapper dropping
+    // `title` or renaming `status` fails here whatever the fixture holds.
+    expect(Object.keys(body.items[0])).toEqual(
+      expect.arrayContaining(["id", "title", "status", "scope", "planned_period"]),
+    );
+    // …and the recorded values must survive the projection rather than being
+    // defaulted away by a `?? ""`.
+    expect(body.items[0].id).toBe(event().id);
+    expect(body.items[0].title).toBe(event().title);
+    expect(body.items[0].title.length).toBeGreaterThan(0);
   });
 
   it("surfaces a backend failure instead of an empty-but-successful calendar", async () => {

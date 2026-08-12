@@ -85,6 +85,7 @@ export interface AuditFacets {
   roles: number;
   block: number;
   maintenance: number;
+  integration: number;
 }
 
 /** One server-filtered page of the audit log. */

@@ -13,9 +13,11 @@
     "test:unit": "vitest run -c vitest.unit.config.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run -c vitest.unit.config.ts --coverage",
-    "test:contracts": "node scripts/check-boundaries.mjs",
+    "test:boundaries": "node scripts/check-boundaries.mjs",
+    "test:contracts": "vitest run -c vitest.contracts.config.ts",
     "test:bundle": "node scripts/check-bundle-budget.mjs",
-    "verify": "npm run lint && npm run typecheck && npm run format && npm run test:contracts && npm run test:unit && npm run build && npm run test:bundle"
+    "fixtures:refresh": "node scripts/refresh-fixtures.mjs",
+    "verify": "npm run lint && npm run typecheck && npm run format && npm run test:boundaries && npm run test:contracts && npm run test:unit && npm run build && npm run test:bundle"
   },
   "browserslist": [
     "chrome >= 111",

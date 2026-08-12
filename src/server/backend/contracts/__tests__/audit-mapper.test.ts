@@ -177,7 +177,10 @@ describe("mapAuditLogResponse", () => {
     const page = mapAuditLogResponse(dto);
     expect(page.events.map((e) => e.id)).toEqual(["a-1", "a-3"]);
     expect(page.total).toBe(2);
-    expect(page.facets).toEqual({ all: 2, auth: 0, roles: 1, block: 1, maintenance: 0 });
+    // `integration` is zero-filled here on purpose: the DTO above omits it, and
+    // the mapper must still produce the full domain shape. The backend does send
+    // it (RUK-254 found it being dropped before the field was declared).
+    expect(page.facets).toEqual({ all: 2, auth: 0, roles: 1, block: 1, maintenance: 0, integration: 0 });
   });
 
   it("falls back to the row count when total is absent", () => {
@@ -189,7 +192,7 @@ describe("mapAuditLogResponse", () => {
     expect(mapAuditLogResponse({})).toEqual({
       events: [],
       total: 0,
-      facets: { all: 0, auth: 0, roles: 0, block: 0, maintenance: 0 },
+      facets: { all: 0, auth: 0, roles: 0, block: 0, maintenance: 0, integration: 0 },
     });
   });
 });

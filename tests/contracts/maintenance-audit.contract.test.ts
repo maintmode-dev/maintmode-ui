@@ -1,43 +1,64 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { AuditLogResponseDto } from "@/server/backend/contracts/maintmode-dto";
+import { createBackendMock, readWireFixture } from "./_harness";
+
+import type { AuditLogDto, AuditLogResponseDto } from "@/server/backend/contracts/maintmode-dto";
 
 /**
- * Perf remediation B1: `GET /api/maintenance/{id}/audit` returns
- * `{ events, reference, title }`, deriving `title` from the audit rows it
- * already holds so the audit page needs no maintenance-detail request.
+ * Contract test — `GET /api/maintenance/{id}/audit`. RUK-254, SPEC §4.1/§4.5.
+ *
+ * Perf remediation B1: the route returns `{ events, reference, title }`,
+ * deriving `title` from the audit rows it already holds so the audit page needs
+ * no maintenance-detail request.
  *
  * These also pin the documented `limit=100` + client-side `entity_id` filter
  * workaround, which the title derivation must not disturb.
+ *
+ * ## What the fixture can and cannot anchor here
+ *
+ * Rows are built on a RECORDED audit row (`tests/fixtures/wire/audit-log.json`),
+ * so the envelope every case relies on — `id`, `created_at`, `action`,
+ * `entity_type`, `entity_id`, `metadata` — is present because the backend sends
+ * it, not because it was typed here.
+ *
+ * The MAINTENANCE-specific values are still explicit, and that is a finding
+ * rather than a shortcut: the capture contains only `login.success` and
+ * `roles.changed` rows on `user` entities, so it carries no `maint_title` and
+ * no `maintenance.*` action at all. This endpoint's title derivation therefore
+ * runs against a row shape the fixture cannot prove exists — recorded in
+ * `docs/contract-gaps.md` as an unproven capture rather than papered over. The
+ * honest statement is: the envelope is wire-anchored, the maintenance payload
+ * is not, and seeding a maintenance-audit row would close that.
  */
 
-const backendRequest = vi.fn<(opts: { path: string }) => Promise<AuditLogResponseDto>>();
+const wire = readWireFixture<AuditLogResponseDto>("audit-log.json");
+
+// No default response: each case builds the rows it needs from `row()` below.
+const backendRequest = createBackendMock<AuditLogResponseDto>();
 vi.mock("@/server/backend/client/authenticated-backend-request", () => ({
   authenticatedBackendRequest: (opts: { path: string }) => backendRequest(opts),
 }));
 
-import { GET } from "../route";
+const { GET } = await import("@/app/api/maintenance/[id]/audit/route");
 
-beforeEach(() => {
-  // Both calls are required: under vitest 4, `mockReset()` alone leaves a
-  // queued-but-unconsumed `...Once` implementation in place, which then fires
-  // inside whichever test runs next as an uncaught error. Same fix as
-  // resolve-invitation-preview.test.ts.
-  backendRequest.mockReset();
-  backendRequest.mockClear();
-});
-
-/** One wire-shaped audit row. `maint_title` is the title snapshot the page heads with. */
-function row(overrides: Record<string, unknown> = {}) {
+/**
+ * One audit row: the recorded envelope, re-pointed at a maintenance entity.
+ *
+ * `maint_title` is the title snapshot the page heads with. It is supplied here
+ * because the capture has no maintenance rows to take it from (see header).
+ */
+function row(overrides: Record<string, unknown> = {}): AuditLogDto {
+  const [recorded] = wire.logs ?? [];
+  if (!recorded) throw new Error("audit-log.json recorded no rows — refresh the fixture");
   return {
+    ...recorded,
     id: "e-1",
-    created_at: "2026-06-01T10:00:00Z",
     action: "maintenance.updated",
     entity_type: "maintenance",
     entity_id: "m-1",
     metadata: { maint_title: "Core switch upgrade" },
     ...overrides,
-  };
+  } as AuditLogDto;
 }
 
 function call(id: string) {

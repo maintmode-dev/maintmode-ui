@@ -1,0 +1,173 @@
+{
+  "endpoints": {
+    "users-assignable": {
+      "url": "http://localhost:9000/maintmode/api/v1/users/assignable?limit=200&roles=admin&roles=reviewer",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "why": "The original P0: `roles` was not forwarded, so the picker filtered a truncated page client-side.",
+      "handEdited": false,
+      "sampledRows": {
+        "users": {
+          "kept": 12,
+          "actual": 200
+        }
+      },
+      "totalObserved": "500+ (threshold 200: EXCEEDED)",
+      "valueDomains": {
+        "users": {
+          "display_name": [
+            "Eligible Approver"
+          ],
+          "roles": [
+            "<array>"
+          ],
+          "has_messenger_tag": [
+            "false",
+            "true"
+          ]
+        }
+      }
+    },
+    "calendar": {
+      "url": "http://localhost:9000/maintmode/ui/v1/calendar?from=2026-08-10&to=2026-08-12",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "why": "RUK-256 (`resources` absent from events) and RUK-252 (`meta.truncated`).",
+      "handEdited": false,
+      "sampledRows": {
+        "events": {
+          "kept": 12,
+          "actual": 1000
+        }
+      },
+      "totalObserved": "1000+ (threshold 200: EXCEEDED)",
+      "valueDomains": {
+        "events": {
+          "scope": [
+            "global",
+            "resource"
+          ],
+          "impact": [
+            "full_outage",
+            "none",
+            "partial_outage"
+          ],
+          "status": [
+            "canceled",
+            "completed",
+            "draft",
+            "in_progress",
+            "planned"
+          ],
+          "created_by": [
+            "<null>",
+            "<object>"
+          ]
+        }
+      }
+    },
+    "maintenance-detail": {
+      "url": "http://localhost:9000/maintmode/ui/v1/maintenances/<uuid>",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "why": "RUK-156: built against an invented shape. Also the counterpart to the calendar gap — detail DOES carry `resources`, calendar does not.",
+      "handEdited": false
+    },
+    "approvals": {
+      "url": "http://localhost:9000/maintmode/ui/v1/approvals?limit=20",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "why": "Load-bearing read path behind the approvals queue.",
+      "handEdited": false,
+      "totalObserved": "0+ (threshold 200: under)",
+      "provesNothing": [
+        "maintenances"
+      ]
+    },
+    "me": {
+      "url": "http://localhost:9000/auth/api/v1/me",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "why": "RUK-202 added `timezone`; confirms it is really on the wire.",
+      "handEdited": false
+    },
+    "audit-log": {
+      "url": "http://localhost:9000/auth/api/v1/audit/log?limit=20",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "why": "RUK-171: `details` is a flat string, `actor` an email — FE renders degraded.",
+      "handEdited": false,
+      "sampledRows": {
+        "logs": {
+          "kept": 12,
+          "actual": 20
+        }
+      },
+      "totalObserved": "1000+ (threshold 200: EXCEEDED)",
+      "valueDomains": {
+        "logs": {
+          "id": [
+            "<uuid-1>",
+            "<uuid-2>",
+            "<uuid-3>",
+            "<uuid-4>",
+            "<uuid-5>",
+            "<uuid-6>",
+            "<uuid-7>",
+            "<uuid-8>",
+            "<uuid-9>",
+            "<uuid-10>",
+            "<uuid-11>",
+            "<uuid-12>",
+            "<uuid-13>",
+            "<uuid-14>",
+            "<uuid-15>",
+            "<uuid-16>",
+            "<uuid-17>",
+            "<uuid-18>",
+            "<uuid-19>",
+            "<uuid-20>"
+          ],
+          "created_at": [
+            "<ts-1>",
+            "<ts-2>",
+            "<ts-3>",
+            "<ts-4>",
+            "<ts-5>",
+            "<ts-6>",
+            "<ts-7>",
+            "<ts-8>",
+            "<ts-9>",
+            "<ts-10>",
+            "<ts-11>",
+            "<ts-12>",
+            "<ts-13>",
+            "<ts-14>",
+            "<ts-15>",
+            "<ts-16>",
+            "<ts-17>",
+            "<ts-18>",
+            "<ts-19>",
+            "<ts-20>"
+          ],
+          "entity_type": [
+            "user"
+          ],
+          "actor_id": [
+            "<uuid-21>"
+          ],
+          "entity_id": [
+            "<uuid-21>"
+          ]
+        }
+      }
+    }
+  },
+  "gateway": "http://localhost:9000"
+}

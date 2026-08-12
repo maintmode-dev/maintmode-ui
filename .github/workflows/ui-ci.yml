@@ -5,6 +5,10 @@ on:
     paths:
       - ".github/workflows/ui-ci.yml"
       - "src/**"
+      # Contract tests and captured wire fixtures live outside `src/**`
+      # (RUK-254). Without this line a PR that only updates a fixture — the
+      # exact artifact the drift mechanism relies on — skips CI entirely.
+      - "tests/**"
       - "public/**"
       - "scripts/**"
       - "deployment/**"
@@ -39,6 +43,10 @@ jobs:
       - run: npm run typecheck
       # `npm run format` (prettier --check) is intentionally NOT a gate yet —
       # the tree has pre-existing style drift. Re-add once it's clean.
+      # `test:contracts` used to BE this boundary linter; it was renamed
+      # (RUK-254) because the old name implied FE↔BE contract coverage that did
+      # not exist. Both run here — dropping either silently reopens a gap.
+      - run: npm run test:boundaries
       - run: npm run test:contracts
       - run: npm run test:unit
       # Build with the same placeholder build-time env the Dockerfile uses, so

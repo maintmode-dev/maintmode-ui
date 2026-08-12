@@ -112,6 +112,7 @@ function mapAuditFacets(dto: AuditLogResponseDto["facets"]): AuditFacets {
     roles: dto?.roles ?? 0,
     block: dto?.block ?? 0,
     maintenance: dto?.maintenance ?? 0,
+    integration: dto?.integration ?? 0,
   };
 }
 

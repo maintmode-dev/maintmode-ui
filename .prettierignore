@@ -8,3 +8,9 @@ coverage/
 
 # Lockfiles — npm owns the formatting.
 package-lock.json
+
+# Captured wire fixtures — `scripts/refresh-fixtures.mjs` owns the formatting
+# (RUK-254). These are recordings of backend responses, not authored source.
+# Left to prettier, every `fixtures:refresh` would re-break `npm run verify`,
+# and reformatting a recording would also blur the diff that IS the signal.
+tests/fixtures/wire/

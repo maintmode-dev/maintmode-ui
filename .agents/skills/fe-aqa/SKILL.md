@@ -27,8 +27,8 @@ Inspect only what is needed to decide the technical status reliably.
 
 ## Allowed Actions
 
-- run automated checks: `npm run lint`, `npm run test:contracts`,
-  `npm run test`, `npm run build`;
+- run automated checks: `npm run lint`, `npm run test:boundaries`,
+  `npm run test:contracts`, `npm run test`, `npm run build`;
 - run targeted manual checks when the task requires them;
 - collect logs, screenshots, and other evidence inside the task folder
   (`artifacts/...`);

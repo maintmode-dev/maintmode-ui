@@ -17,7 +17,8 @@
 - Lint: `npm run lint`
 - Format check: `npm run format`
 - Unit + component tests: `npm run test`
-- Import-boundary checks: `npm run test:contracts`
+- Import-boundary checks: `npm run test:boundaries`
+- FE↔BE contract tests: `npm run test:contracts` (fixtures: `npm run fixtures:refresh`)
 - Build: `npm run build`
 - Local verification bundle: `npm run verify`
 
@@ -49,6 +50,35 @@
 - Test fixtures belong in `src/shared/testing/**` or `tests/**`.
 - BFF routes that are not integrated must fail explicitly, normally with `501 Not Implemented`.
 - Local development mocks require an explicit future runtime flag and must not be silent.
+
+## Contract Policy (FE↔BE)
+
+Five drift incidents reached production because nothing executed the BFF proxy
+in a test. See `SPEC-RUK-254.md` and `docs/contract-gaps.md`.
+
+- **A new BFF route ships with a contract test.** Any route added under
+  `src/app/api/` gets `tests/contracts/<name>.contract.test.ts`, answering four
+  questions: are all params forwarded (`getAll` for repeatable ones), does the
+  response reach the client including metadata (`total`, `meta`), does a backend
+  error stay an error rather than degrading into an empty list, and is the
+  response a recorded fixture rather than a hand-written literal.
+- **Response fixtures are captured, never typed by hand.** `npm run fixtures:refresh`
+  writes `tests/fixtures/wire/`. A hand-written fixture encodes what its author
+  believes the backend sends, so it agrees with the code even when both are
+  wrong about the wire. That is the defect class behind four of the five
+  incidents. A hand edit is legitimate where seed data cannot reach a state, but
+  it must be declared via `handEdited` + a reason in the manifest.
+- **Expectations must be independent of the fixture they check.** Never
+  `expect(body.title).toBe(recorded.title)` — that holds under every mutation of
+  the fixture, so it stays green while the contract moves. Assert literal field
+  names (see `REQUIRED_EVENT_FIELDS` in `calendar.contract.test.ts`). A test that
+  does not fail when its field is renamed is not a test.
+- **A new stub in a mapper** (`x: []` or `x: undefined` standing in for a field
+  the backend does not send) **needs a row in `docs/contract-gaps.md`.** The
+  registry is executable: `contract-gaps.test.ts` fails on an unregistered stub,
+  and fails again when the gap closes so the row gets deleted instead of rotting.
+- **Do not silence a failing contract test.** A red contract test is either
+  drift or a stale registry row; both need a person, not a `skip`.
 
 ## Prototype Policy
 

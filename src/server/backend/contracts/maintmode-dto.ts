@@ -528,6 +528,14 @@ export interface AuditFacetsDto {
   roles?: number;
   block?: number;
   maintenance?: number;
+  /**
+   * Integration events. The backend has been counting these all along; this
+   * type did not declare the field, so `mapAuditFacets` dropped it and the
+   * category could not render. Found by the RUK-254 DTO↔wire reconciliation,
+   * not by anyone noticing a missing tab — the count is 0 on the dev seed, so
+   * there was no visible symptom to notice.
+   */
+  integration?: number;
 }
 
 /** `apiauthmodels.AuditLogResponse` — `{ logs, total, facets }`. */

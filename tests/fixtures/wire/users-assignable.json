@@ -1,0 +1,115 @@
+{
+  "users": [
+    {
+      "id": "<uuid-1>",
+      "email": "<email-1>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": true
+    },
+    {
+      "id": "<uuid-2>",
+      "email": "<email-2>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-3>",
+      "email": "<email-3>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-4>",
+      "email": "<email-4>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-5>",
+      "email": "<email-5>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-6>",
+      "email": "<email-6>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-7>",
+      "email": "<email-7>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-8>",
+      "email": "<email-8>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-9>",
+      "email": "<email-9>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-10>",
+      "email": "<email-10>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-11>",
+      "email": "<email-11>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    },
+    {
+      "id": "<uuid-12>",
+      "email": "<email-12>",
+      "display_name": "Eligible Approver",
+      "roles": [
+        "reviewer"
+      ],
+      "has_messenger_tag": false
+    }
+  ],
+  "total": 500,
+  "limit": 200,
+  "offset": 0
+}

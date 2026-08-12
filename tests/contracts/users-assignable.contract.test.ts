@@ -1,8 +1,13 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import { createBackendMock, readWireFixture, backendQuery } from "./_harness";
+import { expectWireFields, type FieldSpec } from "./_wire-assertions";
 
 import type { ListAssignableUsersResponseDto } from "@/server/backend/contracts/maintmode-dto";
 
 /**
+ * Contract test — `GET /api/users/assignable`. RUK-254, SPEC-RUK-254.md §4.1/§4.5.
+ *
  * SPEC §4.0, applied one layer down.
  *
  * The hook tests model the endpoint and assert the query string the HOOK emits.
@@ -17,27 +22,28 @@ import type { ListAssignableUsersResponseDto } from "@/server/backend/contracts/
  * the entire 1022-test suite green — and either one reproduces the original P0
  * exactly: `roles` gone means the picker filters a truncated page client-side,
  * `limit` gone means the backend quietly answers 50 (SPEC §1.1 row 3).
+ *
+ * The response the backend gives is now the RECORDED one
+ * (`tests/fixtures/wire/users-assignable.json`) rather than the `{users: [],
+ * total: 0}` literal this file used to declare. That literal was doubly weak:
+ * it pinned no row shape at all, so the picker's fields could vanish from the
+ * wire with nothing here noticing, and it was an author's BELIEF about the
+ * endpoint rather than its answer (SPEC §4.1, point 4).
  */
 
-const backendRequest = vi.fn<(opts: { path: string }) => Promise<ListAssignableUsersResponseDto>>();
+const wire = readWireFixture<ListAssignableUsersResponseDto>("users-assignable.json");
+
+const backendRequest = createBackendMock(wire);
 vi.mock("@/server/backend/client/authenticated-backend-request", () => ({
   authenticatedBackendRequest: (opts: { path: string }) => backendRequest(opts),
 }));
 
-import { GET } from "../route";
-
-beforeEach(() => {
-  // Both calls are required under vitest 4 — see audit-route-envelope.test.ts.
-  backendRequest.mockReset();
-  backendRequest.mockClear();
-  backendRequest.mockResolvedValue({ users: [], total: 0 } as ListAssignableUsersResponseDto);
-});
+const { GET } = await import("@/app/api/users/assignable/route");
 
 /** Invoke the route with a raw query string and return the backend query it built. */
 async function backendQueryFor(query: string): Promise<URLSearchParams> {
   await GET(new Request(`http://localhost/api/users/assignable?${query}`));
-  const path = backendRequest.mock.calls[0]?.[0].path ?? "";
-  return new URLSearchParams(path.split("?")[1] ?? "");
+  return backendQuery(backendRequest);
 }
 
 describe("GET /api/users/assignable — filter forwarding (SPEC §2.1, AC-2)", () => {
@@ -64,11 +70,25 @@ describe("GET /api/users/assignable — filter forwarding (SPEC §2.1, AC-2)", (
     expect(query.getAll("roles")).toEqual(["admin"]);
   });
 
+  it("passes the recorded roster through to the client without dropping rows", async () => {
+    // Pass-through on the RECORDED response (SPEC §4.1, point 2): the route
+    // must hand the picker every user the backend listed. A filter or slice
+    // sneaking in here reproduces the P0 — a truncated roster that still looks
+    // like a successful answer.
+    const body = await (await GET(new Request("http://localhost/api/users/assignable?limit=200"))).json();
+
+    expect(body.users).toHaveLength((wire.users ?? []).length);
+  });
+
   it("returns `total` from the backend so the over-limit warning can fire", async () => {
     // AC-12: `total` is the ONLY mechanism by which the RUK-218 §13.1 review
     // trigger can ever be observed. The route dropping it silences both hooks'
     // dev warnings with no other symptom.
-    backendRequest.mockResolvedValue({ users: [], total: 3214 } as ListAssignableUsersResponseDto);
+    //
+    // Asserted against a value the fixture does NOT carry, so this cannot pass
+    // by the route inventing a count from the row length: the recorded capture
+    // holds 12 sampled rows, and 3214 can only arrive by being forwarded.
+    backendRequest.mockResolvedValue({ ...wire, total: 3214 });
 
     const body = await (await GET(new Request("http://localhost/api/users/assignable?limit=200"))).json();
 
@@ -76,9 +96,8 @@ describe("GET /api/users/assignable — filter forwarding (SPEC §2.1, AC-2)", (
   });
 
   it("falls back to the row count when the backend omits `total`", async () => {
-    backendRequest.mockResolvedValue({
-      users: [{ id: "u-1", display_name: "A", email: "a@x", roles: ["admin"] }],
-    } as ListAssignableUsersResponseDto);
+    const oneRow = (wire.users ?? []).slice(0, 1);
+    backendRequest.mockResolvedValue({ users: oneRow } as ListAssignableUsersResponseDto);
 
     const body = await (await GET(new Request("http://localhost/api/users/assignable?limit=200"))).json();
 
@@ -113,5 +132,58 @@ describe("GET /api/users/assignable — filter forwarding (SPEC §2.1, AC-2)", (
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect((await response.json()).users).toBeUndefined();
+  });
+});
+
+/**
+ * The wire contract, written as INDEPENDENT literals.
+ *
+ * Deliberately not derived from `wire`. An expectation read back out of the
+ * fixture under test is a tautology — it survives every mutation of that
+ * fixture, so the suite stays green while the contract moves. These literals are
+ * what a human asserts the picker needs; the fixture is what the backend
+ * actually sent. Only where the two can disagree does the test mean anything.
+ */
+const REQUIRED_USER_FIELDS: readonly FieldSpec[] = [
+  ["id", "string"],
+  ["email", "string"],
+  ["display_name", "string"],
+  ["roles", "array"],
+];
+
+describe("GET /api/users/assignable — the recorded response still matches the contract", () => {
+  it("carries every field the approver picker depends on, with the right type", () => {
+    // Type included: `roles` arriving as a comma-joined string instead of an
+    // array is exactly the change that leaves every hook test green while the
+    // role filter matches nothing — the original P0, one layer up.
+    expectWireFields(
+      (wire.users ?? []) as unknown as Record<string, unknown>[],
+      REQUIRED_USER_FIELDS,
+      "assignable users",
+    );
+  });
+
+  it("records role MEMBERS as strings, the values the filter compares against", () => {
+    // `roles` being an array is covered by the type table above. What that
+    // cannot express is the element type: an array of `{name}` objects instead
+    // of strings passes an `Array.isArray` check and then matches nothing in the
+    // picker's `includes()`.
+    //
+    // The guard on emptiness is deliberate. `[].every(...)` is `true`, so the
+    // previous version of this test passed on a capture with no users at all —
+    // a green test asserting nothing, which is how an endpoint reads as covered
+    // when it is not.
+    const users = wire.users ?? [];
+    expect(users.length).toBeGreaterThan(0);
+
+    const withRoles = users.filter((user) => (user.roles ?? []).length > 0);
+    expect(`users carrying at least one role: ${withRoles.length > 0 ? "some" : "NONE"}`).toBe(
+      "users carrying at least one role: some",
+    );
+
+    const nonString = withRoles
+      .flatMap((user) => user.roles ?? [])
+      .filter((role) => typeof role !== "string");
+    expect(`non-string role members: ${nonString.length}`).toBe("non-string role members: 0");
   });
 });
