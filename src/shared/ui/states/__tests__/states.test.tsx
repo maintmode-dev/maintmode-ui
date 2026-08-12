@@ -24,9 +24,22 @@ describe("state components — canonical copy contract", () => {
 
   it("CalendarEmpty uses canonical title + caption", () => {
     render(<CalendarEmpty />);
-    expect(screen.getByText("No maintenance scheduled for this week")).toBeTruthy();
+    expect(screen.getByText("No maintenance scheduled for this period")).toBeTruthy();
     expect(screen.getByText("Plan one to coordinate with your team.")).toBeTruthy();
     expect(screen.getByRole("button", { name: /New maintenance/i })).toBeTruthy();
+    // RUK-262: the default title must not name a period, since this component
+    // renders in all three views. Catches only the three view words — a novel
+    // period phrase ("this weekend") is guarded by the literal above instead.
+    // Must stay scoped to the heading node; on the container the sibling text
+    // concatenates and the invariant goes dead (spec §8.1).
+    expect(screen.getByRole("heading").textContent).not.toMatch(/\bthis (week|day|month)\b/i);
+  });
+
+  it("CalendarEmpty: an explicit title overrides the default", () => {
+    // The "hidden by filters" variant (calendar-page.tsx:302) is the only
+    // consumer that passes `title`, and it has no other test.
+    render(<CalendarEmpty title="No maintenance matches your filters" />);
+    expect(screen.getByText("No maintenance matches your filters")).toBeTruthy();
   });
 
   it("CalendarError offers a Retry CTA — no HTTP code in copy", () => {
