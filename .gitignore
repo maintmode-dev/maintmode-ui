@@ -35,6 +35,10 @@ SPEC.md
 .agents/tasks/
 
 tasks/
+
+# Scratch state and archived specs/plans from the /flow skill. Working
+# artifacts of a single task, not repository content.
+.flow/
 # `docs/` is ignored, EXCEPT the contract-gap registry — an executable artifact
 # whose rows a test asserts against the captured wire fixtures (RUK-254,
 # SPEC §4.4). Written as three rules because git cannot re-include a file inside
