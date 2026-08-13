@@ -20,6 +20,8 @@ import {
   FILTERS_STORAGE_KEY,
 } from "./calendar-filters";
 import { useCalendarQuery } from "./queries/use-calendar-query";
+import { useCalendarWindow, sameWindow } from "./queries/use-calendar-window";
+import { useCalendarNeighbourPrefetch, type StepDirection } from "./queries/use-calendar-prefetch";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 import {
@@ -94,6 +96,12 @@ export function CalendarPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState(defaultFilterState);
   const [hydrated, setHydrated] = useState(false);
+  // Which way the operator last stepped, and so which neighbour is worth
+  // warming. `null` means "we don't know" — the honest state on a cold load,
+  // after Today, and after a view switch, where the previous neighbour stops
+  // being meaningful because the window changed size or jumped. Guessing here
+  // would cost a wasted request on every operator who never steps.
+  const [stepDirection, setStepDirection] = useState<StepDirection>(null);
 
   useEffect(() => {
     // Mount-time read of client-only values (localStorage) — the canonical
@@ -159,17 +167,51 @@ export function CalendarPage() {
   // only when the set actually changes. Scope/resource stay client-side below.
   const statusParam = useMemo(() => Array.from(filters.statuses).sort(), [filters.statuses]);
 
+  // The window the REQUEST uses, which lags the one the header renders. Every
+  // chevron click is a brand-new cache key, so without this a burst costs one
+  // round-trip and one full re-map per click — and stepping forward is always a
+  // miss, since `staleTime` only ever spares a return to a window already seen.
+  //
+  // Only the request lags. `anchor`, `periodTitle` and the grid below still
+  // update straight from the click: debouncing those would trade a request
+  // problem for a visibly sluggish chevron, which is a worse deal than the one
+  // we are fixing.
+  const rawWindow = useMemo(() => ({ from: toDateParam(range.from), to: toDateParam(range.to) }), [range]);
+  // `hydrated` marks the point where the window stops being provisional: before
+  // it, the stored view has not been read yet and nothing is fetched, so those
+  // windows must pass through without closing the leading-edge latch.
+  const debouncedWindow = useCalendarWindow(rawWindow, hydrated);
+  // Has the request caught up with the header yet? While it hasn't, the anchor
+  // and the requested window describe different points in time, and anything
+  // derived from the anchor (the prefetch's neighbour) would be off by a step.
+  const windowSettled = sameWindow(debouncedWindow, rawWindow);
+
+  const queryParams = useMemo(
+    () => ({ from: debouncedWindow.from, to: debouncedWindow.to, statuses: statusParam }),
+    [debouncedWindow, statusParam],
+  );
+
   const query = useCalendarQuery(
-    {
-      from: toDateParam(range.from),
-      to: toDateParam(range.to),
-      statuses: statusParam,
-    },
+    queryParams,
     // `hydrated` always flips in the mount effect above, so the query is
     // disabled for exactly one commit and `isPending` stays true across it —
     // the page shows CalendarLoading, which is what it would show anyway.
     { enabled: hydrated },
   );
+
+  // Warm the window the operator is walking toward. Three conditions, and the
+  // third is the subtle one: `windowSettled`. Without it the anchor has already
+  // moved while the request has not, so the neighbour is stepped from the wrong
+  // place — it warmed the window AFTER the one being stepped into, and did so
+  // ahead of the real request, since nothing is in flight during the quiet
+  // period. The direction gate keeps the cold load at a single request.
+  useCalendarNeighbourPrefetch({
+    params: queryParams,
+    view,
+    anchor,
+    direction: stepDirection,
+    enabled: hydrated && windowSettled && !query.isFetching,
+  });
 
   const items = useMemo(() => query.data ?? [], [query.data]);
   // `items` is already status-filtered by the server; here we apply only the
@@ -182,12 +224,25 @@ export function CalendarPage() {
       ? "error"
       : "ready";
 
+  // Stepping moves the anchor and records which way we went, always together:
+  // the direction the operator stepped IS the direction worth warming, and the
+  // prefetch reads it straight back. Keeping the pair in one place is what stops
+  // the two halves drifting apart (a chevron that moves but warms the far side).
+  const step = (delta: Exclude<StepDirection, null>) => {
+    setAnchor((a) => stepAnchor(view, a, delta));
+    setStepDirection(delta);
+  };
+
   const changeView = (next: View) => {
     // Land on today when switching into Day from a period that contains it
     // (so Day opens on the current day + scrolls to "now"); otherwise keep the
     // user at the same point in time. See `anchorOnViewSwitch`.
     setAnchor((cur) => anchorOnViewSwitch(view, next, cur, new Date()));
     setView(next);
+    // A Day neighbour is not a Month neighbour: the window changes size and
+    // often position, so whichever way they were stepping no longer names a
+    // window worth warming.
+    setStepDirection(null);
   };
 
   return (
@@ -201,23 +256,21 @@ export function CalendarPage() {
             the tabs stay put on the right with no per-view shifting, without
             needing a magic min-width on the title. */}
         <div className="flex items-center gap-1">
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Previous"
-            onClick={() => setAnchor((a) => stepAnchor(view, a, -1))}
-          >
+          <Button variant="outline" size="icon-sm" aria-label="Previous" onClick={() => step(-1)}>
             <ChevronLeft className="size-4" aria-hidden="true" />
           </Button>
-          <Button
-            variant="outline"
-            size="icon-sm"
-            aria-label="Next"
-            onClick={() => setAnchor((a) => stepAnchor(view, a, 1))}
-          >
+          <Button variant="outline" size="icon-sm" aria-label="Next" onClick={() => step(1)}>
             <ChevronRight className="size-4" aria-hidden="true" />
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setAnchor(anchorFor(view, new Date()))}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setAnchor(anchorFor(view, new Date()));
+              // A jump, not a step — there is no "next one along" to warm.
+              setStepDirection(null);
+            }}
+          >
             Today
           </Button>
         </div>

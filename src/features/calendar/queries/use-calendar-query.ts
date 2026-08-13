@@ -54,8 +54,12 @@ export interface CalendarMeta {
  * takes this shape on trust — so the two agree only because someone keeps them
  * in step. When the BFF's projection changes, this line has to change with it or
  * the app compiles happily against a shape that no longer arrives (RUK-258).
+ *
+ * Exported because the neighbour prefetch reads entries of this shape back out
+ * of the cache; it must not restate the shape itself, or the two declarations
+ * drift the same way this comment warns about.
  */
-interface CalendarResponse {
+export interface CalendarResponse {
   items: CalendarEvent[];
   meta?: CalendarMeta;
 }
@@ -105,6 +109,59 @@ function appendFilter(search: URLSearchParams, key: string, values: string[] | u
 }
 
 /**
+ * The ONE implementation of the calendar wire call, shared by the query below
+ * and by the neighbour prefetch (`use-calendar-prefetch.ts`).
+ *
+ * It is exported rather than left inline because `prefetchQuery` needs a
+ * `queryFn` too, and a second copy of this function is exactly the drift the
+ * repo's contract policy exists to prevent: two implementations of one wire
+ * call agree with each other right up until one of them is edited. Everything
+ * here is load-bearing for that sharing:
+ *
+ *   - the `mock` branch, or a prefetch would hit the network in mock mode;
+ *   - `items ?? []`, or a prefetched entry could hold `items: undefined` where a
+ *     queried one holds `[]`, and the two entries would no longer be the same
+ *     shape;
+ *   - returning the whole envelope (not just `items`), because `meta` is read
+ *     back off the cache entry by key — see the note on `useCalendarQuery`.
+ *
+ * `background` marks a call nobody is waiting on — today, the neighbour
+ * prefetch. It changes exactly one thing: how a dead session is handled. See
+ * the note below.
+ */
+export async function fetchCalendar(
+  params: CalendarQueryParams,
+  { background = false }: { background?: boolean } = {},
+): Promise<CalendarResponse> {
+  if (DATA_SOURCE.calendar === "mock") {
+    return { items: MOCK_CALENDAR_EVENTS };
+  }
+  const search = new URLSearchParams({ from: params.from, to: params.to });
+  appendFilter(search, "channel_ids", params.channelIds);
+  appendFilter(search, "resource_ids", params.resourceIds);
+  appendFilter(search, "statuses", params.statuses);
+  const data = await bffFetch<CalendarResponse>(`/api/calendar?${search.toString()}`, {
+    // A foreground call that meets a dead session must NOT reject: `bffFetch`
+    // redirects to /login and returns a promise that never settles, so the UI
+    // cannot flash an error state during the navigation away. That is right for
+    // a request someone is looking at, and wrong for one nobody is: an
+    // unsettled background call leaves its cache entry `fetching` forever, and
+    // TanStack hands that same hung promise to the next real request for the
+    // window (`query.ts` returns the in-flight retryer's promise instead of
+    // starting a fetch). The operator would then step into that window and see
+    // the previous one's events under the new date, with no spinner, because
+    // `keepPreviousData` is holding them and nothing reads as pending.
+    //
+    // So background calls opt out of the redirect and take the plain rejection.
+    // The entry lands in `error`, which is inert: nothing renders it, and the
+    // next foreground request starts cleanly. The redirect is not lost — the
+    // foreground query hits the same 401 and performs it.
+    skipAuthRedirect: background,
+  });
+  return { items: data.items ?? [], ...(data.meta ? { meta: data.meta } : {}) };
+}
+
+/**
  * `meta` is carried OUT-OF-BAND rather than by widening what the query resolves
  * to. `data` stays `CalendarEvent[]`, which is what all three call sites read
  * (`calendar-page.tsx` plus the resource/channel related feeds via
@@ -120,17 +177,7 @@ export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQ
   const query = useQuery({
     queryKey: calendarKey(params),
     enabled: options.enabled ?? true,
-    queryFn: async (): Promise<CalendarResponse> => {
-      if (DATA_SOURCE.calendar === "mock") {
-        return { items: MOCK_CALENDAR_EVENTS };
-      }
-      const search = new URLSearchParams({ from: params.from, to: params.to });
-      appendFilter(search, "channel_ids", params.channelIds);
-      appendFilter(search, "resource_ids", params.resourceIds);
-      appendFilter(search, "statuses", params.statuses);
-      const data = await bffFetch<CalendarResponse>(`/api/calendar?${search.toString()}`);
-      return { items: data.items ?? [], ...(data.meta ? { meta: data.meta } : {}) };
-    },
+    queryFn: () => fetchCalendar(params),
     // Unwrap to the array the call sites expect. `select` runs on the cached
     // envelope, so it re-derives (and stays referentially stable per response)
     // without the envelope leaking into `data`.
