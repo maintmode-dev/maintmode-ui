@@ -513,6 +513,13 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
                   ? "Couldn't load people. Retry or check your access."
                   : "No people found."
             }
+            // No `errorText` twin here, unlike Mentions below: that prop lives
+            // on `MultiSelect` and this is a `Combobox`. So a screen-reader user
+            // still hears an empty listbox when THIS load fails — and the
+            // asymmetry runs backwards from operator risk, since approver is
+            // required and mentions are optional. Porting the live region to
+            // `Combobox` is real work rather than a drive-by, and is tracked as
+            // RUK-269.
             ariaLabel="Approver"
           />
         </Field>
@@ -575,6 +582,13 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             onChange={setChannelIds}
             placeholder="Select channels…"
             searchPlaceholder="Search channels…"
+            // Still two-state, and still wrong for the same reason the other two
+            // pickers were: `isError` is unread, so a failed load renders as
+            // "No channels configured." — which, unlike "no people", is a
+            // plausible admin state, so an operator will go and configure
+            // channels that already exist. Left deliberately (detection and
+            // repair are separate changes) and tracked as RUK-268; this is a
+            // `MultiSelect`, so it inherits `errorText` for free when done.
             emptyText={channelsQuery.isPending ? "Loading…" : "No channels configured."}
             ariaLabel="Notify channels"
           />
@@ -632,7 +646,36 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
               onChange={setMentionIds}
               placeholder="Pick people to tag…"
               searchPlaceholder="Search by name or email"
-              emptyText={mentionable.isPending ? "Loading…" : "No people found."}
+              // Three states, three strings — the same shape as the approver
+              // combobox above, and for the same reason. `isError` went unread
+              // here too, so a 403 (routine for a guest: the endpoint is
+              // permission gated, and mentions deliberately do NOT filter by
+              // role, so guests reach this picker), a 500, and a genuinely
+              // empty roster all rendered "No people found." — a sentence that
+              // reads as a fact about the company rather than a failed request.
+              emptyText={
+                mentionable.isPending
+                  ? "Loading…"
+                  : mentionable.isError
+                    ? "Couldn't load people. Retry or check your access."
+                    : "No people found."
+              }
+              // Same sentence, second channel: `emptyText` lands in a
+              // `role="presentation"` node, so on its own the fix above is
+              // invisible to a screen reader and a failed load still reads as
+              // an empty roster there.
+              //
+              // `isPending` is checked here for the same reason the ternary
+              // above checks it FIRST, and the two must agree: a failed query
+              // that is refetching reports `isPending` and `isError` together,
+              // and announcing "couldn't load" under a popover that reads
+              // "Loading…" tells the two audiences different things about the
+              // same moment.
+              errorText={
+                !mentionable.isPending && mentionable.isError
+                  ? "Couldn't load people. Retry or check your access."
+                  : undefined
+              }
               ariaLabel="Mentions"
             />
             {selectedMentions.length > 0 ? (

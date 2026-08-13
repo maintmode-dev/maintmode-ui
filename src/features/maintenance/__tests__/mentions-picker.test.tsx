@@ -30,6 +30,12 @@ afterEach(() => {
 
 const mentionableData = vi.fn<() => AssignableUser[]>(() => []);
 const mentionablePending = vi.fn<() => boolean>(() => false);
+// The factory default is required, not a style choice: `afterEach` runs
+// `vi.clearAllMocks()`, which strips a `mockReturnValue` set inside a test but
+// keeps an implementation passed to `vi.fn()`. A bare `vi.fn()` would return
+// `undefined` from the second test onward — falsy, so every existing case still
+// passes while the error case silently depends on running first.
+const mentionableError = vi.fn<() => boolean>(() => false);
 // The approver picker shares the `AssignableUser` type — and therefore the new
 // `has_messenger_tag` field — so it needs its own controllable data to prove the
 // flag stays out of its rendering (AC-17, second clause).
@@ -45,7 +51,11 @@ vi.mock("../queries/use-assignable-users-query", () => ({
   useAssignableUsersQuery: () => ({ data: approverData(), isPending: false, isError: false }),
 }));
 vi.mock("../queries/use-mentionable-users-query", () => ({
-  useMentionableUsersQuery: () => ({ data: mentionableData(), isPending: mentionablePending(), isError: false }),
+  useMentionableUsersQuery: () => ({
+    data: mentionableData(),
+    isPending: mentionablePending(),
+    isError: mentionableError(),
+  }),
 }));
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
   useNotifyChannelsQuery: () => ({ data: [], isPending: false }),
@@ -298,20 +308,89 @@ describe("maintenance mentions picker (RUK-218)", () => {
     expect(screen.getByRole("combobox", { name: "Mentions" }).textContent).toContain("2 selected");
   });
 
-  it("distinguishes loading from 'nobody found' in the empty state (AC-12)", async () => {
+  /**
+   * AC-12, extended for RUK-253. The empty state is THREE states, not two: a
+   * load that failed must not borrow the sentence that describes a roster with
+   * nobody in it. 403 is the routine answer here for a guest — the endpoint is
+   * permission gated — so "No people found." was what a blocked request looked
+   * like for this picker's whole life.
+   *
+   * One `it` per state rather than one walking all three: a failure then names
+   * the state that broke instead of leaving the reader to match a line number
+   * against a title covering all of them.
+   *
+   * Which hook the branch reads is pinned in `picker-render-integration`, not
+   * here: this file mocks the hooks, so the mock rather than the component
+   * decides what each returns.
+   */
+  it("says 'Loading…' while pending, not 'No people found.' (AC-12)", async () => {
     mentionableData.mockReturnValue([]);
     mentionablePending.mockReturnValue(true);
-    const { unmount } = render(<MaintenanceEditMode creating onClose={() => undefined} />);
-    openMentionsPicker();
-    await waitFor(() => expect(screen.getByText("Loading…")).toBeTruthy());
-    expect(screen.queryByText("No people found.")).toBeNull();
-    unmount();
-
-    mentionablePending.mockReturnValue(false);
+    mentionableError.mockReturnValue(false);
     render(<MaintenanceEditMode creating onClose={() => undefined} />);
     openMentionsPicker();
+
+    await waitFor(() => expect(screen.getByText("Loading…")).toBeTruthy());
+    expect(screen.queryByText("No people found.")).toBeNull();
+  });
+
+  it("says the load failed, not that nobody was found (AC-12)", async () => {
+    mentionableData.mockReturnValue([]);
+    // Pending takes precedence over the error, so the error branch is reachable
+    // only once pending has cleared.
+    mentionablePending.mockReturnValue(false);
+    mentionableError.mockReturnValue(true);
+    render(<MaintenanceEditMode creating onClose={() => undefined} />);
+    openMentionsPicker();
+
+    await waitFor(() =>
+      expect(screen.getAllByText("Couldn't load people. Retry or check your access.").length).toBeGreaterThan(
+        0,
+      ),
+    );
+    expect(screen.queryByText("No people found.")).toBeNull();
+  });
+
+  it("says 'No people found.' when the roster really is empty (AC-12)", async () => {
+    // All three flags set explicitly. `afterEach` clears call history but the
+    // factory defaults survive, so relying on a neighbouring test to have left
+    // `mentionableError` false would make this case order-dependent — the very
+    // coupling splitting the original three-render case was meant to remove.
+    mentionableData.mockReturnValue([]);
+    mentionablePending.mockReturnValue(false);
+    mentionableError.mockReturnValue(false);
+    render(<MaintenanceEditMode creating onClose={() => undefined} />);
+    openMentionsPicker();
+
     await waitFor(() => expect(screen.getByText("No people found.")).toBeTruthy());
     expect(screen.queryByText("Loading…")).toBeNull();
+    expect(screen.queryAllByText(/Couldn't load people/)).toHaveLength(0);
+  });
+
+  /**
+   * `isPending` and `isError` are true together while a failed query refetches
+   * — reachable here because `staleTime` lets a stale-and-failed entry refetch
+   * on remount. The two channels must not disagree: the visible copy gives
+   * pending precedence, so the live region must not be announcing a failure
+   * under a popover that says "Loading…".
+   *
+   * Not hypothetical: `errorText` originally read `mentionable.isError` alone
+   * and this case failed, with the popover reading "Loading…" while the live
+   * region announced the failure. The call site now guards on
+   * `!isPending && isError`. The test pins the CONTRACT rather than that
+   * particular guard, so it keeps biting if the precedence ever moves into
+   * `MultiSelect` — or gets dropped.
+   */
+  it("does not announce a failure while the picker still reads as loading", async () => {
+    mentionableData.mockReturnValue([]);
+    mentionablePending.mockReturnValue(true);
+    mentionableError.mockReturnValue(true);
+    render(<MaintenanceEditMode creating onClose={() => undefined} />);
+    openMentionsPicker();
+
+    await waitFor(() => expect(screen.getByText("Loading…")).toBeTruthy());
+    expect(screen.queryAllByText(/Couldn't load people/)).toHaveLength(0);
+    expect(screen.getByTestId("multiselect-error-live-mentions").textContent).toBe("");
   });
 
   it("still renders a chip for a selected id missing from the options (AC-16)", async () => {
