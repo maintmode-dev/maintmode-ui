@@ -5,12 +5,16 @@ import dynamic from "next/dynamic";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { canWrite } from "@/domain/auth/permissions";
 import { CalendarEmpty, CalendarError, CalendarLoading } from "@/shared/ui/states";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tabs, TabsList, TabsTrigger } from "@/shared/ui/shadcn/tabs";
+import { useDelayedFlag } from "@/features/_shared/hooks/use-delayed-flag";
 
 import { CalendarSidebar } from "./calendar-sidebar";
+import { CalendarStaleWindowNotice } from "./calendar-stale-window-notice";
 import { CalendarTruncationNotice } from "./calendar-truncation-notice";
 import {
   applyCalendarFilters,
@@ -19,7 +23,7 @@ import {
   serializeFilters,
   FILTERS_STORAGE_KEY,
 } from "./calendar-filters";
-import { useCalendarQuery } from "./queries/use-calendar-query";
+import { calendarKey, useCalendarQuery } from "./queries/use-calendar-query";
 import { useCalendarWindow, sameWindow } from "./queries/use-calendar-window";
 import { useCalendarNeighbourPrefetch, type StepDirection } from "./queries/use-calendar-prefetch";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
@@ -36,6 +40,39 @@ import {
 
 const VIEW_STORAGE_KEY = "maintmode.calendar.view";
 const DEFAULT_VIEW: View = "day";
+
+/**
+ * How long the grid may show another window's events before we say so.
+ *
+ * Stepping keeps the previous window on screen while the next loads, which is
+ * right for the few hundred ms an ordinary step takes and wrong once it lasts:
+ * the operator reads one period's dates over another period's work (RUK-267).
+ *
+ * The number is a judgement call, not a measurement (RUK-257 owns the real
+ * trace). It is measured from when the REQUEST starts, and the request is itself
+ * debounced by up to `MAX_WAIT_MS` (1000) — so the worst case from click to
+ * banner is ~2.5s, not 1.5s. That is accepted deliberately: the property worth
+ * protecting most is that a HEALTHY step never shows the banner, because a
+ * warning that fires on every chevron click is one operators learn to ignore.
+ *
+ * This is the tuning knob if it ever proves noisy. Note it has no "off" value —
+ * turning the feature off is a revert, not a retune.
+ */
+export const STALE_NOTICE_DELAY_MS = 1500;
+
+export interface CalendarPageProps {
+  /**
+   * Test seam for {@link STALE_NOTICE_DELAY_MS}. Production never passes it.
+   *
+   * It exists because the tests for this banner have to run on REAL timers: the
+   * request is debounced, and a fake-timer `act` block that wraps a long sleep
+   * does not let that debounce flush — the request goes out when the block ends,
+   * so the sequence collapses and the state under test is never observed. Real
+   * timers with the shipped 1500 ms would put seconds of wall clock into every
+   * one of those tests.
+   */
+  staleNoticeDelayMs?: number;
+}
 
 /**
  * Loaded on demand: FullCalendar + Luxon is 97.9 KB gzip against the whole
@@ -81,7 +118,7 @@ function readStoredView(): View {
   return stored === "day" || stored === "week" || stored === "month" ? stored : DEFAULT_VIEW;
 }
 
-export function CalendarPage() {
+export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: CalendarPageProps = {}) {
   // Server-render the default view, then adopt the stored view after mount —
   // reading localStorage during render would diverge from SSR and cause a
   // hydration mismatch. `hydrated` gates persistence so the stored value isn't
@@ -220,6 +257,71 @@ export function CalendarPage() {
       ? "error"
       : "ready";
 
+  // Is the grid showing a window the header no longer names?
+  //
+  // `isPlaceholderData` is exactly that question: it is true when the data on
+  // screen came from a DIFFERENT query key than the active one — another window,
+  // or another status filter. Deliberately not `isError`: a settled error keeps
+  // no data at all (TanStack applies `keepPreviousData` only while the query is
+  // pending), so the error branch above already renders the right thing with
+  // nothing to preserve. The lie the operator sees is the IN-FLIGHT state, not
+  // the failed one (RUK-267).
+  //
+  // Gated on the condition lasting, because it is true on every ordinary step
+  // for a few hundred ms. Normally transient; on a dead session it never ends,
+  // since `bffFetch` answers a 401 with a promise that never settles so the UI
+  // cannot flash an error during the redirect to /login.
+  //
+  // Known sequence on a SLOW 5xx, measured rather than assumed: banner, then the
+  // full-screen error replaces the whole view. Timeline at 50 ms/char with the
+  // hook's real retry policy: `-------BBBB…BBBB EEEE…`. That looks like the
+  // banner failing at its job of preserving context, and it is worth being clear
+  // that it is not. Once the query settles into error there IS no retained data
+  // to preserve — that is the finding this whole ticket rests on — so
+  // `CalendarError` is the only honest rendering left. The banner covers the
+  // in-flight period truthfully; the error covers what comes after. A fast 5xx
+  // never shows the banner at all, because it settles inside the threshold.
+  const showStaleNotice = useDelayedFlag(query.isPlaceholderData, staleNoticeDelayMs);
+
+  const client = useQueryClient();
+  // Retry has to CANCEL before it refetches, or it does nothing at all.
+  //
+  // `Query.fetch` only restarts an in-flight request when the cache entry
+  // already holds data (`query.js`: the `cancelRefetch` branch is gated on
+  // `state.data !== undefined`). Here it never does — the events on screen came
+  // from the placeholder, not from this key's entry — so a bare `refetch()`
+  // falls through to `return this.#retryer.promise` and hands back the SAME
+  // pending promise. Measured: three refetch() calls, zero requests issued.
+  //
+  // That matters most in the case this banner exists for: on a 401 the promise
+  // never settles, the retryer never becomes rejected, and Retry would be a dead
+  // button forever. Cancelling first drops the retryer, so the refetch below
+  // starts a real request.
+  //
+  // `cancelQueries`, not `removeQueries`: cancelling leaves the placeholder on
+  // screen, while removing the entry would blank the grid — throwing away the
+  // context this whole banner exists to keep.
+  //
+  // The `.catch` is a guard on `cancelQueries` rejecting, NOT a swallowed query
+  // error: `refetch()` resolves with the observer result rather than throwing, so
+  // a failed retry still lands in `query.isError` and renders. Nothing is hidden
+  // from the operator here.
+  //
+  // `rawWindow`, not `queryParams`: the latter is built from the DEBOUNCED
+  // window, which lags the header by up to `MAX_WAIT_MS`. Retry sits under a
+  // banner that says "this period", so during that quiet period it would cancel
+  // and refetch the period the operator has already stepped away from. Measured:
+  // header on Aug 15, request went out for Aug 14. It self-corrected once the
+  // debounce published, so the cost was a wasted request and a button that
+  // briefly did something other than what it says — which is still the wrong
+  // thing for the one control this banner offers.
+  const retryWindow = () => {
+    void client
+      .cancelQueries({ queryKey: calendarKey({ ...queryParams, ...rawWindow }) })
+      .then(() => query.refetch())
+      .catch(() => {});
+  };
+
   // Stepping moves the anchor and records which way we went, always together:
   // the direction the operator stepped IS the direction worth warming, and the
   // prefetch reads it straight back. Keeping the pair in one place is what stops
@@ -308,8 +410,20 @@ export function CalendarPage() {
                 deliberately matched heights). It renders only when the window is
                 KNOWN to be truncated and returns null otherwise, so the
                 not-truncated case adds no node and shifts no layout. */}
-            <CalendarTruncationNotice meta={query.meta} />
+            {/* Suppressed while the window is stale. `meta` is already
+                undefined under placeholder data (RUK-265), so today this changes
+                nothing — but relying on another ticket's invariant to keep a
+                count off screen is how that count comes back. The rule it
+                protects is RUK-252's: a confidently wrong number is worse than
+                silence, and the retained window's count describes a period the
+                header is no longer showing. */}
+            {showStaleNotice ? null : <CalendarTruncationNotice meta={query.meta} />}
             <div className="relative min-w-0">
+              {/* Rides INSIDE this relative wrapper, over the grid's top edge,
+                  so it occupies no space in the column. The grid below is a
+                  fixed `calc(100vh-13rem)`; a banner in the flow would push it
+                  down and give the page a scrollbar 1.5s after a click. */}
+              {showStaleNotice ? <CalendarStaleWindowNotice onRetry={retryWindow} /> : null}
               {filteredItems.length === 0 ? (
                 // The grid renders the client-filtered set, so the empty overlay
                 // keys off `filteredItems`. We distinguish the two reasons it's
@@ -326,43 +440,58 @@ export function CalendarPage() {
                     aria-hidden="true"
                     className="h-[calc(100vh-13rem)] rounded-md border border-border-subtle bg-bg-elev-1 bg-[repeating-linear-gradient(to_bottom,transparent_0,transparent_47px,var(--border-subtle)_47px,var(--border-subtle)_48px)] opacity-40"
                   />
-                  <div className="absolute inset-0 grid place-items-center">
-                    <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
-                      {items.length === 0 ? (
-                        <CalendarEmpty
-                          // Guest: neutral empty state, no create link. `cta={false}`
-                          // (not undefined) suppresses CalendarEmpty's default
-                          // "New maintenance" button — `??` only falls back on nullish.
-                          caption={canCreate ? undefined : "No maintenance is scheduled for this period."}
-                          cta={
-                            canCreate ? (
-                              <Button asChild size="sm">
-                                <Link href="/maintenance/new">
-                                  <Plus className="size-3" aria-hidden="true" /> New maintenance
-                                </Link>
+                  {/* While the window is stale, the backdrop stands alone: no
+                      empty-state card.
+
+                      `CalendarEmpty` says "No maintenance scheduled for this
+                      period" — a claim about the period in the HEADER, which is
+                      not the period these (absent) events came from. If the
+                      retained window is empty, or the client-side scope/resource
+                      filters empty it, the page would assert that nothing is
+                      scheduled in a period it has not loaded, directly beside a
+                      banner saying it is still loading. That is the same lie to
+                      the operator this ticket removes, in a new costume. The
+                      banner is then the only statement on screen, and it is a
+                      true one. */}
+                  {showStaleNotice ? null : (
+                    <div className="absolute inset-0 grid place-items-center">
+                      <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
+                        {items.length === 0 ? (
+                          <CalendarEmpty
+                            // Guest: neutral empty state, no create link. `cta={false}`
+                            // (not undefined) suppresses CalendarEmpty's default
+                            // "New maintenance" button — `??` only falls back on nullish.
+                            caption={canCreate ? undefined : "No maintenance is scheduled for this period."}
+                            cta={
+                              canCreate ? (
+                                <Button asChild size="sm">
+                                  <Link href="/maintenance/new">
+                                    <Plus className="size-3" aria-hidden="true" /> New maintenance
+                                  </Link>
+                                </Button>
+                              ) : (
+                                false
+                              )
+                            }
+                          />
+                        ) : (
+                          <CalendarEmpty
+                            title="No maintenance matches your filters"
+                            caption={`${items.length} hidden by the current Scope or Resource filters.`}
+                            cta={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setFilters(defaultFilterState())}
+                              >
+                                Reset filters
                               </Button>
-                            ) : (
-                              false
-                            )
-                          }
-                        />
-                      ) : (
-                        <CalendarEmpty
-                          title="No maintenance matches your filters"
-                          caption={`${items.length} hidden by the current Scope or Resource filters.`}
-                          cta={
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setFilters(defaultFilterState())}
-                            >
-                              Reset filters
-                            </Button>
-                          }
-                        />
-                      )}
+                            }
+                          />
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </>
               ) : (
                 // The grid renders the client-filtered set; the sidebar reads the
