@@ -4,8 +4,8 @@ import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-quer
 
 import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
-import { MOCK_MAINTENANCES } from "@/shared/mock/maintenances";
-import type { Maintenance } from "@/domain/maintenance/maintenance";
+import { MOCK_CALENDAR_EVENTS } from "@/shared/mock/maintenances";
+import type { CalendarEvent } from "@/domain/maintenance/maintenance";
 
 export interface CalendarQueryParams {
   /** Inclusive window start as `YYYY-MM-DD` (backend `from`). */
@@ -48,8 +48,15 @@ export interface CalendarMeta {
   truncated?: boolean;
 }
 
+/**
+ * The client's OWN declaration of what `/api/calendar` returns. Nothing type-
+ * checks it against `route.ts` — `NextResponse.json()` is untyped and `bffFetch`
+ * takes this shape on trust — so the two agree only because someone keeps them
+ * in step. When the BFF's projection changes, this line has to change with it or
+ * the app compiles happily against a shape that no longer arrives (RUK-258).
+ */
 interface CalendarResponse {
-  items: Maintenance[];
+  items: CalendarEvent[];
   meta?: CalendarMeta;
 }
 
@@ -99,7 +106,7 @@ function appendFilter(search: URLSearchParams, key: string, values: string[] | u
 
 /**
  * `meta` is carried OUT-OF-BAND rather than by widening what the query resolves
- * to. `data` stays `Maintenance[]`, which is what all three call sites read
+ * to. `data` stays `CalendarEvent[]`, which is what all three call sites read
  * (`calendar-page.tsx` plus the resource/channel related feeds via
  * `use-related-maintenance-query`); folding it into an object would have forced
  * every one of them — and the mocks pinning them — to change for a field only
@@ -115,7 +122,7 @@ export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQ
     enabled: options.enabled ?? true,
     queryFn: async (): Promise<CalendarResponse> => {
       if (DATA_SOURCE.calendar === "mock") {
-        return { items: MOCK_MAINTENANCES };
+        return { items: MOCK_CALENDAR_EVENTS };
       }
       const search = new URLSearchParams({ from: params.from, to: params.to });
       appendFilter(search, "channel_ids", params.channelIds);
@@ -147,7 +154,7 @@ export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQ
 
   // The truncation signal, read off the same cache entry that produced `data`.
   // Keeping it out of `data` is what lets the resolved type stay
-  // `Maintenance[]` for the existing call sites.
+  // `CalendarEvent[]` for the existing call sites.
   //
   // Read plainly on every render rather than memoized: `useQuery` above already
   // re-renders this hook whenever the entry settles, so the read is always

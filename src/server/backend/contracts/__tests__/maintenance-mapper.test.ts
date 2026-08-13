@@ -292,11 +292,7 @@ describe("mapCalendarResponse", () => {
         scope: "resource",
         planned_period: { start: "2026-06-05T14:00:00Z", end: "2026-06-05T16:00:00Z" },
         resources: [],
-        notify_targets: [],
-        steps: [],
         created_by: "Alice Operator",
-        created_at: "2026-06-05T14:00:00Z",
-        updated_at: "2026-06-05T14:00:00Z",
       },
     ]);
   });

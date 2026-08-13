@@ -43,14 +43,17 @@ const STALE = (field: string, where: string) =>
  * Class B — the frontend reads a field the backend does not send.
  *
  * Each entry names a field ABSENT from calendar events and the mapper line that
- * hardcodes a stand-in value. All three were verified byte-wise against
- * `calendar.json` before being written down.
+ * hardcodes a stand-in value. Verified byte-wise against `calendar.json` before
+ * being written down.
+ *
+ * Was three entries. `notify_targets` and `steps` left in RUK-258: the calendar
+ * type stopped declaring them, so the mapper no longer stubs them and there is
+ * no gap left to guard. Their assertions would have stayed GREEN — they test the
+ * wire, which did not change — while describing stubs that no longer exist, and
+ * a green assertion about a vanished line is precisely the graveyard this file
+ * warns about above. They live on in docs/contract-gaps.md under Класс C.
  */
-const CALENDAR_EVENT_GAPS = [
-  { field: "resources", stub: "resources: []", ticket: "RUK-256" },
-  { field: "notify_targets", stub: "notify_targets: []", ticket: "—" },
-  { field: "steps", stub: "steps: []", ticket: "—" },
-] as const;
+const CALENDAR_EVENT_GAPS = [{ field: "resources", stub: "resources: []", ticket: "RUK-256" }] as const;
 
 describe("registry — class B: fields the calendar wants and the wire does not carry", () => {
   const events = (fixture("calendar.json").events ?? []) as Record<string, unknown>[];
@@ -110,6 +113,54 @@ describe("registry — class B: fields the calendar wants and the wire does not 
     const unregistered = stubbed.filter((field) => !registry.includes(`\`${field}\``));
 
     expect(`unregistered stubs: ${unregistered.join(", ") || "none"}`).toBe("unregistered stubs: none");
+  });
+});
+
+/**
+ * Class C — the frontend stopped asking, so the gap became unreachable.
+ *
+ * These rows describe fields the calendar type no longer declares (RUK-258).
+ * Without this block the section is prose: deleting it, or rewriting it into
+ * nonsense, passes every other assertion in this file — which is the graveyard
+ * the header warns about, one level up.
+ *
+ * The assertion is INVERTED like the rest: it holds while the field stays out of
+ * the mapper, and fails the day someone re-adds it — at which point the row in
+ * Класс C is wrong and must move back to Class B with a ticket.
+ */
+const CALENDAR_RETIRED_FIELDS = ["notify_targets", "steps"] as const;
+
+describe("registry — class C: fields the calendar no longer requests (RUK-258)", () => {
+  const mapper = readFileSync(MAPPER_PATH, "utf8");
+  const calendarFn = mapper.slice(
+    mapper.indexOf("export function mapCalendarResponse"),
+    mapper.indexOf("export function mapMaintenanceView"),
+  );
+
+  it("reads the calendar mapper at all, so absence below means something", () => {
+    expect(calendarFn.length).toBeGreaterThan(0);
+  });
+
+  for (const field of CALENDAR_RETIRED_FIELDS) {
+    it(`\`${field}\` is gone from the mapper and recorded under Класс C`, () => {
+      expect(
+        calendarFn.includes(`${field}:`)
+          ? `${field}: BACK IN THE MAPPER. It was retired in RUK-258 because the wire ` +
+              `never carried it. If it is genuinely needed now, the backend must send it ` +
+              `first — move the row from Класс C back to Класс B with a ticket.`
+          : `${field}: retired`,
+      ).toBe(`${field}: retired`);
+
+      // The row must survive too: without this, the section could be deleted
+      // and the knowledge of why these fields vanished would go with it.
+      expect(`${field} recorded in Класс C: ${registry.includes(`\`${field}\``)}`).toBe(
+        `${field} recorded in Класс C: true`,
+      );
+    });
+  }
+
+  it("keeps the Класс C section itself, not just the field names", () => {
+    expect(`registry has Класс C: ${registry.includes("## Класс C")}`).toBe("registry has Класс C: true");
   });
 });
 
@@ -308,7 +359,12 @@ describe("the registry file itself", () => {
   it("names every gap this suite enforces, so the doc and the test cannot drift apart", () => {
     // Without this, a row could be deleted from the markdown while the test
     // kept passing, and the registry would stop describing what is enforced.
-    const enforced = ["resources", "notify_targets", "steps", "details", "facets.integration"];
+    // Only what this suite ACTUALLY enforces. `notify_targets` and `steps` were
+    // dropped here in RUK-258 along with their CALENDAR_EVENT_GAPS entries:
+    // leaving them would have kept this assertion green (they are still named in
+    // the registry, now under Класс C) while claiming an enforcement that no
+    // longer happens — a false statement no test would ever catch.
+    const enforced = ["resources", "details", "facets.integration"];
     const undocumented = enforced.filter((field) => !registry.includes(field));
 
     expect(`undocumented enforced gaps: ${undocumented.join(", ") || "none"}`).toBe(

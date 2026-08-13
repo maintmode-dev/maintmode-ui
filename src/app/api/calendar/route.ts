@@ -14,7 +14,7 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
  * filters (the last powers the ChannelDetailPage "Related maintenance" section,
  * matched server-side by channel). It
  * answers with `uimodels.CalendarViewResponse` (`{ events, meta }`), which the
- * `mapCalendarResponse` adapter projects into the domain `Maintenance[]` the
+ * `mapCalendarResponse` adapter projects into the domain `CalendarEvent[]` the
  * UI's `useCalendarQuery` expects under `{ items }`.
  *
  * `meta` (`{ count, truncated }`) is PROJECTED next to `items`, the same way

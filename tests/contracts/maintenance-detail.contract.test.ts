@@ -15,8 +15,9 @@ import type { MaintenanceViewResponseDto } from "@/server/backend/contracts/main
  *
  * This endpoint is also the CONTROL for the calendar's biggest gap. Detail
  * events carry a populated `resources` array — the calendar's do not, which is
- * why `mapCalendarResponse` hardcodes `resources: []` (maintenance-mapper.ts
- * :229) and why the calendar's resource filter cannot work (RUK-256). The two
+ * why `mapCalendarResponse` hardcodes `resources: []` — the one stub left on
+ * `CalendarEvent` after RUK-258 — and why the calendar's resource filter cannot
+ * work (RUK-256). The two
  * fixtures side by side are the evidence that this is a backend contract
  * difference and not a frontend bug, so the assertions below pin the presence
  * of `resources` HERE just as calendar.contract.test.ts pins its absence there.

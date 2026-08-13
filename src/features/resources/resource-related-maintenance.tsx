@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ChevronRight, History } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 import type { RelatedMaintenanceFeed } from "@/features/calendar/queries/use-related-maintenance-query";
 import { Stack } from "@/shared/ui/domain/stack";
 import { StatusBadge } from "@/shared/ui/domain/status-badge";
@@ -32,7 +32,7 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 /** Active = not-yet-finished (draft / planned / in_progress). Past = terminal. */
 const ACTIVE_STATUSES: ReadonlySet<MaintenanceStatus> = new Set(["draft", "planned", "in_progress"]);
 
-function isActive(m: Maintenance): boolean {
+function isActive(m: CalendarEvent): boolean {
   return ACTIVE_STATUSES.has(m.status);
 }
 
@@ -107,7 +107,7 @@ export function ResourceRelatedMaintenance({ feed }: { feed: RelatedMaintenanceF
             <li key={m.id}>
               <Link
                 href={`/maintenance/${m.id}`}
-                className="grid h-14 grid-cols-[110px_190px_1fr_auto_28px] items-center gap-3 px-4 hover:bg-bg-row-hover"
+                className="grid h-14 grid-cols-[110px_190px_1fr_28px] items-center gap-3 px-4 hover:bg-bg-row-hover"
               >
                 <span className="justify-self-start">
                   <StatusBadge status={m.status} size="xs" />
@@ -116,7 +116,6 @@ export function ResourceRelatedMaintenance({ feed }: { feed: RelatedMaintenanceF
                   {formatDateTime(m.planned_period.start, zone)}
                 </span>
                 <span className="truncate text-sm">{m.title}</span>
-                <span className="font-mono text-xs text-fg-dim">{m.reference ?? ""}</span>
                 <ChevronRight className="size-4 justify-self-end text-fg-muted" aria-hidden="true" />
               </Link>
             </li>

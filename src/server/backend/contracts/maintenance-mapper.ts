@@ -17,9 +17,9 @@
 
 import type {
   AssignableUser,
+  CalendarEvent,
   CancelReason,
   Conflict,
-  Maintenance,
   MaintenanceCancelReason,
   MaintenanceDetail,
   MaintenanceDraftInput,
@@ -207,14 +207,21 @@ export function mapConflict(conflict: ConflictViewDto): Conflict {
 }
 
 /**
- * `GET /ui/v1/calendar` → domain `Maintenance[]`.
+ * `GET /ui/v1/calendar` → domain `CalendarEvent[]`.
  *
- * Calendar events are a flat projection: the grid only reads
- * `planned_period`, `title`, `status` and `scope`. Period-less detail fields
- * (`steps`, `resources`, `actual_period`) are filled with empty defaults; the
- * detail screen fetches the full view separately.
+ * Every field here has a source on the wire. `planned_period` repackages the
+ * flat `start`/`end`; `created_by` flattens `UserSummaryDto` to a display name.
+ * The one exception is `resources: []` — a genuine stub for a field the calendar
+ * endpoint does not send (RUK-256), registered in `docs/contract-gaps.md` and
+ * kept because the sidebar filter reads it.
+ *
+ * This used to return `Maintenance` — the DETAIL page's shape — which forced
+ * four more invented fields (`notify_targets`, `steps`, `created_at`,
+ * `updated_at`) into every event of every response. Nothing read them, and they
+ * were ~27% of the payload (RUK-258). If you find yourself adding a field the
+ * grid does not read, that is this defect coming back.
  */
-export function mapCalendarResponse(dto: CalendarViewResponseDto): Maintenance[] {
+export function mapCalendarResponse(dto: CalendarViewResponseDto): CalendarEvent[] {
   const events = dto.events ?? [];
   return events.map((event) => {
     const start = event.start ?? "";
@@ -227,13 +234,8 @@ export function mapCalendarResponse(dto: CalendarViewResponseDto): Maintenance[]
       scope: mapScope(event.scope),
       planned_period: { start, end },
       resources: [],
-      notify_targets: [],
-      steps: [],
       created_by: event.created_by ? mapUserSummary(event.created_by) : undefined,
-      // Calendar events carry no audit timestamps; the grid never reads these.
-      created_at: start,
-      updated_at: start,
-    } satisfies Maintenance;
+    } satisfies CalendarEvent;
   });
 }
 

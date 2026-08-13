@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { User } from "@/domain/admin/user";
 import type { Role } from "@/domain/auth/permissions";
-import type { Maintenance } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent } from "@/domain/maintenance/maintenance";
 
 /**
  * RUK-213 render-level gate: the "New maintenance" create entry points are shown
@@ -49,7 +49,7 @@ vi.mock("@/features/_shared/queries/use-me-query", () => ({
 }));
 
 // Empty window → the page renders its empty state (no FullCalendar grid mount).
-const calendarData = vi.fn<() => Maintenance[]>(() => []);
+const calendarData = vi.fn<() => CalendarEvent[]>(() => []);
 vi.mock("../queries/use-calendar-query", () => ({
   useCalendarQuery: () => ({
     data: calendarData(),

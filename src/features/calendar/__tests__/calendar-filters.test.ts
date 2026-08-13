@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Maintenance, MaintenanceScope, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, MaintenanceScope, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 
 import {
   applyCalendarFilters,
@@ -23,7 +23,7 @@ function mk(
     start?: string;
     end?: string;
   } = {},
-): Maintenance {
+): CalendarEvent {
   const start = opts.start ?? iso(2026, 6, 8, 10);
   const end = opts.end ?? iso(2026, 6, 8, 12);
   return {
@@ -34,10 +34,6 @@ function mk(
     scope: opts.scope ?? "global",
     planned_period: { start, end },
     resources: opts.resources ?? [],
-    notify_targets: [],
-    steps: [],
-    created_at: start,
-    updated_at: start,
   };
 }
 

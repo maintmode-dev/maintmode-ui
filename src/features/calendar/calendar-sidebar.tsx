@@ -8,7 +8,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { STATUS_LABEL } from "@/shared/ui/domain/status-badge";
 import { formatDate, formatRange } from "@/shared/ui/lib/format";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
-import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 
 import {
   resourceOptions,
@@ -47,7 +47,7 @@ const SCOPE_OPTIONS: { value: ScopeFilter; label: string }[] = [
 
 export interface CalendarSidebarProps {
   /** The status-filtered window of maintenances (status is server-filtered) — drives resource options + Up next. */
-  items: Maintenance[];
+  items: CalendarEvent[];
   filters: CalendarFilterState;
   onFiltersChange: (next: CalendarFilterState) => void;
   /** Live clock for the "today" helper + Up next ordering (passed from the page). */

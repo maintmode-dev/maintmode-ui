@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Maintenance } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent } from "@/domain/maintenance/maintenance";
 
 import { CalendarGrid } from "../calendar-grid";
 
@@ -40,7 +40,7 @@ afterEach(() => cleanup());
 /** Month containing the fixtures; anchor is UTC-midnight per view-range.ts. */
 const ANCHOR = new Date(Date.UTC(2026, 6, 15));
 
-function maintenance(id: string, title: string, start: string, end: string): Maintenance {
+function maintenance(id: string, title: string, start: string, end: string): CalendarEvent {
   return {
     id,
     title,
@@ -49,15 +49,11 @@ function maintenance(id: string, title: string, start: string, end: string): Mai
     scope: "global",
     planned_period: { start, end },
     resources: [],
-    notify_targets: [],
-    steps: [],
-    created_at: start,
-    updated_at: start,
   };
 }
 
 /** `count` events all landing on the same day, so the day overflows its rows. */
-function eventsOnOneDay(count: number, day = "2026-07-15"): Maintenance[] {
+function eventsOnOneDay(count: number, day = "2026-07-15"): CalendarEvent[] {
   return Array.from({ length: count }, (_, i) =>
     maintenance(
       `m${i}`,
@@ -68,7 +64,7 @@ function eventsOnOneDay(count: number, day = "2026-07-15"): Maintenance[] {
   );
 }
 
-function renderGrid(items: Maintenance[], onSelect = vi.fn<(id: string) => void>()) {
+function renderGrid(items: CalendarEvent[], onSelect = vi.fn<(id: string) => void>()) {
   render(<CalendarGrid view="month" anchor={ANCHOR} items={items} onSelect={onSelect} timeZone="UTC" />);
   return onSelect;
 }

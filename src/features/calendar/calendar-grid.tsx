@@ -8,7 +8,7 @@ import luxon3Plugin from "@fullcalendar/luxon3";
 import type { EventClickArg, EventContentArg } from "@fullcalendar/core";
 
 import { CalendarEventBar } from "@/shared/ui/domain/calendar-event-bar";
-import type { Maintenance } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent } from "@/domain/maintenance/maintenance";
 
 import { maintenanceToEvent, VIEW_TO_FC, type CalendarEventProps } from "./event-mapping";
 import { toDateParam, type CalendarView } from "./view-range";
@@ -18,7 +18,7 @@ export interface CalendarGridProps {
   view: CalendarView;
   /** Canonical anchor for the visible period (owned by the page / view-range). */
   anchor: Date;
-  items: Maintenance[];
+  items: CalendarEvent[];
   onSelect: (id: string) => void;
   /**
    * IANA zone the grid renders event times / slot labels in (RUK-201). Defaults

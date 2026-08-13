@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 
 import { maintenanceToEvent, VIEW_TO_FC } from "../event-mapping";
 
 function mk(
   id: string,
   opts: { status?: MaintenanceStatus; start?: string; end?: string } = {},
-): Maintenance {
+): CalendarEvent {
   const start = opts.start ?? "2026-06-08T10:00:00Z";
   const end = opts.end ?? "2026-06-08T12:00:00Z";
   return {
@@ -18,10 +18,6 @@ function mk(
     scope: "global",
     planned_period: { start, end },
     resources: [],
-    notify_targets: [],
-    steps: [],
-    created_at: start,
-    updated_at: start,
   };
 }
 

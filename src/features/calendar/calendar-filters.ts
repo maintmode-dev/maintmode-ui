@@ -9,7 +9,7 @@
  * `applyCalendarFilters` to the Day/Week/Month grids.
  */
 
-import type { Maintenance, MaintenanceScope, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, MaintenanceScope, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 import { startOfDay } from "./view-range";
 
 /**
@@ -127,7 +127,7 @@ export function readStoredFilters(): CalendarFilterState {
  * would double-filter and reintroduce the very `items`-vs-rendered drift this
  * split removes. Scope stays client-side because the backend ignores `scope`.
  */
-export function matchesFilters(m: Maintenance, f: CalendarFilterState): boolean {
+export function matchesFilters(m: CalendarEvent, f: CalendarFilterState): boolean {
   if (f.scope !== "all" && m.scope !== f.scope) return false;
   if (f.resourceIds.size > 0) {
     const touches = m.resources.some((r) => f.resourceIds.has(r.id));
@@ -136,7 +136,7 @@ export function matchesFilters(m: Maintenance, f: CalendarFilterState): boolean 
   return true;
 }
 
-export function applyCalendarFilters(items: Maintenance[], f: CalendarFilterState): Maintenance[] {
+export function applyCalendarFilters(items: CalendarEvent[], f: CalendarFilterState): CalendarEvent[] {
   return items.filter((m) => matchesFilters(m, f));
 }
 
@@ -151,7 +151,7 @@ export interface ResourceOption {
  * Drives the resource search/picker so the rail only offers resources that
  * actually appear in the current window (no extra catalog fetch needed).
  */
-export function resourceOptions(items: Maintenance[]): ResourceOption[] {
+export function resourceOptions(items: CalendarEvent[]): ResourceOption[] {
   const byId = new Map<string, ResourceOption>();
   for (const m of items) {
     for (const r of m.resources) {
@@ -175,7 +175,7 @@ export function resourceOptions(items: Maintenance[]): ResourceOption[] {
  * every in-progress item (including ones whose planned end is long past) into
  * the rail. In-progress sorts first; the rest by planned start.
  */
-export function upcomingItems(items: Maintenance[], now: Date, limit = 5): Maintenance[] {
+export function upcomingItems(items: CalendarEvent[], now: Date, limit = 5): CalendarEvent[] {
   const nowMs = now.getTime();
   const today = startOfDay(now).getTime();
   const dayAfterTomorrow = today + 2 * 24 * 60 * 60 * 1000; // exclusive upper bound

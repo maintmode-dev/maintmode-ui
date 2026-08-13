@@ -7,7 +7,7 @@
 
 import type { EventInput } from "@fullcalendar/core";
 
-import type { Maintenance, MaintenanceStatus } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 import type { CalendarView } from "./view-range";
 
 /** Project view → FullCalendar view name. */
@@ -29,7 +29,7 @@ export interface CalendarEventProps {
  * colour without re-fetching. No `allDay` — every maintenance has a concrete
  * time range, and FullCalendar derives multi-day spanning from start/end.
  */
-export function maintenanceToEvent(m: Maintenance): EventInput {
+export function maintenanceToEvent(m: CalendarEvent): EventInput {
   return {
     id: m.id,
     title: m.title,

@@ -5,7 +5,7 @@
  * one-line change at the query hook level.
  */
 
-import type { Maintenance, MaintenanceDetail } from "@/domain/maintenance/maintenance";
+import type { CalendarEvent, Maintenance, MaintenanceDetail } from "@/domain/maintenance/maintenance";
 
 const nowIso = (offsetMin = 0) => new Date(Date.now() + offsetMin * 60_000).toISOString();
 const todayAt = (h: number, m = 0, dayOffset = 0) => {
@@ -29,6 +29,12 @@ export const MOCK_MAINTENANCES: Maintenance[] = withNotifyTargets([
     reference: "MNT-1001",
     title: "Patch postgres primary",
     description: "Apply security patch, restart primary, verify replication.",
+    // The only mock with an author, and deliberately so: the calendar
+    // projection's `created_by` is optional, so a list where nobody has one
+    // makes "the projection copies the author" an assertion of
+    // `undefined === undefined`. Dropping the field from the projection went
+    // undetected until this existed.
+    created_by: "Alice Operator",
     status: "in_progress",
     impact: "partial_outage",
     scope: "resource",
@@ -129,6 +135,44 @@ export const MOCK_MAINTENANCES: Maintenance[] = withNotifyTargets([
     updated_at: nowIso(-60),
   },
 ]);
+
+/**
+ * The calendar's mock feed — `MOCK_MAINTENANCES` projected onto `CalendarEvent`,
+ * which is what `/api/calendar` actually returns (RUK-258).
+ *
+ * Derived rather than hand-written so the two lists cannot drift. The projection
+ * is explicit field-by-field, NOT a spread: `Maintenance` is structurally
+ * assignable to `CalendarEvent` (it has every required key and more), so a
+ * spread — or simply handing `MOCK_MAINTENANCES` over unchanged — compiles
+ * clean while leaving the four dropped fields, plus `reference`, in mock mode.
+ * That would re-create the exact defect this ticket removed, only where the type
+ * system cannot see it.
+ *
+ * The `satisfies` is load-bearing, not decoration. The `: CalendarEvent[]`
+ * annotation alone does NOT reject an extra key here: excess-property checking
+ * needs a fresh object literal, and the literal's freshness is lost when the
+ * callback's return type is inferred and the resulting array is assigned.
+ * Verified — dropping `satisfies` and adding `reference: m.reference` compiles
+ * with zero errors. Applied to the callback, `satisfies` restores the check
+ * (TS2353); the runtime key-parity assertion in
+ * `tests/contracts/calendar-payload.contract.test.ts` is the backstop.
+ *
+ * This must never import the server-side mapper: the file reaches the browser
+ * bundle through `use-calendar-query.ts`.
+ */
+export const MOCK_CALENDAR_EVENTS: CalendarEvent[] = MOCK_MAINTENANCES.map(
+  (m) =>
+    ({
+      id: m.id,
+      title: m.title,
+      status: m.status,
+      impact: m.impact,
+      scope: m.scope,
+      planned_period: m.planned_period,
+      resources: m.resources,
+      ...(m.created_by ? { created_by: m.created_by } : {}),
+    }) satisfies CalendarEvent,
+);
 
 export function getMockMaintenanceDetail(id: string): MaintenanceDetail | undefined {
   const base = MOCK_MAINTENANCES.find((m) => m.id === id);

@@ -128,6 +128,51 @@ export function isUnreviewedConflict(status: MaintenanceStatus, conflict: Confli
   return status !== "draft" && !conflict.known_at_approval;
 }
 
+/**
+ * A calendar-grid event — what `GET /ui/v1/calendar` actually returns, projected
+ * into the domain.
+ *
+ * Deliberately NOT {@link Maintenance}. That type is the DETAIL page's shape, and
+ * reusing it here forced `mapCalendarResponse` to invent five fields the calendar
+ * wire never carried: `notify_targets`, `steps`, `created_at`, `updated_at` (all
+ * removed in RUK-258) and `resources` (kept, see below). They were serialized
+ * into every event of every calendar response and read by nobody — ~103 B per
+ * event, about 27% of the payload.
+ *
+ * Three things in this area are called "calendar event". Keep them apart:
+ *
+ * | name                             | layer                          | meaning                  |
+ * | -------------------------------- | ------------------------------ | ------------------------ |
+ * | `CalendarEventDto`               | wire (`src/server/backend/`)   | what the backend sends   |
+ * | `CalendarEvent`                  | domain (this type)             | what the UI reads        |
+ * | `CalendarEventProps`/`EventInput`| view (`event-mapping.ts`)      | FullCalendar's own event |
+ *
+ * Do NOT let this type acquire wire spellings (flat `start`/`end`, a
+ * `UserSummaryDto` author). The mapper is where the wire stops.
+ */
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  status: MaintenanceStatus;
+  impact: MaintenanceImpact;
+  scope: MaintenanceScope;
+  planned_period: Period;
+  /**
+   * Always empty until the backend adds `resources` to calendar events
+   * (RUK-256). Kept rather than dropped because the sidebar reads it — both
+   * `matchesFilters` and `resourceOptions` in `calendar-filters.ts` — so
+   * deleting the field would delete the resource filter, not clean up waste.
+   * The day the backend ships it, this field goes live with no type change;
+   * `calendar.contract.test.ts` fails that day by design.
+   */
+  resources: MaintenanceResource[];
+  /**
+   * Author display name, flattened from the wire's `UserSummaryDto` by
+   * `mapUserSummary`. A projection of received data, not a stub.
+   */
+  created_by?: string;
+}
+
 export interface Maintenance {
   id: string;
   reference?: string;

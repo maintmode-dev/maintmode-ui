@@ -4,9 +4,12 @@
  * Deliberately NOT a reuse of {@link Maintenance}. The queue response carries no
  * `status`, `resources`, `steps`, or `notify_targets`, so mapping it onto the
  * fuller shape would mean filling those with empty defaults and inventing a
- * status the wire never sent. `mapCalendarResponse` already pays that price —
- * it stuffs `resources: []`, `steps: []` and sets `created_at` to the window
- * start, which is simply untrue. One such compromise in the codebase is enough.
+ * status the wire never sent.
+ *
+ * `mapCalendarResponse` used to pay exactly that price — stuffing `steps: []`
+ * and setting `created_at` to the window start, which was simply untrue — until
+ * RUK-258 gave the calendar its own {@link CalendarEvent}. This type made the
+ * same call earlier; the calendar has now caught up.
  */
 
 import type { MaintenanceImpact, MaintenanceScope } from "./maintenance";
