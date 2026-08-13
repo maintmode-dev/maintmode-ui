@@ -14,8 +14,9 @@ import type { ReactNode } from "react";
  *
  * What these tests are careful about:
  *  - the warmed entry must hold the whole `CalendarResponse` envelope, because
- *    `useCalendarQuery` reads `meta` back off the cache entry by key. An entry
- *    holding a bare array would strand `meta` (RUK-252);
+ *    the envelope IS what `useCalendarQuery` caches — it destructures `meta`
+ *    and `items` out of the query's own data. An entry holding a bare array
+ *    would have no `meta` to destructure, stranding the signal (RUK-252);
  *  - the neighbour key must be built from the SAME params object as the query,
  *    only with `{from,to}` swapped. A key missing `statuses` warms an entry
  *    nobody will ever read, and asks the backend for every status while doing
@@ -157,9 +158,10 @@ describe("useCalendarNeighbourPrefetch", () => {
   });
 
   it("hands the step BOTH halves of one response (RUK-252 invariant)", async () => {
-    // `meta` is read off the cache entry by key while `items` come through
-    // `select`. They must belong to the same response, or the truncation notice
-    // describes a window whose events are not on screen.
+    // `meta` and `items` are destructured out of ONE envelope — the query's own
+    // data — so they cannot describe different responses. This asserts it for a
+    // PREFETCHED entry: a warmed window must arrive with both halves, or the
+    // notice describes a window whose events are not on screen.
     mount({ params: PARAMS, view: "day", anchor: ANCHOR, direction: 1, enabled: true });
     await waitFor(() => expect(client.getQueryState(calendarKey(NEXT))?.data).toBeDefined());
 

@@ -138,14 +138,10 @@ export function CalendarPage() {
       window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(serializeFilters(filters)));
     }
   }, [filters, hydrated]);
-  // Live clock consumed by the sidebar's "Up next" panel (it scopes to
-  // running-now + today/tomorrow). Tick once a minute so the list stays current.
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 60_000);
-    return () => clearInterval(t);
-  }, []);
-
+  // No live clock here on purpose. The sidebar owns it (`useNow`), because it is
+  // the only consumer: held in page state, its once-a-minute tick re-rendered
+  // this whole subtree — including `CalendarGrid`, which is not `memo`ised, so
+  // its body ran end to end for a value it never reads (RUK-265).
   const range = useMemo(() => viewRange(view, anchor), [view, anchor]);
 
   // Zone the grid renders event times in (RUK-201). UTC during SSR/first render
@@ -385,7 +381,6 @@ export function CalendarPage() {
             items={items}
             filters={filters}
             onFiltersChange={setFilters}
-            now={now}
             onSelect={setSelectedId}
           />
         </div>

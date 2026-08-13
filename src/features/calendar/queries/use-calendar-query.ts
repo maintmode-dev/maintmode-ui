@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
 import { DATA_SOURCE } from "@/features/_shared/api/data-source";
@@ -122,8 +122,11 @@ function appendFilter(search: URLSearchParams, key: string, values: string[] | u
  *   - `items ?? []`, or a prefetched entry could hold `items: undefined` where a
  *     queried one holds `[]`, and the two entries would no longer be the same
  *     shape;
- *   - returning the whole envelope (not just `items`), because `meta` is read
- *     back off the cache entry by key — see the note on `useCalendarQuery`.
+ *   - returning the whole envelope (not just `items`), because the envelope IS
+ *     what the query caches: `meta` is destructured out of it alongside `items`
+ *     so the two cannot describe different responses — see `useCalendarQuery`.
+ *     A prefetch that stored only `items` would write an entry of a different
+ *     shape, and the step into that window would find no `meta` at all.
  *
  * `background` marks a call nobody is waiting on — today, the neighbour
  * prefetch. It changes exactly one thing: how a dead session is handled. See
@@ -162,26 +165,52 @@ export async function fetchCalendar(
 }
 
 /**
- * `meta` is carried OUT-OF-BAND rather than by widening what the query resolves
- * to. `data` stays `CalendarEvent[]`, which is what all three call sites read
- * (`calendar-page.tsx` plus the resource/channel related feeds via
- * `use-related-maintenance-query`); folding it into an object would have forced
- * every one of them — and the mocks pinning them — to change for a field only
- * the calendar page will read.
+ * Keeps the resolved `data` a bare `CalendarEvent[]` — the shape all three call
+ * sites read (`calendar-page.tsx` plus the resource/channel related feeds via
+ * `use-related-maintenance-query`) — while surfacing the truncation `meta`
+ * alongside it. Folding `meta` into `data` would force every one of those call
+ * sites, and the mocks pinning them, to change for a field only the calendar
+ * page reads.
  *
- * The `select` below keeps `data` an array while the raw envelope stays in the
- * cache, so `meta` and `items` always come from the SAME response: they cannot
- * drift apart across a refetch, and `keepPreviousData` carries both together.
+ * ## `meta` and `items` come from one envelope, by construction
+ *
+ * `meta` used to be read out-of-band with `client.getQueryData(...)` during
+ * render, with a comment claiming the two could not drift apart. They could.
+ * A plain read is not a subscription, and it only stayed correct because the
+ * hook happened to `{...query}`-spread its result: the spread touches every
+ * getter on TanStack's tracked-props proxy, which subscribes the consumer to
+ * fields like `dataUpdatedAt` and so guarantees a re-render on every settle.
+ *
+ * Narrow that return object — an innocuous-looking refactor — and the guarantee
+ * evaporates. `QueryObserver.updateResult` gates notification twice: after
+ * `shallowEqualObjects`, `shouldNotifyListeners` only notifies when a field the
+ * consumer actually READ has changed. So a response whose `items` are
+ * structurally identical (structural sharing preserves the array reference)
+ * changes no tracked prop, React skips the re-render, and the out-of-band read
+ * never re-runs. Measured on the pre-fix implementation with a narrowed return:
+ * the consumer showed `{count: 1, truncated: false}` while the cache held
+ * `{count: 1000, truncated: true}` — a truncated window reported as complete,
+ * which is the silent hiding RUK-252 exists to close.
+ *
+ * Deriving both fields from ONE envelope removes the dependency on that
+ * accident: the envelope is what the observer diffs, so a `meta` change IS a
+ * `data` change and cannot be missed.
  */
 export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQueryOptions = {}) {
   const query = useQuery({
     queryKey: calendarKey(params),
     enabled: options.enabled ?? true,
     queryFn: () => fetchCalendar(params),
-    // Unwrap to the array the call sites expect. `select` runs on the cached
-    // envelope, so it re-derives (and stays referentially stable per response)
-    // without the envelope leaking into `data`.
-    select: (response: CalendarResponse) => response.items,
+    // No `select`. It used to unwrap the envelope to `response.items`, which is
+    // exactly what put `meta` outside the observer's view; keeping the envelope
+    // as the query's own data makes a meta-only change a data change, so the
+    // observer cannot miss it. The unwrapping now happens below, after the
+    // observer has done its diffing.
+    //
+    // TanStack's `replaceEqualDeep` still runs on the cached envelope, so a
+    // meta-only response hands back a new wrapper whose `.items` is the OLD
+    // array reference — which is what stops such a change rebuilding every
+    // FullCalendar event downstream (`items` → `filteredItems` → `events`).
     staleTime: 30_000,
     // Keep the previous window's data on screen while the next one loads, so
     // stepping prev/next (or switching view) doesn't unmount the grid and flash
@@ -199,21 +228,32 @@ export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQ
     },
   });
 
-  // The truncation signal, read off the same cache entry that produced `data`.
-  // Keeping it out of `data` is what lets the resolved type stay
-  // `CalendarEvent[]` for the existing call sites.
+  // Split the envelope back apart. `data` keeps the `CalendarEvent[]` shape the
+  // call sites read; `meta` rides alongside, out of the same envelope — so the
+  // two cannot describe different responses.
   //
-  // Read plainly on every render rather than memoized: `useQuery` above already
-  // re-renders this hook whenever the entry settles, so the read is always
-  // current. Caching it behind a stale dependency list is exactly how `meta`
-  // would drift out of step with `items` across a refetch.
-  //
-  // While a NEW window is fetching, `keepPreviousData` still shows the previous
-  // `items` but this returns `undefined` (no entry under the new key yet). That
-  // is the safe direction: `undefined` means "unknown", never a false
-  // "not truncated".
-  const client = useQueryClient();
-  const meta = client.getQueryData<CalendarResponse>(calendarKey(params))?.meta;
+  // `meta` is dropped while the shown data is PLACEHOLDER data. During a step to
+  // a new window `keepPreviousData` keeps the previous window's `items` on
+  // screen, and its `meta` would come with them — so the truncation notice would
+  // render the previous window's COUNT against the new date header. That number
+  // is shown verbatim to the operator ("Показаны первые N работ"), and
+  // `calendar-truncation-notice.tsx` states the rule it would break: a
+  // confidently wrong count is worse than the silent truncation the notice
+  // closes. `undefined` here means "unknown", which the notice renders as
+  // nothing — matching the behaviour before this change exactly.
+  // Optional chain because `query.data` is undefined until the first response.
+  // Deliberately NOT defaulted to `[]`: that would make "not loaded yet"
+  // indistinguishable from "loaded, and the window is empty", and the call sites
+  // branch on `isPending` to tell those apart. `fetchCalendar` already
+  // normalises `items` to `[]`, so a settled envelope always carries an array —
+  // the chain covers the pre-first-response commits, not a malformed payload.
+  const data = query.data?.items;
+  const meta = query.isPlaceholderData ? undefined : query.data?.meta;
 
-  return { ...query, meta };
+  // NOTE for the next caller: overriding `data` on the spread flattens
+  // TanStack's discriminated union, so `isSuccess` no longer narrows `data` to
+  // non-undefined (verified: `if (q.isSuccess) q.data.length` fails TS18048).
+  // Every consumer today writes `query.data ?? []`, so nothing is broken —
+  // but reach for `isSuccess`-narrowing here and it will not work.
+  return { ...query, data, meta };
 }

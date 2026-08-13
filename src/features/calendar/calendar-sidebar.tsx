@@ -8,6 +8,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { STATUS_LABEL } from "@/shared/ui/domain/status-badge";
 import { formatDate, formatRange } from "@/shared/ui/lib/format";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
+import { useNow } from "@/features/_shared/hooks/use-now";
 import type { CalendarEvent, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 
 import {
@@ -50,15 +51,22 @@ export interface CalendarSidebarProps {
   items: CalendarEvent[];
   filters: CalendarFilterState;
   onFiltersChange: (next: CalendarFilterState) => void;
-  /** Live clock for the "today" helper + Up next ordering (passed from the page). */
-  now: Date;
   onSelect: (id: string) => void;
 }
 
-export function CalendarSidebar({ items, filters, onFiltersChange, now, onSelect }: CalendarSidebarProps) {
+export function CalendarSidebar({ items, filters, onFiltersChange, onSelect }: CalendarSidebarProps) {
   const [resourceQuery, setResourceQuery] = useState("");
   const { zone } = useTimezone();
+  // The live clock is owned HERE, not passed down, because this is its only
+  // consumer ("Today" below + `upcomingItems` ordering). Held in page state it
+  // re-rendered the whole calendar once a minute — including the grid, which is
+  // not `memo`ised and never reads the clock (RUK-265).
+  const now = useNow();
 
+  // Memoised on `items`, NOT on `now` — so the minute tick above does not
+  // recompute it. That matters for RUK-256: when the backend starts sending
+  // `resources`, this call gets real work to do, but it will still run only on
+  // a window/filter change, not once a minute.
   const allResources = useMemo(() => resourceOptions(items), [items]);
   const selectedResources = useMemo(
     () => allResources.filter((r) => filters.resourceIds.has(r.id)),

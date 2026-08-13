@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -19,6 +19,14 @@ export interface CalendarGridProps {
   /** Canonical anchor for the visible period (owned by the page / view-range). */
   anchor: Date;
   items: CalendarEvent[];
+  /**
+   * Opens an event. **Must be referentially stable** — it is the dependency of
+   * the `eventClick` handler below, which FullCalendar re-registers when its
+   * identity changes, and that path calls `flushSync`. The calendar page passes
+   * `setSelectedId` (a `useState` setter, stable by React's guarantee); any
+   * other caller should `useCallback` it. Nothing enforces this at the type
+   * level, so it is stated here rather than left to be rediscovered.
+   */
   onSelect: (id: string) => void;
   /**
    * IANA zone the grid renders event times / slot labels in (RUK-201). Defaults
@@ -102,7 +110,21 @@ export function CalendarGrid({ view, anchor, items, onSelect, timeZone }: Calend
   // its API calls to a microtask so that flushSync never runs inside React's
   // commit phase (which is what would log the "flushSync from inside a lifecycle
   // method" warning).
-  const renderEvent = (arg: EventContentArg) => {
+  // `useCallback` here is prop STABILISATION, not precautionary memoisation:
+  // both are handed to FullCalendar, and a new reference is a prop change on a
+  // consumer whose adapter calls `flushSync` to re-render events.
+  //
+  // Empty deps, and it must STAY closure-free for that to remain correct: the
+  // body reads only `arg` (plus the import-stable `CalendarEventBar`). `timeZone`
+  // is in scope and deliberately NOT read — FullCalendar formats `arg.timeText`
+  // in the grid's zone itself. Read anything render-scoped here and the empty
+  // array becomes a stale-closure bug.
+  //
+  // `react-hooks/exhaustive-deps` does flag that (verified: reading `timeZone`
+  // here produces "missing dependency: 'timeZone'"), but only as a WARNING, and
+  // `npm run lint` does not fail on warnings — so the rule is a hint, not a
+  // guard, and this note is what actually carries the constraint.
+  const renderEvent = useCallback((arg: EventContentArg) => {
     const { status } = arg.event.extendedProps as CalendarEventProps;
     return (
       <CalendarEventBar
@@ -115,12 +137,15 @@ export function CalendarGrid({ view, anchor, items, onSelect, timeZone }: Calend
         className="h-full"
       />
     );
-  };
+  }, []);
 
-  const handleClick = (arg: EventClickArg) => {
-    arg.jsEvent.preventDefault();
-    onSelect(arg.event.id);
-  };
+  const handleClick = useCallback(
+    (arg: EventClickArg) => {
+      arg.jsEvent.preventDefault();
+      onSelect(arg.event.id);
+    },
+    [onSelect],
+  );
 
   return (
     <div className="bg-bg-elev-1 border border-border-subtle rounded-md overflow-hidden p-1">
