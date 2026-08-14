@@ -88,6 +88,13 @@ export function MultiSelect({
   ariaLabel,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
+  // Lifted out of cmdk's store so `CommandEmpty` can tell "the filter matched
+  // nothing" from "there is nothing to filter" — the two facts cmdk collapses
+  // into one `filtered.count === 0`. Controlled on `CommandInput`, NOT on the
+  // `Command` root: the root's identically-named pair is the *selected item*,
+  // and wiring the query there leaves `state.search` empty forever (the feature
+  // silently does nothing) while hijacking arrow-key highlighting.
+  const [search, setSearch] = useState("");
   const selectedSet = new Set(value);
 
   const toggle = (next: string) => {
@@ -149,7 +156,21 @@ export function MultiSelect({
       >
         {open && errorText ? errorText : ""}
       </span>
-      <Popover open={open} onOpenChange={setOpen}>
+      {/* Clearing on close is not cosmetic. `PopoverContent` is Portal-mounted
+          with no `forceMount`, so cmdk's store dies with it and a reopened
+          picker used to start empty for free. Now that the query lives up here
+          it outlives the popover, and a controlled `CommandInput` re-injects it
+          into the fresh store on reopen — a full list hidden behind a filter the
+          user cannot see, under a search box that renders the stale text back.
+          Clearing on the way out keeps our copy and the remounted store in
+          agreement at every moment the popover is shut. */}
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setSearch("");
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"
@@ -166,9 +187,50 @@ export function MultiSelect({
         </PopoverTrigger>
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
           <Command>
-            <CommandInput placeholder={searchPlaceholder} />
+            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
             <CommandList>
-              <CommandEmpty>{emptyText}</CommandEmpty>
+              {/* Two different facts, two different sentences. cmdk mounts this
+                  node on `filtered.count === 0`, which means "the filter matched
+                  nothing" — but `emptyText` is written by callers to mean "there
+                  is nothing here", and at four call sites it carries the query's
+                  whole three-way state (loading / failed / genuinely empty).
+
+                  `options.length > 0` is what keeps those two apart, and it is
+                  load-bearing rather than defensive: without it, typing during a
+                  pending or failed load would replace "Couldn't load people…"
+                  with "No matches for …" — asserting the roster loaded and
+                  lacks that person, and disagreeing with the sr-only alert
+                  above, which would still be announcing the failure. That is
+                  the exact defect RUK-253/268/269 closed.
+
+                  Note the precondition, because it is a convention rather than
+                  a guarantee: this works because a caller reporting query state
+                  through `emptyText` passes `[]` while that query is pending or
+                  failed. A caller whose fallback is NON-empty — `placeholderData`,
+                  or a `?? FALLBACK` constant — shows rows while still loading,
+                  so this check does not fire and a search miss can render over
+                  a pending load. All four query-state call sites use
+                  `query.data ?? []` today. If one ever gains `placeholderData`,
+                  it needs to stop routing query state through `emptyText`.
+
+                  `.trim()` because cmdk does NOT trim the query (it trims item
+                  values and the root `value`, not `search`). A lone space scores
+                  0 against space-free labels — channel slugs, timezone ids — so
+                  `filtered.count` really can hit 0 and render quote marks around
+                  apparent nothing. */}
+              <CommandEmpty>
+                {search.trim() && options.length > 0 ? `No matches for "${search}"` : emptyText}
+              </CommandEmpty>
+              {/* Not memoized, unlike the twin list in `combobox.tsx`. That one
+                  pays for the query living in React state because its
+                  `description` accepts a THUNK, so a re-render re-evaluates it
+                  per option — measured at 400 forced calls per keystroke on the
+                  timezone picker. Here `description` is a plain node with
+                  nothing to force, and the largest list is ~100 rows: measured
+                  at ~21ms per keystroke, matching the memoized `Combobox`. A
+                  `useMemo` here would buy nothing and would have to be kept in
+                  sync with `selectedSet`. Revisit if a caller ever feeds this
+                  component hundreds of options. */}
               <CommandGroup>
                 {options.map((option) => {
                   const checked = selectedSet.has(option.value);

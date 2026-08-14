@@ -38,8 +38,7 @@ import type { CalendarMeta } from "./queries/use-calendar-query";
 const truncationMessage = (count: number): string =>
   `Показаны первые ${count} работ — сузьте фильтры, чтобы увидеть остальные`;
 
-const TRUNCATION_MESSAGE_NO_COUNT =
-  "Показаны не все работы — сузьте фильтры, чтобы увидеть остальные";
+const TRUNCATION_MESSAGE_NO_COUNT = "Показаны не все работы — сузьте фильтры, чтобы увидеть остальные";
 
 /**
  * Is the window known to be truncated?
@@ -77,7 +76,9 @@ export function CalendarTruncationNotice({ meta }: { meta: CalendarMeta | undefi
   // "первые undefined работ".
   const count = meta?.count;
   const message =
-    typeof count === "number" && Number.isFinite(count) ? truncationMessage(count) : TRUNCATION_MESSAGE_NO_COUNT;
+    typeof count === "number" && Number.isFinite(count)
+      ? truncationMessage(count)
+      : TRUNCATION_MESSAGE_NO_COUNT;
 
   return (
     <Alert

@@ -184,7 +184,9 @@ export function TimezoneCard({ savedZone }: { savedZone: string | null | undefin
           disabled={update.isPending}
           ariaLabel="Timezone"
           searchPlaceholder="Search timezones…"
-          emptyText="No matching timezone."
+          // Search misses are the picker's job since RUK-272, so this slot says
+          // what it means. Unreachable while `auto` is prepended below.
+          emptyText="No timezones available."
           className="w-full max-w-[380px]"
         />
         {savedZone ? (

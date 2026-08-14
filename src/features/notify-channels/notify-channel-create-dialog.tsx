@@ -191,7 +191,10 @@ export function NotifyChannelCreateDialog({ open, onOpenChange }: NotifyChannelC
             options={transportOptions}
             placeholder="Select a transport…"
             searchPlaceholder={`Search ${transportOptions.length} transports…`}
-            emptyText="No transports match your search."
+            // Search misses are the picker's job since RUK-272, so this slot
+            // says what it means. Near-unreachable given the fallback above;
+            // reachable if the backend ever returns an empty catalog.
+            emptyText="No transports available."
             ariaLabel="Select a transport"
           />
           {selectedStatusCopy ? (

@@ -128,9 +128,7 @@ function installEndpoint(roster: AssignableUser[]) {
     const rawLimit = query.get("limit");
     const limit = rawLimit ? Number(rawLimit) : BACKEND_DEFAULT_LIMIT;
 
-    const filtered = roles.length
-      ? roster.filter((u) => u.roles.some((r) => roles.includes(r)))
-      : roster;
+    const filtered = roles.length ? roster.filter((u) => u.roles.some((r) => roles.includes(r))) : roster;
     return { users: filtered.slice(0, limit), total: filtered.length };
   });
 }
@@ -338,9 +336,7 @@ describe("approver picker vs. the endpoint limit (SPEC §4.2, AC-7)", () => {
     await result.current.refetch();
     await result.current.refetch();
 
-    const partialSliceWarnings = warn.mock.calls
-      .flat()
-      .filter((line) => String(line).includes("RUK-251"));
+    const partialSliceWarnings = warn.mock.calls.flat().filter((line) => String(line).includes("RUK-251"));
     expect(partialSliceWarnings).toHaveLength(1);
     warn.mockRestore();
   });
@@ -364,9 +360,7 @@ describe("approver picker vs. the endpoint limit (SPEC §4.2, AC-7)", () => {
     expect(query).toBeDefined();
     expect(query?.getAll("roles")).toEqual(["reviewer", "admin"]);
     expect(result.current.data).not.toHaveLength(0);
-    expect(
-      result.current.data?.every((u) => u.roles.some((r) => APPROVER_ROLE_SET.has(r))),
-    ).toBe(true);
+    expect(result.current.data?.every((u) => u.roles.some((r) => APPROVER_ROLE_SET.has(r)))).toBe(true);
     // The key must agree with the request: an empty roles segment would claim
     // "no role filter" while holding role-filtered data.
     expect(assignableUsersKey({ roles: [] })).toEqual(assignableUsersKey({}));

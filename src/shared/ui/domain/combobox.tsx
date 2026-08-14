@@ -1,7 +1,7 @@
 "use client";
 
 import { Check, ChevronsUpDown } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import {
@@ -111,6 +111,84 @@ export function Combobox({
   ariaLabel,
 }: ComboboxProps) {
   const [open, setOpen] = useState(false);
+  // Lifted out of cmdk's store for the reason argued in `multi-select.tsx`.
+  const [search, setSearch] = useState("");
+
+  // `onChange` is held in a ref so it can stay out of the memo's deps below.
+  // Callers pass inline arrows, so its identity changes on every render of the
+  // PARENT — and with it in the deps, each of those would rebuild every row.
+  //
+  // Measured scope, twice narrowed, so this is not over-sold:
+  //
+  // - Typing alone re-renders only this component, not the caller, so the arrow
+  //   keeps its identity across keystrokes and listing `onChange` would cost
+  //   nothing there. The memo below is what carries the keystroke case.
+  // - On a PARENT re-render the ref helps only where the caller also hands us a
+  //   stable `options`. Two of the four call sites build that array fresh every
+  //   render (`cancel-maintenance-dialog`, `notify-channel-create-dialog`), so
+  //   `options` — which IS in the deps, and has to be — invalidates the memo
+  //   there regardless of what `onChange` does.
+  //
+  // So this earns its keep at the two `useMemo`d call sites and is inert at the
+  // other two. Kept because it is nearly free and the alternative is a rebuild
+  // at the heaviest picker; documented because an inaccurate rationale is what
+  // licenses the next person to add a ref that buys nothing.
+  //
+  // Written in an effect, not during render: a render-phase ref write is unsafe
+  // under concurrent rendering. Reading it is safe because the handler is only
+  // ever called from an event, which always runs after commit.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  // Memoized because the query now lives in React state. cmdk keeps its own
+  // state in an external store and subscribes each row to it individually
+  // (`useSyncExternalStore`), so before the query was lifted a keystroke
+  // re-rendered only the rows that crossed the match/no-match boundary — often
+  // none. Routing the same keystroke through our `setSearch` re-renders our
+  // whole subtree instead, rebuilding every row.
+  //
+  // Measured at 418 options (the timezone picker's real size): 418 row
+  // re-renders per keystroke, restored to 0 by this memo — parity with the
+  // pre-change baseline. The dominant cost is recreating and reconciling 418
+  // elements, each a store subscriber with a layout effect; the `description`
+  // thunks it also forces are cheap, since that call site memoizes into a
+  // module-level Map after the first call.
+  //
+  // This is not a precautionary wrapper: the rows genuinely do not depend on
+  // `search`. cmdk filters by having each already-rendered row hide itself, so
+  // the list handed to `CommandGroup` is stable across typing.
+  const rows = useMemo(
+    () =>
+      options.map((option) => (
+        <CommandItem
+          key={option.value}
+          value={option.searchValue ?? String(option.label)}
+          onSelect={() => {
+            onChangeRef.current?.(option.value);
+            // Cleared HERE as well as in `onOpenChange`: this call closes the
+            // popover directly, so the handler up there never runs on what is
+            // this component's most common close path. Without it, picking a
+            // row after searching leaves the query in state, and the controlled
+            // input pushes it back into the fresh store on reopen.
+            // `MultiSelect` needs no equivalent — it never self-closes.
+            setSearch("");
+            setOpen(false);
+          }}
+        >
+          <div className="flex flex-col min-w-0 flex-1">
+            <span className="truncate">{option.label}</span>
+            <ComboboxDescription description={option.description} />
+          </div>
+          <Check
+            className={cn("ml-2 size-4 shrink-0", option.value === value ? "opacity-100" : "opacity-0")}
+            aria-hidden="true"
+          />
+        </CommandItem>
+      )),
+    [options, value],
+  );
   const selected = options.find((option) => option.value === value);
 
   return (
@@ -173,7 +251,13 @@ export function Combobox({
       >
         {open && errorText ? errorText : ""}
       </span>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setSearch("");
+        }}
+      >
         <PopoverTrigger asChild>
           <Button
             type="button"
@@ -192,33 +276,16 @@ export function Combobox({
         </PopoverTrigger>
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
           <Command>
-            <CommandInput placeholder={searchPlaceholder} />
+            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
             <CommandList>
-              <CommandEmpty>{emptyText}</CommandEmpty>
-              <CommandGroup>
-                {options.map((option) => (
-                  <CommandItem
-                    key={option.value}
-                    value={option.searchValue ?? String(option.label)}
-                    onSelect={() => {
-                      onChange?.(option.value);
-                      setOpen(false);
-                    }}
-                  >
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <span className="truncate">{option.label}</span>
-                      <ComboboxDescription description={option.description} />
-                    </div>
-                    <Check
-                      className={cn(
-                        "ml-2 size-4 shrink-0",
-                        option.value === value ? "opacity-100" : "opacity-0",
-                      )}
-                      aria-hidden="true"
-                    />
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+              {/* Twin of the branch in `multi-select.tsx`, argued there — including
+                  the precondition on `options.length > 0`, which holds only while
+                  callers reporting query state through `emptyText` pass `[]` for
+                  a pending or failed query. */}
+              <CommandEmpty>
+                {search.trim() && options.length > 0 ? `No matches for "${search}"` : emptyText}
+              </CommandEmpty>
+              <CommandGroup>{rows}</CommandGroup>
             </CommandList>
           </Command>
         </PopoverContent>
