@@ -41,8 +41,12 @@ jobs:
       # what the app graph reaches, and vitest transpiles without checking.
       # Placed here so a type error fails before the slower steps.
       - run: npm run typecheck
-      # `npm run format` (prettier --check) is intentionally NOT a gate yet —
-      # the tree has pre-existing style drift. Re-add once it's clean.
+      # Runs here for the same reason as `typecheck`: it is fast, and a failure
+      # should not wait behind the test suites. Kept in the same order as the
+      # `verify` script so a green local `verify` means a green CI run — while
+      # this step was missing here, style drift failed `verify` before it ever
+      # reached `build`, yet CI on the same commit passed (RUK-271).
+      - run: npm run format
       # `test:contracts` used to BE this boundary linter; it was renamed
       # (RUK-254) because the old name implied FE↔BE contract coverage that did
       # not exist. Both run here — dropping either silently reopens a gap.
