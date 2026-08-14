@@ -513,13 +513,21 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
                   ? "Couldn't load people. Retry or check your access."
                   : "No people found."
             }
-            // No `errorText` twin here, unlike Mentions below: that prop lives
-            // on `MultiSelect` and this is a `Combobox`. So a screen-reader user
-            // still hears an empty listbox when THIS load fails — and the
-            // asymmetry runs backwards from operator risk, since approver is
-            // required and mentions are optional. Porting the live region to
-            // `Combobox` is real work rather than a drive-by, and is tracked as
-            // RUK-269.
+            // The screen-reader half, matching Mentions below. `emptyText`
+            // lands in cmdk's `role="presentation"` node, so on its own the
+            // ternary above is invisible to a screen reader and a failed load
+            // still reads there as an empty roster.
+            //
+            // `isPending` is checked here for the same reason the ternary above
+            // checks it FIRST, and the two must agree: a failed query that is
+            // refetching reports `isPending` and `isError` together, and
+            // announcing "couldn't load" under a popover that reads "Loading…"
+            // tells the two audiences different things about the same moment.
+            errorText={
+              !assignable.isPending && assignable.isError
+                ? "Couldn't load people. Retry or check your access."
+                : undefined
+            }
             ariaLabel="Approver"
           />
         </Field>
@@ -582,14 +590,33 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             onChange={setChannelIds}
             placeholder="Select channels…"
             searchPlaceholder="Search channels…"
-            // Still two-state, and still wrong for the same reason the other two
-            // pickers were: `isError` is unread, so a failed load renders as
-            // "No channels configured." — which, unlike "no people", is a
-            // plausible admin state, so an operator will go and configure
-            // channels that already exist. Left deliberately (detection and
-            // repair are separate changes) and tracked as RUK-268; this is a
-            // `MultiSelect`, so it inherits `errorText` for free when done.
-            emptyText={channelsQuery.isPending ? "Loading…" : "No channels configured."}
+            // Three states, three strings — the last of the three pickers to get
+            // them. "No channels configured." is a *plausible admin state*, which
+            // makes this instance of the defect costlier than the roster one: an
+            // operator who sees it after a 500 goes and configures channels that
+            // already exist, rather than merely believing the company has nobody
+            // in it.
+            emptyText={
+              channelsQuery.isPending
+                ? "Loading…"
+                : channelsQuery.isError
+                  ? "Couldn't load channels. Retry or check your access."
+                  : "No channels configured."
+            }
+            // The screen-reader half. `emptyText` renders through cmdk's
+            // `CommandEmpty`, which is `role="presentation"` — silent — so the
+            // visible fix above does not reach assistive tech on its own.
+            //
+            // `isPending` is checked FIRST here, exactly as in the ternary above,
+            // and the two must agree: a failed query that is refetching reports
+            // `isPending` and `isError` together, so announcing "couldn't load"
+            // under a popover reading "Loading…" would tell the two audiences
+            // different things about the same moment.
+            errorText={
+              !channelsQuery.isPending && channelsQuery.isError
+                ? "Couldn't load channels. Retry or check your access."
+                : undefined
+            }
             ariaLabel="Notify channels"
           />
           {selectedChannels.length > 0 ? (

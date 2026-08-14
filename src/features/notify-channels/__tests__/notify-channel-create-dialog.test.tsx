@@ -60,6 +60,32 @@ function renderDialog(
 
 const primary = () => screen.getByRole("button", { name: /Create channel/ }) as HTMLButtonElement;
 
+/**
+ * The dialog's own transport warning — a shadcn `Alert`, which is the single
+ * `[data-slot="alert"]` node in this tree (`notify-channel-create-dialog.tsx`
+ * renders exactly one).
+ *
+ * These assertions used to read `getByRole("alert")`, which worked only by
+ * accident of there being one alert on screen. RUK-269 gives `Combobox` an
+ * always-mounted `sr-only` `role="alert"` live region, and this dialog renders a
+ * `Combobox` for the transport picker — so the bare role query would match two
+ * nodes and throw "found multiple elements", while the negative assertions would
+ * fail outright.
+ *
+ * Callers assert on `textContent`, not mere presence: this is a document-wide
+ * FIRST match, so without a text check, moving `data-slot` onto the live region
+ * would leave every positive green while matching the wrong node entirely.
+ * Proven by mutation — that swap fails all six only with the text checks in
+ * place.
+ *
+ * `document`, not the render container: `CreateDialog` mounts through a Radix
+ * `DialogPortal` into `document.body`, so a container-scoped query would return
+ * `null` unconditionally — the negatives would pass vacuously and the positives
+ * would fail. Same reason the rest of this file uses `screen` and
+ * `document.querySelector` (see the dialog-content assertion above).
+ */
+const transportWarning = () => document.querySelector('[data-slot="alert"]');
+
 function fillValidForm() {
   fireEvent.change(screen.getByLabelText(/^Name/), { target: { value: "Ops alerts" } });
   // Pick the transport through the combobox popover.
@@ -141,9 +167,8 @@ describe("NotifyChannelCreateDialog", () => {
       // Still selectable: choosing it fills the transport and shows the warning.
       fireEvent.click(screen.getByRole("option", { name: /Telegram/ }));
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toBeTruthy();
+        expect(transportWarning()?.textContent).toContain("Telegram integration is disabled");
       });
-      expect(screen.getByText(/Telegram integration is disabled/)).toBeTruthy();
       expect(screen.getByText(/silently dropped/)).toBeTruthy();
     });
 
@@ -152,9 +177,8 @@ describe("NotifyChannelCreateDialog", () => {
       fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
       fireEvent.click(await screen.findByRole("option", { name: /Email/ }));
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toBeTruthy();
+        expect(transportWarning()?.textContent).toContain("No Email integration is configured");
       });
-      expect(screen.getByText(/No Email integration is configured/)).toBeTruthy();
     });
 
     it("shows the unreadable warning after selecting an unreadable transport (RUK-200)", async () => {
@@ -165,9 +189,8 @@ describe("NotifyChannelCreateDialog", () => {
       });
       fireEvent.click(await screen.findByRole("option", { name: /Slack/ }));
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toBeTruthy();
+        expect(transportWarning()?.textContent).toContain("credentials can't be read");
       });
-      expect(screen.getByText(/credentials can't be read/)).toBeTruthy();
       // Points at the secret, not the (healthy-looking) enable toggle.
       expect(screen.queryByText(/is disabled/)).toBeNull();
     });
@@ -180,7 +203,7 @@ describe("NotifyChannelCreateDialog", () => {
       await waitFor(() => {
         expect(screen.getByRole("combobox", { name: "Select a transport" }).textContent).toContain("Slack");
       });
-      expect(screen.queryByRole("alert")).toBeNull();
+      expect(transportWarning()).toBeNull();
     });
 
     it("warns fail-visibly when the catalog omits the status", async () => {
@@ -189,9 +212,8 @@ describe("NotifyChannelCreateDialog", () => {
       fireEvent.click(screen.getByRole("combobox", { name: "Select a transport" }));
       fireEvent.click(await screen.findByRole("option", { name: /Slack/ }));
       await waitFor(() => {
-        expect(screen.getByRole("alert")).toBeTruthy();
+        expect(transportWarning()?.textContent).toContain("No Slack integration is configured");
       });
-      expect(screen.getByText(/No Slack integration is configured/)).toBeTruthy();
     });
 
     it("does not decorate fallback transports when the catalog fails (no data = no signal)", async () => {
@@ -208,7 +230,7 @@ describe("NotifyChannelCreateDialog", () => {
       await waitFor(() => {
         expect(screen.getByRole("combobox", { name: "Select a transport" }).textContent).toContain("Slack");
       });
-      expect(screen.queryByRole("alert")).toBeNull();
+      expect(transportWarning()).toBeNull();
     });
   });
 });

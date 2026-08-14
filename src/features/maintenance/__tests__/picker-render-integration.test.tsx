@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AssignableUser } from "@/domain/maintenance/maintenance";
+import type { NotifyChannel } from "@/domain/notify-channel/notify-channel";
 
 /**
  * Render-integration tests for the form's user pickers — approver AND mentions.
@@ -53,10 +54,27 @@ vi.mock("@/features/_shared/api/bff-fetch", async (importOriginal) => {
 });
 vi.mock("@/features/_shared/api/data-source", () => ({ DATA_SOURCE: { assignableUsers: "bff" } }));
 
-// Everything that is not the approver picker stays stubbed — this test is about
-// one combobox, not about channels, resources, mutations or timezones.
+// Resources, mutations and timezones stay stubbed — this file is about pickers.
+//
+// Channels are the exception: RUK-268 gave that picker the same three-state
+// treatment, so its mock is DRIVEN rather than frozen — three accessors the
+// cases set individually.
+//
+// The factory default is a floor for the FIRST case, not a reset between cases.
+// `afterEach` runs `vi.clearAllMocks()`, which clears call history and leaves
+// both `mockImplementation` and `mockReturnValue` in place — probed against this
+// repo's Vitest rather than assumed. So the hazard is a neighbour's value
+// leaking forward, and the only thing that prevents it is every case setting all
+// three explicitly, which they do.
+const channelsData = vi.fn<() => NotifyChannel[]>(() => []);
+const channelsPending = vi.fn<() => boolean>(() => false);
+const channelsError = vi.fn<() => boolean>(() => false);
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
-  useNotifyChannelsQuery: () => ({ data: [], isPending: false, isError: false }),
+  useNotifyChannelsQuery: () => ({
+    data: channelsData(),
+    isPending: channelsPending(),
+    isError: channelsError(),
+  }),
 }));
 vi.mock("@/features/resources/queries/use-resources-query", () => ({
   useResourcesQuery: () => ({ data: { resources: [] }, isPending: false, isError: false }),
@@ -214,16 +232,20 @@ describe("approver picker renders real approvers (SPEC §4.3, AC-1)", () => {
     renderForm();
     fireEvent.click(screen.getByRole("combobox", { name: "Approver" }));
 
-    // `getAllByText`, not `getByText`: the mentions picker now renders this same
-    // sentence into its own `sr-only` live region, so a strict single-match
-    // query here would fail on the neighbour's node rather than on anything
-    // this test is about.
+    // Scoped to the open popover, not `screen`. Under a blanket rejection this
+    // sentence is rendered by FOUR nodes — visibly in each picker's
+    // `CommandEmpty` and again in each one's `sr-only` live region (mentions
+    // since RUK-253, approver since RUK-269). A document-wide
+    // `getAllByText(...).length > 0` would therefore stay green on the mentions
+    // nodes alone, and so would no longer be an assertion about the approver at
+    // all: verified by mutation — changing only the approver's string left it
+    // passing. A strict `getByText` is equally wrong, failing on a neighbour's
+    // node rather than on anything this test is about.
+    const popover = await screen.findByRole("listbox");
     await waitFor(() =>
-      expect(screen.getAllByText("Couldn't load people. Retry or check your access.").length).toBeGreaterThan(
-        0,
-      ),
+      expect(within(popover).getByText("Couldn't load people. Retry or check your access.")).toBeTruthy(),
     );
-    expect(screen.queryByText("No people found.")).toBeNull();
+    expect(within(popover).queryByText("No people found.")).toBeNull();
   });
 
   it("still says 'No people found.' when the roster is genuinely empty", async () => {
@@ -256,8 +278,14 @@ describe("approver picker renders real approvers (SPEC §4.3, AC-1)", () => {
     renderForm();
     fireEvent.click(screen.getByRole("combobox", { name: "Approver" }));
 
+    // `getAllByText` for the same reason as the case above — and, once RUK-269
+    // lands, for one more: the approver `Combobox` renders this sentence into
+    // its own sr-only live region too, so even a run where ONLY the approver
+    // request failed matches two nodes.
     await waitFor(() =>
-      expect(screen.getByText("Couldn't load people. Retry or check your access.")).toBeTruthy(),
+      expect(screen.getAllByText("Couldn't load people. Retry or check your access.").length).toBeGreaterThan(
+        0,
+      ),
     );
     expect(screen.queryByText("No people found.")).toBeNull();
   });
@@ -378,6 +406,13 @@ describe("mentions picker distinguishes a failed load from an empty roster (RUK-
     expect(live.className).toContain("sr-only");
     expect(live.className).not.toContain("hidden");
 
+    // 2b. And the two attributes that make it a live region at all. Every
+    //     assertion here reaches the node by testid, which does not care about
+    //     them, so deleting either left the entire suite green — the same
+    //     silent-revert shape as the `sr-only` swap above, found later.
+    expect(live.getAttribute("role")).toBe("alert");
+    expect(live.getAttribute("aria-live")).toBe("assertive");
+
     // 3. The text arrives by MUTATING that same node, still attached.
     openMentions();
     await waitFor(() => expect(live.textContent).toBe(ERROR_TEXT));
@@ -455,5 +490,233 @@ describe("mentions picker distinguishes a failed load from an empty roster (RUK-
     // news — the listbox being empty already says it.
     await waitFor(() => expect(screen.getByText("No people found.")).toBeTruthy());
     expect(screen.getByTestId("multiselect-error-live-mentions").textContent).toBe("");
+  });
+});
+
+/**
+ * RUK-268 — the third and last picker with this defect.
+ *
+ * These cases are HOOK-level, unlike everything above: `useNotifyChannelsQuery`
+ * is mocked at module scope (see the accessors at the top), so they drive query
+ * state directly rather than through `bffFetch`. That is deliberate. The
+ * `bffFetch`-over-real-hooks arrangement exists to answer one question — which
+ * of two hooks sharing an endpoint a branch reads — and the channels query
+ * shares an endpoint with nothing, so it has no such question to answer.
+ *
+ * Every case OPENS the picker. The live region renders
+ * `{open && errorText ? errorText : ""}` (`multi-select.tsx:150`), so a
+ * closed-picker assertion reads `""` in every state — three green cases proving
+ * nothing.
+ *
+ * Each case sets all three accessors explicitly. The suite is order-independent
+ * by construction rather than by luck: RUK-253 split a three-state test and
+ * immediately found the second half had been relying on the first to reset a
+ * flag.
+ */
+describe("channels picker distinguishes a failed load from an empty catalog (RUK-268)", () => {
+  const ERROR_TEXT = "Couldn't load channels. Retry or check your access.";
+  const LIVE_REGION = "multiselect-error-live-notify-channels";
+
+  function openChannels() {
+    fireEvent.click(screen.getByRole("combobox", { name: "Notify channels" }));
+  }
+
+  it("renders the error string, not 'No channels configured.' (AC-1)", async () => {
+    channelsData.mockImplementation(() => []);
+    channelsPending.mockImplementation(() => false);
+    channelsError.mockImplementation(() => true);
+    renderForm();
+    openChannels();
+
+    // Scoped to the open popover, so this is an assertion about the VISIBLE
+    // copy. A document-wide `getAllByText(...).length > 0` would be satisfied by
+    // the sr-only live region alone — the visible string could then be changed
+    // to anything, "Loading…" included, and this would stay green. Verified by
+    // mutation; the same weakness cost the approver case a real hole.
+    const popover = await screen.findByRole("listbox");
+    await waitFor(() => expect(within(popover).getByText(ERROR_TEXT)).toBeTruthy());
+    expect(within(popover).queryByText("No channels configured.")).toBeNull();
+  });
+
+  it("still says 'No channels configured.' when the catalog is genuinely empty (AC-2)", async () => {
+    channelsData.mockImplementation(() => []);
+    channelsPending.mockImplementation(() => false);
+    channelsError.mockImplementation(() => false);
+    renderForm();
+    openChannels();
+
+    await waitFor(() => expect(screen.getByText("No channels configured.")).toBeTruthy());
+    expect(screen.queryByText(/Couldn't load channels/)).toBeNull();
+  });
+
+  it("announces the failure to assistive tech (AC-3a)", async () => {
+    channelsData.mockImplementation(() => []);
+    channelsPending.mockImplementation(() => false);
+    channelsError.mockImplementation(() => true);
+    renderForm();
+    openChannels();
+
+    await waitFor(() => expect(screen.getByTestId(LIVE_REGION).textContent).toBe(ERROR_TEXT));
+  });
+
+  /**
+   * The invariant that is easiest to get wrong, and was got wrong once on
+   * RUK-253: a failed query that is REFETCHING reports `isPending` and `isError`
+   * together. `emptyText` gives pending precedence, so an `errorText` gated on
+   * `isError` alone makes the popover read "Loading…" while the live region
+   * announces a failure — the two audiences told different things about the same
+   * moment.
+   */
+  it("stays silent while a failed query is refetching (AC-3b)", async () => {
+    channelsData.mockImplementation(() => []);
+    channelsPending.mockImplementation(() => true);
+    channelsError.mockImplementation(() => true);
+    renderForm();
+    openChannels();
+
+    // Prove the popover really reached the pending state before asserting on
+    // the silence — otherwise this passes for a moment that never happened.
+    await waitFor(() => expect(screen.getByText("Loading…")).toBeTruthy());
+    expect(screen.getByTestId(LIVE_REGION).textContent).toBe("");
+  });
+
+  it("stays silent when the catalog is merely empty (AC-3c)", async () => {
+    channelsData.mockImplementation(() => []);
+    channelsPending.mockImplementation(() => false);
+    channelsError.mockImplementation(() => false);
+    renderForm();
+    openChannels();
+
+    await waitFor(() => expect(screen.getByText("No channels configured.")).toBeTruthy());
+    expect(screen.getByTestId(LIVE_REGION).textContent).toBe("");
+  });
+});
+
+/**
+ * RUK-269 — the approver picker's live region.
+ *
+ * jsdom has no live-region semantics, so nothing here proves an utterance; the
+ * announcement itself is checked by hand against VoiceOver's caption panel.
+ * What IS checkable is the arrangement that makes announcing possible, and each
+ * of these failure modes is precise enough to pin:
+ *
+ * - a region rendered inside `PopoverContent` enters the DOM with its text
+ *   already in place, and a live region announces mutations rather than
+ *   arrivals. It would be silent while satisfying any "is the node there after
+ *   I open the picker" assertion — hence the first case asserts the region is
+ *   present and EMPTY while the picker is still closed, and the second that the
+ *   text arrived by mutating that same still-attached node.
+ * - `sr-only` swapped for `hidden` silently reverts the whole feature:
+ *   `display:none` removes the node from the accessibility tree, and a hidden
+ *   live region announces nothing, ever. Every structural assertion still
+ *   passes. That mutation survived 1126 tests on RUK-253 until its ship step.
+ * - a region that never clears has no empty→text transition to announce on a
+ *   second open, so the picker goes quiet exactly when the user looks again.
+ *
+ * The approver `Combobox` makes the open/close pair more load-bearing than it
+ * was for `MultiSelect`, not less: `combobox.tsx` calls `setOpen(false)` on
+ * select, while `MultiSelect` deliberately stays open across toggles.
+ */
+describe("approver picker announces a failed load to assistive tech (RUK-269)", () => {
+  const ERROR_TEXT = "Couldn't load people. Retry or check your access.";
+  const LIVE_REGION = "combobox-error-live-approver";
+
+  const openApprover = () => fireEvent.click(screen.getByRole("combobox", { name: "Approver" }));
+
+  it("keeps the region mounted and empty until the picker opens (AC-4a)", async () => {
+    bffFetchMock.mockRejectedValue(new Error("403 forbidden"));
+    renderForm();
+
+    // Present before any interaction — this is what makes the later text a
+    // mutation rather than an arrival.
+    const live = screen.getByTestId(LIVE_REGION);
+    expect(live.textContent).toBe("");
+
+    // And still empty AFTER the query has settled into failure. Without this
+    // the case would pass on a component whose request had not yet resolved,
+    // proving only that the node starts empty rather than that it stays empty
+    // until the picker is opened.
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    expect(live.textContent).toBe("");
+  });
+
+  it("delivers the text by mutating that same node (AC-4b)", async () => {
+    bffFetchMock.mockRejectedValue(new Error("403 forbidden"));
+    renderForm();
+    const live = screen.getByTestId(LIVE_REGION);
+    openApprover();
+
+    await waitFor(() => expect(live.textContent).toBe(ERROR_TEXT));
+    // Identity, not just content: the same element the assertion above held
+    // before the failure landed.
+    expect(screen.getByTestId(LIVE_REGION)).toBe(live);
+  });
+
+  it("keeps the region announceable: sr-only, role=alert, aria-live (AC-4c)", async () => {
+    bffFetchMock.mockRejectedValue(new Error("403 forbidden"));
+    renderForm();
+    openApprover();
+
+    await waitFor(() => expect(screen.getByTestId(LIVE_REGION).textContent).toBe(ERROR_TEXT));
+    const live = screen.getByTestId(LIVE_REGION);
+
+    // The class string, not computed style: jsdom does not compute Tailwind.
+    // `sr-only` is the clip-rect idiom that keeps a node readable by AT;
+    // `hidden` would remove it and silence the region while every other
+    // assertion in this file still passed.
+    expect(live.className).toContain("sr-only");
+
+    // The two attributes that make it a live region AT ALL. Every other test
+    // here reaches the node by testid, which is indifferent to them — so
+    // without these, deleting either left the whole suite green while removing
+    // the announcement this feature exists to produce. `aria-live` is the more
+    // likely casualty: the component's own comment calls it redundant to
+    // `role="alert"`, which is exactly the kind of note that invites a tidy-up.
+    expect(live.getAttribute("role")).toBe("alert");
+    expect(live.getAttribute("aria-live")).toBe("assertive");
+  });
+
+  it("clears on close so a re-open announces again (AC-5a)", async () => {
+    bffFetchMock.mockRejectedValue(new Error("403 forbidden"));
+    renderForm();
+    const live = screen.getByTestId(LIVE_REGION);
+
+    openApprover();
+    await waitFor(() => expect(live.textContent).toBe(ERROR_TEXT));
+
+    // Close: the text must go, or the second open has no empty→text transition
+    // to announce and the picker is silent exactly when the user looks again.
+    openApprover();
+    await waitFor(() => expect(live.textContent).toBe(""));
+
+    openApprover();
+    await waitFor(() => expect(live.textContent).toBe(ERROR_TEXT));
+  });
+
+  /**
+   * The `open` gate, isolated from the clearing behaviour AC-5a covers.
+   *
+   * AC-5a walks open→close→open on ONE mounted component, so a region that
+   * merely reset on unmount would satisfy it. This case never opens the picker
+   * at all: the query is left to fail against a freshly mounted form, and the
+   * region must stay empty anyway. That is the half with the user cost — an
+   * ungated region announces a failure to someone filling in an unrelated
+   * field, before they have shown any interest in this one.
+   */
+  it("stays silent while the picker was never opened (AC-5b)", async () => {
+    bffFetchMock.mockRejectedValue(new Error("403 forbidden"));
+    renderForm();
+    const live = screen.getByTestId(LIVE_REGION);
+
+    // The query must actually reach `isError`, or this passes for the trivial
+    // reason that nothing has happened yet. Proven via a SECOND picker: the
+    // mentions region shares the rejection and is opened, so its text arriving
+    // is evidence the failure landed while the approver stayed shut.
+    fireEvent.click(screen.getByRole("combobox", { name: "Mentions" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("multiselect-error-live-mentions").textContent).toBe(ERROR_TEXT),
+    );
+
+    expect(live.textContent).toBe("");
   });
 });

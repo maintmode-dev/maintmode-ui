@@ -30,11 +30,14 @@ afterEach(() => {
 
 const mentionableData = vi.fn<() => AssignableUser[]>(() => []);
 const mentionablePending = vi.fn<() => boolean>(() => false);
-// The factory default is required, not a style choice: `afterEach` runs
-// `vi.clearAllMocks()`, which strips a `mockReturnValue` set inside a test but
-// keeps an implementation passed to `vi.fn()`. A bare `vi.fn()` would return
-// `undefined` from the second test onward — falsy, so every existing case still
-// passes while the error case silently depends on running first.
+// The factory default is a floor for the FIRST case, not a reset between cases.
+// `afterEach` runs `vi.clearAllMocks()`, which clears call history and leaves
+// both `mockImplementation` and `mockReturnValue` in place — probed against this
+// repo's Vitest rather than assumed. (An earlier version of this comment claimed
+// it strips `mockReturnValue`; it does not, and the correct semantics were
+// already stated at the AC-12 case below.) So the hazard is a neighbour's value
+// leaking forward, and what prevents it is each case setting every flag it
+// depends on explicitly.
 const mentionableError = vi.fn<() => boolean>(() => false);
 // The approver picker shares the `AssignableUser` type — and therefore the new
 // `has_messenger_tag` field — so it needs its own controllable data to prove the
@@ -47,8 +50,19 @@ const updateMutate = vi.fn();
 // module, so mocking only the mentions hook leaves the approver combobox
 // importing `useAssignableUsersQuery` from a module that no longer exports it —
 // the form then crashes on render, well before any mentions assertion runs.
+// `isPending` and `isError` are driven, not hardcoded: RUK-269 gave the approver
+// picker a live region whose caller-side contract is that pending beats error,
+// and the pair can only be reported TOGETHER by a refetching failed query —
+// a state the `bffFetch`-level suite next door cannot construct. Factory
+// defaults for the same reason as `mentionableError` below.
+const approverPending = vi.fn<() => boolean>(() => false);
+const approverError = vi.fn<() => boolean>(() => false);
 vi.mock("../queries/use-assignable-users-query", () => ({
-  useAssignableUsersQuery: () => ({ data: approverData(), isPending: false, isError: false }),
+  useAssignableUsersQuery: () => ({
+    data: approverData(),
+    isPending: approverPending(),
+    isError: approverError(),
+  }),
 }));
 vi.mock("../queries/use-mentionable-users-query", () => ({
   useMentionableUsersQuery: () => ({
@@ -431,5 +445,63 @@ describe("maintenance mentions picker (RUK-218)", () => {
     // An empty array is the opposite signal — supported, nobody tagged.
     render(<MaintenanceEditMode detail={draft([])} onClose={() => undefined} />);
     expect(screen.getByRole("combobox", { name: "Mentions" })).toBeTruthy();
+  });
+});
+
+/**
+ * RUK-269 — the approver live region's caller-side contract.
+ *
+ * `Combobox` cannot see query state, so the CALLER owes it the pending
+ * precedence: a refetching failed query reports `isPending` and `isError`
+ * together, and `emptyText` gives pending precedence, so an `errorText` gated on
+ * `isError` alone makes the popover read "Loading…" while the live region
+ * announces a failure — the two audiences told different things about the same
+ * moment. That is the invariant the prop's docblock calls the easiest to get
+ * wrong, and it was in fact got wrong once during RUK-253.
+ *
+ * The case lives HERE rather than in `picker-render-integration.test.tsx`
+ * because that file drives the real hooks over a mocked `bffFetch`, which cannot
+ * hold a query in `isPending && isError` at once. A hook mock can.
+ */
+describe("approver picker's live region respects pending precedence (RUK-269)", () => {
+  const LIVE_REGION = "combobox-error-live-approver";
+
+  it("stays silent while a failed approver query is refetching", async () => {
+    // All three set explicitly. A refetching query still serves its previous
+    // page from cache, so leaving `approverData` to a neighbour would put rows
+    // in the popover and `CommandEmpty` — which carries the "Loading…" string —
+    // would not render at all.
+    approverData.mockReturnValue([]);
+    approverPending.mockReturnValue(true);
+    approverError.mockReturnValue(true);
+    render(<MaintenanceEditMode creating onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Approver" }));
+
+    // Prove the popover really reached the PENDING state before asserting on
+    // the silence — a live region is empty on a query that never started too,
+    // so without this the case would pass for a reason having nothing to do
+    // with the precedence it exists to pin.
+    //
+    // Scoped to the open listbox: "Loading…" is a string several pickers in
+    // this form can show, so a document-wide singular query would throw on
+    // multiple matches for a reason unrelated to this test.
+    // `[cmdk-list]` rather than a role query: `CommandEmpty` renders OUTSIDE
+    // the `listbox` node, so `within(listbox)` cannot see this string at all.
+    await waitFor(() => expect(document.querySelector("[cmdk-list]")?.textContent).toContain("Loading…"));
+    expect(screen.getByTestId(LIVE_REGION).textContent).toBe("");
+  });
+
+  it("announces once the refetch settles into a plain failure", async () => {
+    approverData.mockReturnValue([]);
+    approverPending.mockReturnValue(false);
+    approverError.mockReturnValue(true);
+    render(<MaintenanceEditMode creating onClose={() => undefined} />);
+    fireEvent.click(screen.getByRole("combobox", { name: "Approver" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId(LIVE_REGION).textContent).toBe(
+        "Couldn't load people. Retry or check your access.",
+      ),
+    );
   });
 });
