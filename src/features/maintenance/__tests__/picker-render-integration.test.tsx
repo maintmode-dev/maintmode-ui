@@ -160,14 +160,16 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderForm() {
-  return render(
-    createElement(
-      QueryClientProvider,
-      { client: queryClient },
-      createElement(MaintenanceEditMode, { creating: true, onClose: () => undefined }) as ReactNode,
-    ),
+function formElement() {
+  return createElement(
+    QueryClientProvider,
+    { client: queryClient },
+    createElement(MaintenanceEditMode, { creating: true, onClose: () => undefined }) as ReactNode,
   );
+}
+
+function renderForm() {
+  return render(formElement());
 }
 
 describe("approver picker renders real approvers (SPEC §4.3, AC-1)", () => {
@@ -612,6 +614,113 @@ describe("channels picker distinguishes a failed load from an empty catalog (RUK
 
     await waitFor(() => expect(screen.getByText("No channels configured.")).toBeTruthy());
     expect(screen.getByTestId(LIVE_REGION).textContent).toBe("");
+  });
+});
+
+/**
+ * RUK-255 — `channelOptions` is memoized on `[channelsQuery.data]`. These two
+ * cases guard that dependency, and they are the ONLY thing that does:
+ * `react-hooks/exhaustive-deps` looks like a second guard and is not — it is
+ * configured as a warning and `npm run lint` carries no `--max-warnings`, so a
+ * memo keyed `[]` exits 0 and passes the whole verify gate. Measured, not
+ * assumed.
+ *
+ * The memo can go stale in two distinct ways, because the body destructures
+ * FIELDS out of each row rather than passing the row through:
+ *
+ * - the array is replaced and the memo does not notice → first case;
+ * - the array is replaced with the same ids but changed fields → second case.
+ *   `useNotifyChannelsQuery` has `staleTime: 15_000` and is invalidated by every
+ *   channel edit/archive, so a refetch returning the same ids with a different
+ *   `transportStatus` is routine — and `transportStatus` is exactly what draws
+ *   the dimming, the warning icon and the badge. A dependency narrowed to ids
+ *   (a plausible "stabilise the dep" mistake) passes the first case and every
+ *   other test in this repo; only the second case catches it.
+ *
+ * Two things make both cases bite, and both are easy to lose in a rewrite:
+ *
+ * - they must `rerender` the SAME mounted tree. A second `render()` builds a new
+ *   component, whose memo initialises from scratch and therefore renders the new
+ *   data under ANY dependency — that variant passes on the bug.
+ * - they assert the picker's rendered TEXT, not the array's identity. Identity
+ *   is not observable here: `MultiSelect` is not `React.memo`-wrapped and
+ *   re-maps its options every render regardless. The stale array is visible only
+ *   through what the operator ends up looking at.
+ *
+ * Verified by mutation: keyed `[]`, the first case fails; keyed on ids alone,
+ * the first case passes and the second fails.
+ */
+describe("channel options track the query data (RUK-255)", () => {
+  function channel(id: string, name: string, overrides: Partial<NotifyChannel> = {}): NotifyChannel {
+    return {
+      id,
+      name,
+      transport: "telegram",
+      transportStatus: "ok",
+      transportChannelId: `-100${id}`,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "",
+      ...overrides,
+    };
+  }
+
+  /** Re-render the SAME tree — see the docblock; a second `render()` is vacuous. */
+  function rerenderForm(rerender: (ui: ReactNode) => void) {
+    rerender(formElement());
+  }
+
+  beforeEach(() => {
+    channelsPending.mockImplementation(() => false);
+    channelsError.mockImplementation(() => false);
+  });
+
+  it("replaces the rendered options when the channel set changes under a live form", async () => {
+    channelsData.mockImplementation(() => [channel("1", "alpha channel")]);
+    const { rerender } = renderForm();
+    fireEvent.click(screen.getByRole("combobox", { name: "Notify channels" }));
+    await waitFor(() => expect(screen.getByText("alpha channel")).toBeTruthy());
+
+    channelsData.mockImplementation(() => [channel("2", "beta channel")]);
+    rerenderForm(rerender);
+
+    await waitFor(() => expect(screen.getByText("beta channel")).toBeTruthy());
+    // Catches the other half: "new data arrived" and "old data left" are
+    // different bugs, and an accumulating list satisfies the assertion above.
+    expect(screen.queryByText("alpha channel")).toBeNull();
+  });
+
+  it("re-reads a row whose fields changed while its id stayed the same", async () => {
+    channelsData.mockImplementation(() => [channel("1", "gamma channel")]);
+    const { rerender } = renderForm();
+    fireEvent.click(screen.getByRole("combobox", { name: "Notify channels" }));
+    await waitFor(() => expect(screen.getByText("telegram · -1001")).toBeTruthy());
+
+    // Same id, same name — only the transport went bad, which is what a refetch
+    // after a revoked integration looks like.
+    channelsData.mockImplementation(() => [channel("1", "gamma channel", { transportStatus: "disabled" })]);
+    rerenderForm(rerender);
+
+    // The status badge replaces the transport·id description line.
+    await waitFor(() => expect(screen.getByText("Integration disabled")).toBeTruthy());
+    expect(screen.queryByText("telegram · -1001")).toBeNull();
+  });
+
+  it("re-reads a re-pointed channel id, which no status change would reveal", async () => {
+    channelsData.mockImplementation(() => [channel("1", "delta channel")]);
+    const { rerender } = renderForm();
+    fireEvent.click(screen.getByRole("combobox", { name: "Notify channels" }));
+    await waitFor(() => expect(screen.getByText("telegram · -1001")).toBeTruthy());
+
+    // `useUpdateNotifyChannel` PATCHes `transport_channel_id` under a stable id
+    // and invalidates this very query key, so this refetch is routine. It is the
+    // one row shape the case above cannot catch: a dependency narrowed to
+    // id+name+transportStatus passes every other test in the repo, and leaves
+    // the operator reading — and searching by — the OLD chat id.
+    channelsData.mockImplementation(() => [channel("1", "delta channel", { transportChannelId: "-100999" })]);
+    rerenderForm(rerender);
+
+    await waitFor(() => expect(screen.getByText("telegram · -100999")).toBeTruthy());
+    expect(screen.queryByText("telegram · -1001")).toBeNull();
   });
 });
 

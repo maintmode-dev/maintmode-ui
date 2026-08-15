@@ -273,23 +273,33 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // the channel id — but keep them selectable (weak binding, mirrors the
   // channel-create picker). A concrete non-ok binding is warned about inline
   // below the picker once selected.
-  const channelOptions: MultiSelectOption[] = (channelsQuery.data ?? []).map((c) => {
-    const statusCopy = transportStatusCopy(c.transportStatus);
-    const idLine = c.transportChannelId ? `${c.transport} · ${c.transportChannelId}` : c.transport;
-    return {
-      value: c.id,
-      label: (
-        <span className={cn("flex items-center gap-1.5", statusCopy && "text-fg-muted")}>
-          {c.name}
-          {statusCopy ? (
-            <TriangleAlert className="size-3 shrink-0 text-[var(--impact-partial-fg)]" aria-hidden={true} />
-          ) : null}
-        </span>
-      ),
-      description: statusCopy ? statusCopy.badge : idLine,
-      searchValue: `${c.name} ${c.transport} ${c.transportChannelId ?? ""}`,
-    };
-  });
+  // Memoized for the same reason `mentionOptions` below is: a JSX element per
+  // row, in a form whose Title/Description are `useState`, so every keystroke
+  // would otherwise re-allocate the whole list.
+  const channelOptions = useMemo<MultiSelectOption[]>(
+    () =>
+      (channelsQuery.data ?? []).map((c) => {
+        const statusCopy = transportStatusCopy(c.transportStatus);
+        const idLine = c.transportChannelId ? `${c.transport} · ${c.transportChannelId}` : c.transport;
+        return {
+          value: c.id,
+          label: (
+            <span className={cn("flex items-center gap-1.5", statusCopy && "text-fg-muted")}>
+              {c.name}
+              {statusCopy ? (
+                <TriangleAlert
+                  className="size-3 shrink-0 text-[var(--impact-partial-fg)]"
+                  aria-hidden={true}
+                />
+              ) : null}
+            </span>
+          ),
+          description: statusCopy ? statusCopy.badge : idLine,
+          searchValue: `${c.name} ${c.transport} ${c.transportChannelId ?? ""}`,
+        };
+      }),
+    [channelsQuery.data],
+  );
   // Mirrors the channel options above: a person the backend knows has no
   // messenger handle is dimmed + flagged, but stays selectable — they are still
   // mentioned in the notification, just by name instead of a clickable ping.
@@ -298,13 +308,18 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // that tells two people with the same display name apart, so the warning is
   // appended to it rather than replacing it.
   //
-  // Memoized, unlike the channel/resource option arrays next to it — this one
-  // builds a JSX element per row, and the form is a single `useState` component,
-  // so every keystroke in Title or Description would otherwise re-allocate the
-  // whole list. Measured on 200 rows: 148 µs rebuilt vs 1.1 µs for a plain-string
-  // label like `resourceOptions`. The neighbours are cheap because of their data,
-  // not their structure, so matching them here would cost 130x, and it scales with
-  // a user table that only `limit: 200` currently bounds.
+  // Memoized, unlike `resourceOptions` next to it — this one builds a JSX
+  // element per row, and the form is a single `useState` component, so every
+  // keystroke in Title or Description would otherwise re-allocate the whole
+  // list. That neighbour is cheap because of its data (plain strings, and a
+  // server-narrowed page), not because of its structure; this list grows with
+  // the user table.
+  //
+  // What the memo does NOT buy, so nobody over-credits it: the picker re-maps
+  // its options on every render regardless (it is not `React.memo`-wrapped),
+  // and cmdk re-registers each item through a layout effect that has no
+  // dependency array and dedupes on the item's string value, not on the array's
+  // identity. The saving is the allocation here, and nothing downstream.
   const mentionOptions = useMemo<MultiSelectOption[]>(
     () =>
       (mentionable.data ?? []).map((u) => {
