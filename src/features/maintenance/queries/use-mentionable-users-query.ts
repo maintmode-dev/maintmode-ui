@@ -87,6 +87,23 @@ export function mentionableUsersQueryOptions(search?: string) {
       const data = await bffFetch<{ users: AssignableUser[]; total?: number }>(
         `/api/users/assignable?${qs.toString()}`,
       );
+      // A response without a `users` ARRAY is a broken response, not an empty
+      // roster, and the two must not render alike (RUK-270). Throwing makes
+      // `isError` true, so the picker says "Couldn't load people." — the RUK-253
+      // branch — instead of "No people found."
+      //
+      // Tested on `data`, not `data.users`: `data?.users` is `undefined` both for
+      // a 204 (`bffFetch` returns `undefined`) and for a non-JSON body (a raw
+      // string has no `users` key), so one expression covers both. And
+      // `Array.isArray`, not truthiness: this hook applies no downstream filter,
+      // so `{"users": "alice"}` would otherwise hand the picker a STRING as its
+      // user list (SPEC §1.3, measured).
+      //
+      // Ahead of the `warnOnce` below because a malformed body's `total` is not
+      // trustworthy, and that warning fires only once per session.
+      if (!Array.isArray(data?.users)) {
+        throw new Error("Malformed roster response: `users` is not an array");
+      }
       // Still worth warning about, but it now means something narrower: even the
       // SEARCH matched more rows than one page holds, so the operator has to type
       // a longer prefix. Before the search was forwarded it meant the picker was
@@ -98,9 +115,7 @@ export function mentionableUsersQueryOptions(search?: string) {
             `more matches than one page; narrow the search`,
         );
       }
-      // `?? []` so a malformed response degrades to an empty picker with an
-      // error state rather than throwing out of the queryFn.
-      return data.users ?? [];
+      return data.users;
     },
     staleTime: 60_000,
   };

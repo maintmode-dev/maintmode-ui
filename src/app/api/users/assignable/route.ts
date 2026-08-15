@@ -45,7 +45,22 @@ export async function GET(request: Request) {
       method: "GET",
     });
 
-    const users: AssignableUser[] = (dto.users ?? []).map(mapAssignableUser);
+    // A body without a `users` ARRAY is a broken response, not an empty roster —
+    // the distinction RUK-270 exists to restore. The previous `?? []` normalised
+    // `{}` and `{"users": null}` into a well-formed `{users: [], total: 0}`, so
+    // the picker said "No people found." — a claim about the company rather than
+    // about a failed load, and one no hook-level guard could undo, because by
+    // then the malformed shape was already gone (SPEC §1).
+    //
+    // Rejecting this cannot break a legitimately empty roster: the backend's
+    // `users` tag carries no `omitempty` and its handler maps through `lo.Map`,
+    // which returns a non-nil empty slice, so "nobody" serialises as
+    // `{"users": []}` (SPEC §1.1, measured against the backend source).
+    if (!Array.isArray(dto?.users)) {
+      throw new Error("Backend returned no `users` array for GET /api/v1/users/assignable");
+    }
+
+    const users: AssignableUser[] = dto.users.map(mapAssignableUser);
     return NextResponse.json({ users, total: dto.total ?? users.length });
   } catch (error) {
     return routeErrorResponse(error);

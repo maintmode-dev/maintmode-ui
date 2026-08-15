@@ -367,16 +367,24 @@ describe("approver picker vs. the endpoint limit (SPEC §4.2, AC-7)", () => {
   });
 
   /**
-   * A malformed response must degrade to an empty picker with an error state,
-   * not throw a TypeError out of the queryFn.
+   * Inverted by RUK-270. This case used to assert that a response with no
+   * `users` key resolved SUCCESSFULLY to `[]`, under a docblock claiming the
+   * fallback produced "an error state". It did not: `?? []` resolves, so
+   * `isError` stayed false and the picker rendered "No people found." for a
+   * broken response — the very conflation RUK-253 exists to prevent, reached by
+   * a different route.
+   *
+   * The input is still worth pinning here, because this file stubs `bffFetch`
+   * wholesale and so can produce a shape the BFF route now rejects upstream.
+   * Only the expectation flips.
    */
-  it("survives a response with no users key", async () => {
+  it("reports a response with no users key as an error, not an empty roster", async () => {
     bffFetchMock.mockImplementation(async () => ({ total: 0 }));
 
     const { result } = renderHook(() => useAssignableUsersQuery(), { wrapper });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(result.current.isError).toBe(true));
 
-    expect(result.current.data).toEqual([]);
+    expect(result.current.data).toBeUndefined();
   });
 
   /**

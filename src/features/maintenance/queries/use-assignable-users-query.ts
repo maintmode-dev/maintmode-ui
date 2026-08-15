@@ -113,6 +113,15 @@ export function useAssignableUsersQuery(params: AssignableUsersParams = {}) {
       `/api/users/assignable?${qs.toString()}`,
     );
 
+    // A response without a `users` ARRAY is a broken response, not an empty
+    // roster (RUK-270). Throwing makes `isError` true so the combobox renders
+    // "Couldn't load people." rather than "No people found." — the distinction
+    // RUK-253 built the error branch for. Mirrors the mentions hook; see its
+    // comment for the 204 / non-JSON-body reasoning and the `warnOnce` ordering.
+    if (!Array.isArray(data?.users)) {
+      throw new Error("Malformed roster response: `users` is not an array");
+    }
+
     // `total` counts what the FILTER matched, so on a `search` query a value
     // over the limit is expected and says nothing about the picker being
     // truncated. Only warn for the unsearched roster, which is the shape the
@@ -125,10 +134,7 @@ export function useAssignableUsersQuery(params: AssignableUsersParams = {}) {
       );
     }
 
-    // `?? []` for the same reason `total` is optional above: a malformed
-    // response should degrade to an empty picker with an error state, not throw
-    // a TypeError out of the queryFn.
-    const returned = data.users ?? [];
+    const returned = data.users;
     const users = returned.filter((u) => hasApproverRole(u, roles));
     // If the server filter applied, this one is a no-op by construction. Any
     // row it drops means `roles` did not reach the backend — the exact silent

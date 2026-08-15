@@ -321,6 +321,29 @@ describe("mentions picker distinguishes a failed load from an empty roster (RUK-
     expect(screen.queryByText("No people found.")).toBeNull();
   });
 
+  /**
+   * RUK-270, and the only case that proves the point the fix is FOR.
+   *
+   * The guards in both roster hooks are justified by a claim about what the
+   * operator reads — "Couldn't load people." rather than "No people found." —
+   * and until this case existed nothing asserted it. The hook tests stop at
+   * `isError`, which is the mechanism, not the contract: RUK-253's whole
+   * argument is about which SENTENCE renders.
+   *
+   * A malformed 200 is a different path to that sentence than the 403 above.
+   * It resolves successfully at the transport layer, so it reaches the picker
+   * as data rather than as a rejection — which is exactly how it used to be
+   * laundered into "No people found." Reverting either hook guard fails this.
+   */
+  it("reads a malformed 200 as a failed load, not as an empty roster (RUK-270)", async () => {
+    bffFetchMock.mockResolvedValue({ total: 0 });
+    renderForm();
+    openMentions();
+
+    await waitFor(() => expect(screen.getAllByText(ERROR_TEXT).length).toBeGreaterThan(0));
+    expect(screen.queryByText("No people found.")).toBeNull();
+  });
+
   it("still says 'No people found.' when the roster is genuinely empty (AC-2)", async () => {
     bffFetchMock.mockResolvedValue({ users: [], total: 0 });
     renderForm();

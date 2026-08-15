@@ -122,6 +122,57 @@ describe("GET /api/users/assignable — filter forwarding (SPEC §2.1, AC-2)", (
     });
   });
 
+  /**
+   * RUK-270, SPEC §1 / AC-1..AC-3.
+   *
+   * The sibling case below covers a REJECTED backend call. These cover the other
+   * half — a backend that answers `200` with a body carrying no `users` array.
+   * That shape used to be normalised here into `{users: [], total: 0}`, which is
+   * indistinguishable from a real empty roster by the time it reaches the picker,
+   * so the operator read "No people found." for what was actually a broken
+   * response (measured: SPEC §1's table).
+   *
+   * Asserted the same way as that sibling — status and the absence of `users` —
+   * rather than on an error code: the route throws a bare `Error`, and a
+   * dedicated code was considered and cut for want of any consumer (SPEC §6).
+   */
+  describe("a 200 whose body carries no `users` array is an error, not an empty roster", () => {
+    const MALFORMED: ReadonlyArray<readonly [string, unknown]> = [
+      ["the key is absent", {}],
+      ["the key is null", { users: null }],
+      // Non-array is the shape a truthiness guard would let through. At THIS
+      // layer it already 500s via the `.map` TypeError, so the case does not
+      // discriminate the two guards here — it is pinned so the route rejects it
+      // deliberately rather than by accident of a downstream crash. The guard it
+      // does discriminate lives at the hooks (SPEC §1.3).
+      ["the key is not an array", { users: "alice" }],
+    ];
+
+    it.each(MALFORMED)("rejects a backend 200 where %s", async (_label, body) => {
+      backendRequest.mockResolvedValue(body as ListAssignableUsersResponseDto);
+
+      const response = await GET(new Request("http://localhost/api/users/assignable?limit=200"));
+
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect((await response.json()).users).toBeUndefined();
+    });
+
+    it("still passes a genuinely empty roster through as a success", async () => {
+      // The other half of the contract, and the reason the guard tests
+      // `Array.isArray` rather than emptiness: `{users: [], total: 0}` is the
+      // VALID way to say "nobody", and it must keep reaching the picker as a
+      // successful empty list so the copy stays "No people found." (AC-4).
+      backendRequest.mockResolvedValue({ users: [], total: 0 });
+
+      const response = await GET(new Request("http://localhost/api/users/assignable?limit=200"));
+      const body = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(body.users).toEqual([]);
+      expect(body.total).toBe(0);
+    });
+  });
+
   it("surfaces a backend failure instead of answering with an empty roster", async () => {
     // AC-10 at the transport layer: a 403 (the normal answer for a guest — the
     // endpoint is permission gated, SPEC §1.3) must not degrade into `{users: []}`,

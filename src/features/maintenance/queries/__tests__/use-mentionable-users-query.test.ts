@@ -311,6 +311,89 @@ describe("useMentionableUsersQuery", () => {
     });
   });
 
+  /**
+   * RUK-270 — a broken response and an empty roster are different facts, and
+   * the picker must not render them alike.
+   *
+   * Before this, `data.users ?? []` resolved SUCCESSFULLY for every shape below,
+   * so `isError` stayed false and the operator read "No people found." The two
+   * comment blocks that guarded it claimed the opposite ("degrades to an empty
+   * picker with an error state") — they described a behaviour the code never had.
+   *
+   * Both hooks are exercised from one table: they hit the same endpoint and now
+   * carry the same guard, and pinning only one leaves the other free to drift.
+   */
+  describe("a response with no `users` array is an error, not an empty roster", () => {
+    const HOOKS = [
+      ["mentions", () => useMentionableUsersQuery()],
+      ["approver", () => useAssignableUsersQuery()],
+    ] as const;
+
+    /**
+     * Every shape whose `users` is not an array. The last two are not exotic:
+     * `bffFetch` returns `undefined` for a 204 and a raw string for a non-JSON
+     * body, so both reach the queryFn on real transport paths. The string case
+     * used to be swallowed into `[]`; `{users: "alice"}` was worse still, and
+     * reached the mentions picker AS A STRING, since that hook applies no
+     * downstream filter.
+     */
+    const MALFORMED: ReadonlyArray<readonly [string, unknown]> = [
+      ["the key is absent", {}],
+      ["the key is null", { users: null }],
+      ["the key is not an array", { users: "alice" }],
+      ["the body is undefined (204)", undefined],
+      ["the body is a bare string (non-JSON)", "oops"],
+    ];
+
+    for (const [hookName, useHook] of HOOKS) {
+      it.each(MALFORMED)(`${hookName}: reports an error when %s`, async (_label, body) => {
+        bffFetchMock.mockResolvedValue(body);
+
+        const { result } = renderHook(useHook, { wrapper });
+        await waitFor(() => expect(result.current.isError).toBe(true));
+
+        // The error must be OURS, not an incidental TypeError — and this line is
+        // what makes the approver rows mean anything. That hook's downstream
+        // `returned.filter(...)` throws on every malformed body regardless, so
+        // with the guard DELETED `isError` still went true and all five of its
+        // cases still passed (measured). Asserting the message discriminates a
+        // deliberate rejection from a crash, and keeps the cases honest if the
+        // filter that currently props them up is ever refactored away.
+        expect(result.current.error?.message).toMatch(/Malformed roster response/);
+        // Cold start: no previous page to fall back to.
+        expect(result.current.data).toBeUndefined();
+      });
+
+      it(`${hookName}: still succeeds on a genuinely empty roster`, async () => {
+        // The other half of the contract. `{users: [], total: 0}` is the VALID
+        // way to say "nobody", so it must stay a success — otherwise this fix
+        // would trade one wrong message for another, and every empty picker
+        // would start accusing the backend of being broken.
+        bffFetchMock.mockResolvedValue({ users: [], total: 0 });
+
+        const { result } = renderHook(useHook, { wrapper });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+        expect(result.current.data).toEqual([]);
+      });
+
+      it(`${hookName}: leaves mock mode untouched`, async () => {
+        // The guard sits on the `bffFetch` result path only. Both queryFns open
+        // with a mock branch that returns before any fetch happens, so flipping
+        // the flag must still yield a populated list — a guard hoisted to the
+        // top of the queryFn would break this and nothing else would notice.
+        dataSourceMock.assignableUsers = "mock";
+        bffFetchMock.mockResolvedValue(undefined);
+
+        const { result } = renderHook(useHook, { wrapper });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+        expect(result.current.data?.length).toBeGreaterThan(0);
+        expect(bffFetchMock).not.toHaveBeenCalled();
+      });
+    }
+  });
+
   // No client-side re-filter: whatever the backend returns reaches the picker.
   it("passes the response through without dropping non-approver roles", async () => {
     bffFetchMock.mockResolvedValue({
