@@ -69,6 +69,15 @@ export interface ComboboxProps {
    * for a shared abstraction. Revisit if a third component needs it.
    */
   errorText?: string;
+  /**
+   * Lift the search box's text to the caller, so it can fetch `options` from the
+   * server instead of filtering a page it already holds. Twin of the prop on
+   * `MultiSelect`, argued there.
+   *
+   * Passing it turns OFF cmdk's own filtering (`shouldFilter={false}`) — the
+   * server has already decided what matches.
+   */
+  onSearchChange?: (search: string) => void;
   disabled?: boolean;
   className?: string;
   /** Aria-label for the trigger when no value is selected. */
@@ -106,6 +115,7 @@ export function Combobox({
   searchPlaceholder = "Search…",
   emptyText = "No results.",
   errorText,
+  onSearchChange,
   disabled,
   className,
   ariaLabel,
@@ -113,6 +123,15 @@ export function Combobox({
   const [open, setOpen] = useState(false);
   // Lifted out of cmdk's store for the reason argued in `multi-select.tsx`.
   const [search, setSearch] = useState("");
+
+  // See the twin block in `multi-select.tsx` for why server-searching callers
+  // must not have their answer filtered a second time on the client.
+  const serverSearch = onSearchChange !== undefined;
+
+  const updateSearch = (next: string) => {
+    setSearch(next);
+    onSearchChange?.(next);
+  };
 
   // `onChange` is held in a ref so it can stay out of the memo's deps below.
   // Callers pass inline arrows, so its identity changes on every render of the
@@ -141,6 +160,15 @@ export function Combobox({
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  // Same treatment, same reason: the row handler below must clear the query on
+  // BOTH sides (our state and a server-searching caller's), and putting
+  // `updateSearch` — recreated every render — into the memo's deps would rebuild
+  // every row on each keystroke, undoing the memo argued directly below.
+  const onSearchChangeRef = useRef(onSearchChange);
+  useEffect(() => {
+    onSearchChangeRef.current = onSearchChange;
+  }, [onSearchChange]);
 
   // Memoized because the query now lives in React state. cmdk keeps its own
   // state in an external store and subscribes each row to it individually
@@ -173,7 +201,10 @@ export function Combobox({
             // row after searching leaves the query in state, and the controlled
             // input pushes it back into the fresh store on reopen.
             // `MultiSelect` needs no equivalent — it never self-closes.
+            // Through the ref so a server-searching caller hears the reset too,
+            // without putting a per-render function into this memo's deps.
             setSearch("");
+            onSearchChangeRef.current?.("");
             setOpen(false);
           }}
         >
@@ -255,7 +286,7 @@ export function Combobox({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) setSearch("");
+          if (!next) updateSearch("");
         }}
       >
         <PopoverTrigger asChild>
@@ -275,16 +306,26 @@ export function Combobox({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-          <Command>
-            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
+          <Command shouldFilter={!serverSearch}>
+            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={updateSearch} />
             <CommandList>
               {/* Twin of the branch in `multi-select.tsx`, argued there — including
                   the precondition on `options.length > 0`, which holds only while
                   callers reporting query state through `emptyText` pass `[]` for
-                  a pending or failed query. */}
-              <CommandEmpty>
-                {search.trim() && options.length > 0 ? `No matches for "${search}"` : emptyText}
-              </CommandEmpty>
+                  a pending or failed query, and why the server-search branch has
+                  to render its own node (cmdk stops counting matches once
+                  `shouldFilter` is off, so `CommandEmpty` never mounts). */}
+              {serverSearch ? (
+                options.length === 0 ? (
+                  <div className="py-6 text-center text-sm" role="presentation">
+                    {search.trim() ? `No matches for "${search}"` : emptyText}
+                  </div>
+                ) : null
+              ) : (
+                <CommandEmpty>
+                  {search.trim() && options.length > 0 ? `No matches for "${search}"` : emptyText}
+                </CommandEmpty>
+              )}
               <CommandGroup>{rows}</CommandGroup>
             </CommandList>
           </Command>

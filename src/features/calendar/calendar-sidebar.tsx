@@ -11,13 +11,10 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { useNow } from "@/features/_shared/hooks/use-now";
 import type { CalendarEvent, MaintenanceStatus } from "@/domain/maintenance/maintenance";
 
-import {
-  resourceOptions,
-  upcomingItems,
-  STATUS_ORDER,
-  type CalendarFilterState,
-  type ScopeFilter,
-} from "./calendar-filters";
+import { useDebouncedValue } from "@/features/_shared/hooks/use-debounced-value";
+import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
+
+import { upcomingItems, STATUS_ORDER, type CalendarFilterState, type ScopeFilter } from "./calendar-filters";
 
 /** Tailwind token classes for the active (filled) status chip, per status. */
 const STATUS_CHIP_ON: Record<MaintenanceStatus, string> = {
@@ -46,8 +43,26 @@ const SCOPE_OPTIONS: { value: ScopeFilter; label: string }[] = [
   { value: "resource", label: "Per resource" },
 ];
 
+/** The states the resource picker's dropdown can be in, in precedence order. */
+type ResourceStatus = "idle" | "pending" | "error" | "empty" | "ready";
+
+/**
+ * The line each non-`ready` state puts under the search box. `idle` and `ready`
+ * render no message (a list, or nothing), but they are listed so adding a state
+ * to `ResourceStatus` is a compile error here until its copy is decided —
+ * "no such resource" standing in for a failed load is the exact bug RUK #55-#57
+ * fixed in three other pickers.
+ */
+const RESOURCE_STATUS_MESSAGE: Record<ResourceStatus, string | null> = {
+  idle: null,
+  pending: "Searching…",
+  error: "Couldn't load resources.",
+  empty: "No resources found.",
+  ready: null,
+};
+
 export interface CalendarSidebarProps {
-  /** The status-filtered window of maintenances (status is server-filtered) — drives resource options + Up next. */
+  /** The server-filtered window (status + resource) — drives "Up next" only; the resource picker reads the catalogue. */
   items: CalendarEvent[];
   filters: CalendarFilterState;
   onFiltersChange: (next: CalendarFilterState) => void;
@@ -63,22 +78,43 @@ export function CalendarSidebar({ items, filters, onFiltersChange, onSelect }: C
   // not `memo`ised and never reads the clock (RUK-265).
   const now = useNow();
 
-  // Memoised on `items`, NOT on `now` — so the minute tick above does not
-  // recompute it. That matters for RUK-256: when the backend starts sending
-  // `resources`, this call gets real work to do, but it will still run only on
-  // a window/filter change, not once a minute.
-  const allResources = useMemo(() => resourceOptions(items), [items]);
-  const selectedResources = useMemo(
-    () => allResources.filter((r) => filters.resourceIds.has(r.id)),
-    [allResources, filters.resourceIds],
+  // The picker searches the CATALOGUE, not the loaded window (RUK-256).
+  //
+  // It used to build its options from `event.resources`, a field the calendar
+  // endpoint has never sent — so the list was always empty and the filter could
+  // not fire. Resources now come from `/api/resources`, which matches `name`
+  // server-side, and the selection is applied server-side too.
+  //
+  // Consequence worth knowing: this offers every ACTIVE resource, not only ones
+  // appearing in the visible window. The endpoint carries no usage data, so
+  // narrowing it would be a backend ask.
+  const debouncedQuery = useDebouncedValue(resourceQuery.trim(), 300);
+  const catalogue = useResourcesQuery(
+    { name: debouncedQuery, limit: 20 },
+    // No search text, no request: an empty box means "nothing asked for yet",
+    // so opening the calendar costs no catalogue call.
+    { enabled: debouncedQuery.length > 0 },
   );
-  const resourceMatches = useMemo(() => {
-    const q = resourceQuery.trim().toLowerCase();
-    if (!q) return [];
-    return allResources
-      .filter((r) => !filters.resourceIds.has(r.id) && r.name.toLowerCase().includes(q))
-      .slice(0, 6);
-  }, [allResources, resourceQuery, filters.resourceIds]);
+
+  // Chips render from the SELECTION, never from the catalogue result: that query
+  // is keyed on the search text, so reading names from it would blank every chip
+  // the moment the box is cleared.
+  const selectedResources = Array.from(filters.resources, ([id, name]) => ({ id, name }));
+  const resourceMatches = (catalogue.data?.resources ?? []).filter((r) => !filters.resources.has(r.id));
+
+  // Four states, kept apart on purpose (RUK #55-#57 fixed this exact class of
+  // bug in three other pickers): an idle box says nothing, a load in flight is
+  // not a miss, and a FAILED load must never read as "no such resource".
+  // Pending outranks error, so a retry in flight doesn't show a stale failure.
+  const resourceStatus: ResourceStatus = !debouncedQuery
+    ? "idle"
+    : catalogue.isPending
+      ? "pending"
+      : catalogue.isError
+        ? "error"
+        : resourceMatches.length === 0
+          ? "empty"
+          : "ready";
 
   const upNext = useMemo(() => upcomingItems(items, now), [items, now]);
 
@@ -101,16 +137,19 @@ export function CalendarSidebar({ items, filters, onFiltersChange, onSelect }: C
 
   const setScope = (scope: ScopeFilter) => onFiltersChange({ ...filters, scope });
 
-  const addResource = (id: string) => {
-    const next = new Set(filters.resourceIds);
-    next.add(id);
-    onFiltersChange({ ...filters, resourceIds: next });
+  // The NAME travels with the id, captured at selection time: the catalogue
+  // query is keyed on the search text, so clearing the box would otherwise leave
+  // a selected chip with nothing to render (RUK-256).
+  const addResource = (id: string, name: string) => {
+    const next = new Map(filters.resources);
+    next.set(id, name);
+    onFiltersChange({ ...filters, resources: next });
     setResourceQuery("");
   };
   const removeResource = (id: string) => {
-    const next = new Set(filters.resourceIds);
+    const next = new Map(filters.resources);
     next.delete(id);
-    onFiltersChange({ ...filters, resourceIds: next });
+    onFiltersChange({ ...filters, resources: next });
   };
 
   return (
@@ -193,22 +232,31 @@ export function CalendarSidebar({ items, filters, onFiltersChange, onSelect }: C
             className="h-8 text-xs"
             aria-label="Search resources"
           />
-          {resourceMatches.length > 0 ? (
+          {resourceStatus === "ready" ? (
             <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-border bg-bg-elev-2 shadow-md">
               {resourceMatches.map((r) => (
                 <li key={r.id}>
                   <button
                     type="button"
-                    onClick={() => addResource(r.id)}
+                    onClick={() => addResource(r.id, r.name)}
                     className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-xs text-fg hover:bg-bg-row-hover"
                   >
                     <span className="truncate">{r.name}</span>
-                    {r.type ? <span className="shrink-0 text-[10px] text-fg-dim">{r.type}</span> : null}
                   </button>
                 </li>
               ))}
             </ul>
-          ) : null}
+          ) : resourceStatus === "idle" ? null : (
+            <p
+              // A failed load is announced; a plain miss is not. `role="alert"`
+              // rather than `status` because this is raised by an operator
+              // action (typing), which is the case the repo reserves it for.
+              {...(resourceStatus === "error" ? { role: "alert" as const } : {})}
+              className="absolute z-20 mt-1 w-full rounded-md border border-border bg-bg-elev-2 px-2.5 py-1.5 text-xs text-fg-dim shadow-md"
+            >
+              {RESOURCE_STATUS_MESSAGE[resourceStatus]}
+            </p>
+          )}
         </div>
         {selectedResources.length > 0 ? (
           <div className="flex flex-wrap gap-1.5">
@@ -229,8 +277,6 @@ export function CalendarSidebar({ items, filters, onFiltersChange, onSelect }: C
               </span>
             ))}
           </div>
-        ) : allResources.length === 0 ? (
-          <p className="text-xs text-fg-dim">No resources in view.</p>
         ) : null}
       </section>
 

@@ -6,7 +6,6 @@ import {
   applyCalendarFilters,
   defaultFilterState,
   matchesFilters,
-  resourceOptions,
   upcomingItems,
   type CalendarFilterState,
 } from "../calendar-filters";
@@ -42,7 +41,7 @@ describe("defaultFilterState", () => {
     const f = defaultFilterState();
     expect([...f.statuses].sort()).toEqual(["in_progress", "planned"]);
     expect(f.scope).toBe("all");
-    expect(f.resourceIds.size).toBe(0);
+    expect(f.resources.size).toBe(0);
   });
 });
 
@@ -50,7 +49,7 @@ describe("matchesFilters", () => {
   const base = (over: Partial<CalendarFilterState> = {}): CalendarFilterState => ({
     statuses: new Set<MaintenanceStatus>(["planned", "in_progress"]),
     scope: "all",
-    resourceIds: new Set<string>(),
+    resources: new Map<string, string>(),
     ...over,
   });
 
@@ -69,15 +68,17 @@ describe("matchesFilters", () => {
     expect(matchesFilters(mk("b", { scope: "resource" }), f)).toBe(true);
   });
 
-  it("requires resource intersection only when resourceIds is non-empty", () => {
-    const withResource = mk("a", { resources: [{ id: "r-1", name: "db" }] });
-    const noResource = mk("b", { resources: [] });
-    expect(matchesFilters(withResource, base())).toBe(true);
-    expect(matchesFilters(noResource, base())).toBe(true);
+  it("ignores the resource selection — that filter is applied by the server", () => {
+    // RUK-256: `resource_ids` goes out as a query param and the backend returns
+    // an already-narrowed window. A client predicate here would double-filter,
+    // and (worse) it would narrow a window the backend already capped at 1000
+    // events, silently dropping matches beyond the cap.
+    //
+    // The event's own `resources` is empty on the calendar wire, so a predicate
+    // reading it would reject EVERY row — the original defect.
+    const event = mk("a", { resources: [] });
 
-    const f = base({ resourceIds: new Set(["r-1"]) });
-    expect(matchesFilters(withResource, f)).toBe(true);
-    expect(matchesFilters(noResource, f)).toBe(false);
+    expect(matchesFilters(event, base({ resources: new Map([["r-1", "db"]]) }))).toBe(true);
   });
 });
 
@@ -96,32 +97,24 @@ describe("applyCalendarFilters", () => {
     expect(out.map((m) => m.id)).toEqual(["p", "ip", "d", "c"]);
   });
 
-  it("still narrows by scope + resource", () => {
-    const items = [
-      mk("g", { scope: "global" }),
-      mk("r", { scope: "resource", resources: [{ id: "r-1", name: "db" }] }),
-    ];
+  it("still narrows by scope, the one client dimension left", () => {
+    const items = [mk("g", { scope: "global" }), mk("r", { scope: "resource" })];
     const f: CalendarFilterState = {
       statuses: new Set<MaintenanceStatus>(["planned"]),
       scope: "resource",
-      resourceIds: new Set<string>(),
+      resources: new Map<string, string>(),
     };
     expect(applyCalendarFilters(items, f).map((m) => m.id)).toEqual(["r"]);
   });
-});
 
-describe("resourceOptions", () => {
-  it("returns distinct resources sorted by name", () => {
-    const items = [
-      mk("a", {
-        resources: [
-          { id: "r-2", name: "redis" },
-          { id: "r-1", name: "api" },
-        ],
-      }),
-      mk("b", { resources: [{ id: "r-1", name: "api" }] }),
-    ];
-    expect(resourceOptions(items).map((r) => r.id)).toEqual(["r-1", "r-2"]);
+  it("does not drop rows for a resource selection (server already applied it)", () => {
+    // Guards the regression directly: with a selection active and events whose
+    // `resources` is empty (as the calendar wire always sends), everything must
+    // still pass. A reintroduced client predicate empties the grid here.
+    const items = [mk("a"), mk("b")];
+    const f = { ...defaultFilterState(), resources: new Map([["r-1", "db"]]) };
+
+    expect(applyCalendarFilters(items, f).map((m) => m.id)).toEqual(["a", "b"]);
   });
 });
 

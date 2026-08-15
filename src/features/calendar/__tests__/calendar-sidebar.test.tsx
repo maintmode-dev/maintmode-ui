@@ -41,7 +41,7 @@ function renderSidebar(
   const filters: CalendarFilterState = {
     statuses: new Set(statuses),
     scope: "all",
-    resourceIds: new Set(),
+    resources: new Map(),
   };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(

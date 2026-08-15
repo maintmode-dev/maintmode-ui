@@ -20,6 +20,7 @@ import { cn } from "@/shared/ui/lib/cn";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { utcIsoToWallClock, wallClockToUtcIso } from "@/features/_shared/timezone/convert";
 import type {
+  AssignableUser,
   MaintenanceDetail,
   MaintenanceDraftInput,
   MaintenanceImpact,
@@ -35,6 +36,7 @@ import { useMentionableUsersQuery } from "./queries/use-mentionable-users-query"
 import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
 import { transportDisplayTitle, transportStatusCopy } from "@/features/notify-channels/transports";
 import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
+import { useDebouncedValue } from "@/features/_shared/hooks/use-debounced-value";
 import { useCreateMaintenance, useUpdateMaintenance } from "./queries/use-maintenance-draft";
 import {
   emptyStep,
@@ -188,7 +190,21 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   const [steps, setSteps] = useState<StepDraft[]>(() => detailToSteps(detail));
   const [submitted, setSubmitted] = useState(false);
 
-  const assignable = useAssignableUsersQuery();
+  // Both user pickers search server-side too (RUK-266) — 4051 approvers and
+  // 10203 mentionable people against a 200-row page. Separate search state per
+  // picker: they are different popovers with their own boxes, and sharing one
+  // would make typing in Mentions refetch Approver.
+  const [approverSearch, setApproverSearch] = useState("");
+  const debouncedApproverSearch = useDebouncedValue(approverSearch.trim(), 300);
+  const [mentionSearch, setMentionSearch] = useState("");
+  const debouncedMentionSearch = useDebouncedValue(mentionSearch.trim(), 300);
+
+  // NOT gated on a non-empty search, unlike resources. These lists are small
+  // enough at rest to be worth showing unprompted — an operator picking an
+  // approver usually wants to browse, not to know a name in advance — and both
+  // endpoints are already fetched on mount today. The search narrows what is
+  // shown; it does not gate whether anything is.
+  const assignable = useAssignableUsersQuery({ search: debouncedApproverSearch || undefined });
   // A separate hook from `assignable`, deliberately: that one re-filters to
   // approver roles, and mentions answer "who should be warned", not "who can
   // approve" — guests belong here. See `useMentionableUsersQuery`.
@@ -198,9 +214,34 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // client-side filter over a truncated page and emptied the picker (SPEC §0.1).
   // The approver query must be narrowed by the SERVER, which means its own
   // request under its own key.
-  const mentionable = useMentionableUsersQuery();
+  const mentionable = useMentionableUsersQuery(debouncedMentionSearch || undefined);
   const channelsQuery = useNotifyChannelsQuery();
-  const resourcesQuery = useResourcesQuery({ limit: 200 });
+  // Server-side search, debounced (RUK-266). A single `limit: 200` page used to
+  // BE the searchable universe: cmdk filtered those rows client-side, so with
+  // 5781 resources on the wire, 5581 of them could not be found by typing at
+  // all. Reported live — an existing resource returned "No matches".
+  //
+  // `limit: 20` now, not 200: the server narrows first, so a page is a page of
+  // MATCHES rather than a slice of the catalogue, and 20 is more than the
+  // dropdown shows. That also retires the 200-row render cost per keystroke.
+  const [resourceSearch, setResourceSearch] = useState("");
+  const debouncedResourceSearch = useDebouncedValue(resourceSearch.trim(), 300);
+  const resourcesQuery = useResourcesQuery(
+    { name: debouncedResourceSearch, limit: 20 },
+    // An empty box asks for nothing, so it costs nothing. On EDIT this also
+    // means the catalogue is never fetched just to render chips for resources
+    // already attached — `detail.resources` covers those.
+    { enabled: debouncedResourceSearch.length > 0 },
+  );
+
+  // Names of resources the operator picked, captured at selection time.
+  //
+  // Required by the server search, not decorative: the catalogue page holds only
+  // the current query's rows, so a chip picked under an earlier prefix has no
+  // row left to read its name from. Never cleared on search — only on removal —
+  // and additive, so `resourceIds` (which the submit payload uses) keeps its
+  // shape.
+  const [pickedNames, setPickedNames] = useState<Map<string, string>>(new Map());
 
   // Memoised for the same reason `mentionOptions` below is: this list now holds
   // up to 200 rows where before the fix it was routinely empty, and without this
@@ -292,9 +333,16 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   );
 
   const selectedResources = resourceIds.map((id) => {
+    // Order matters. `pickedNames` first, because with a server-side search the
+    // catalogue page holds only the CURRENT query's rows — type a new prefix and
+    // a previously picked resource is no longer in it. Falling straight through
+    // to `id` there would replace the chip's name with a raw UUID.
+    //
+    // The other two remain as they were: `detail` covers a resource attached
+    // before this form opened (edit mode), and `id` is the honest last resort.
     const fromCatalog = resourcesQuery.data?.resources.find((r) => r.id === id);
     const fromDetail = detail?.resources.find((r) => r.id === id);
-    return { id, name: fromCatalog?.name ?? fromDetail?.name ?? id };
+    return { id, name: pickedNames.get(id) ?? fromCatalog?.name ?? fromDetail?.name ?? id };
   });
   const selectedChannels = useMemo(
     () => (channelsQuery.data ?? []).filter((c) => channelIds.includes(c.id)),
@@ -313,9 +361,32 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // picker's limit. `filter` would hide them while they stay in `mentionIds`, and
   // the operator would then save or clear a list they were never shown. See
   // `mergeMentionChips`.
+  // Everyone this picker has shown so far, accumulated across searches.
+  //
+  // Needed once the search is server-side (RUK-266): `mentionable.data` holds
+  // only the CURRENT query's page, so typing a new prefix drops a
+  // previously-tagged person out of the options and `mergeMentionChips` falls
+  // through to its last resort — rendering the raw user id as the chip's name.
+  // On create there is no `detail.mentions` to catch it.
+  //
+  // Captured at SELECTION time, in the picker's `onChange` below — not
+  // accumulated from every page the query returns. Same shape as `pickedNames`
+  // for resources, and the same reason to prefer it: the moment of selection is
+  // the one moment the person is guaranteed to be on screen, so it needs no
+  // effect and no synchronous setState inside one.
+  const [pickedMentions, setPickedMentions] = useState<AssignableUser[]>([]);
+
   const selectedMentions = useMemo<MentionChip[]>(
-    () => mergeMentionChips(mentionIds, mentionable.data ?? [], detail?.mentions),
-    [mentionIds, mentionable.data, detail?.mentions],
+    () =>
+      mergeMentionChips(
+        mentionIds,
+        // Current page first so a freshly-loaded row wins (its `has_messenger_tag`
+        // is the newest the server said), with the picked ones behind it as the
+        // fallback for anyone the current search no longer returns.
+        [...(mentionable.data ?? []), ...pickedMentions],
+        detail?.mentions,
+      ),
+    [mentionIds, mentionable.data, pickedMentions, detail?.mentions],
   );
   // A backend that predates mentions omits the key entirely (it otherwise always
   // sends an array), so `undefined` on an existing maintenance means "not
@@ -498,6 +569,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             options={approverOptions}
             value={approverId}
             onChange={setApproverId}
+            onSearchChange={setApproverSearch}
             placeholder={detail?.approver ? `Current: ${detail.approver}` : "Pick an approver…"}
             searchPlaceholder="Search people…"
             // Three states, three strings. `isError` used to be unread here, so
@@ -564,10 +636,39 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             <MultiSelect
               options={resourceOptions}
               value={resourceIds}
-              onChange={setResourceIds}
+              onChange={(next) => {
+                // Capture the names of anything newly picked while its row is
+                // still on screen — the next keystroke replaces the page.
+                setPickedNames((prev) => {
+                  const merged = new Map(prev);
+                  for (const id of next) {
+                    if (merged.has(id)) continue;
+                    const row = resourcesQuery.data?.resources.find((r) => r.id === id);
+                    if (row) merged.set(id, row.name);
+                  }
+                  return merged;
+                });
+                setResourceIds(next);
+              }}
+              onSearchChange={setResourceSearch}
               placeholder="Select resources…"
               searchPlaceholder="Search resources…"
-              emptyText={resourcesQuery.isPending ? "Loading…" : "No resources found."}
+              // Four states now that the search is server-side. "Type to
+              // search…" is the one the old client-side picker could not have:
+              // an empty box no longer means "here is everything", it means
+              // nothing has been asked for yet.
+              emptyText={
+                resourcesQuery.isPending && debouncedResourceSearch
+                  ? "Loading…"
+                  : resourcesQuery.isError
+                    ? "Couldn't load resources. Retry or check your access."
+                    : !debouncedResourceSearch
+                      ? "Type to search resources…"
+                      : "No resources found."
+              }
+              errorText={
+                resourcesQuery.isError && !resourcesQuery.isPending ? "Couldn't load resources." : undefined
+              }
               ariaLabel="Resources"
             />
             {selectedResources.length > 0 ? (
@@ -670,7 +771,20 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             <MultiSelect
               options={mentionOptions}
               value={mentionIds}
-              onChange={setMentionIds}
+              onChange={(next) => {
+                // Remember whoever was just tagged while their row is still in
+                // the current page — the next keystroke replaces it, and without
+                // this the chip would fall back to rendering a raw user id.
+                setPickedMentions((prev) => {
+                  const known = new Set(prev.map((u) => u.id));
+                  const added = (mentionable.data ?? []).filter(
+                    (u) => next.includes(u.id) && !known.has(u.id),
+                  );
+                  return added.length ? [...prev, ...added] : prev;
+                });
+                setMentionIds(next);
+              }}
+              onSearchChange={setMentionSearch}
               placeholder="Pick people to tag…"
               searchPlaceholder="Search by name or email"
               // Three states, three strings — the same shape as the approver

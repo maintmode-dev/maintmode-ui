@@ -47,9 +47,27 @@ function listQueryString(params: ResourceListParams): string {
   return s ? `?${s}` : "";
 }
 
-export function useResourcesQuery(params: ResourceListParams = {}) {
+export interface ResourceListOptions {
+  /**
+   * Gate the request. Defaults to `true` — pass `false` while the caller has
+   * nothing worth asking for, so no fetch goes out for a page nobody reads. The
+   * calendar sidebar's resource picker uses this: it searches server-side by
+   * `name`, and an empty search box means "no query yet", not "list everything"
+   * (RUK-256). Callers that always want the list omit it.
+   *
+   * Mirrors `CalendarQueryOptions` in `use-calendar-query.ts` rather than
+   * inventing a second shape for the same idea.
+   *
+   * NOTE: a disabled query stays `isPending` — it never resolves on its own, so
+   * a consumer that renders a spinner on `isPending` must check the gate too.
+   */
+  enabled?: boolean;
+}
+
+export function useResourcesQuery(params: ResourceListParams = {}, options: ResourceListOptions = {}) {
   return useQuery({
     queryKey: resourcesKey(params),
+    enabled: options.enabled ?? true,
     queryFn: (): Promise<ResourceListPage> =>
       bffFetch<ResourceListPage>(`/api/resources${listQueryString(params)}`),
     staleTime: 15_000,

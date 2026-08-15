@@ -1,8 +1,10 @@
 /**
- * Pure client-side filter model for the calendar sidebar. Status is filtered
- * SERVER-SIDE (the query sends the active `statuses`), so the `Maintenance[]`
- * the page receives is already status-narrowed; this client predicate narrows
- * it further by scope + touched resources before the grids render it.
+ * Filter model for the calendar sidebar.
+ *
+ * Two of the three dimensions are filtered SERVER-SIDE: the query sends the
+ * active `statuses` and the selected `resource_ids`, so the events the page
+ * receives are already narrowed on both. Only `scope` is applied here, because
+ * the backend ignores it.
  *
  * Kept free of React so the predicate is unit-testable without mounting the
  * sidebar — the page owns the `CalendarFilterState` and passes the result of
@@ -31,8 +33,22 @@ export interface CalendarFilterState {
    */
   statuses: Set<MaintenanceStatus>;
   scope: ScopeFilter;
-  /** Resource ids that must intersect a maintenance's `resources`. Empty = no resource filter. */
-  resourceIds: Set<string>;
+  /**
+   * Selected resources, `id → name`. Empty = no resource filter.
+   *
+   * Filtering by these happens SERVER-SIDE: the ids go out as repeated
+   * `resource_ids` query params and the backend returns an already-narrowed
+   * window (RUK-256). Nothing in this module filters on them.
+   *
+   * A `Map` rather than a `Set` of ids because the picker searches the
+   * catalogue server-side, so its results are keyed on the current search text
+   * — clearing the box would leave a selected chip with no name to render. The
+   * name is captured at selection time and carried here, in the SAME container
+   * as the id: two containers would have to be cleared in step by every path
+   * that clears a selection (chip removal, "Reset filters"), and one of them
+   * would eventually be missed.
+   */
+  resources: Map<string, string>;
 }
 
 /** The statuses active by default per the design contract (chips for the rest start off). */
@@ -58,7 +74,7 @@ export function defaultFilterState(): CalendarFilterState {
   return {
     statuses: new Set(DEFAULT_STATUSES),
     scope: "all",
-    resourceIds: new Set(),
+    resources: new Map(),
   };
 }
 
@@ -67,9 +83,17 @@ export const FILTERS_STORAGE_KEY = "maintmode.calendar.filters";
 
 /**
  * Serializable slice of the filter state we persist across refresh/logout:
- * `statuses` + `scope`. `resourceIds` is deliberately NOT persisted — it's a
- * picker scoped to whatever resources happen to be in the current window, so a
- * stored id would silently filter to nothing in a different window/session.
+ * `statuses` + `scope`. `resources` is deliberately NOT persisted.
+ *
+ * The reason CHANGED with RUK-256 and is worth stating, because the old one no
+ * longer holds: selections used to be scoped to whatever resources appeared in
+ * the loaded window, so a stored id could silently filter to nothing elsewhere.
+ * The picker now reads the global catalogue, so a stored id would be perfectly
+ * valid in any window.
+ *
+ * It stays unpersisted on a product judgement instead: a resource filter
+ * restored from a previous session narrows the calendar with no visible cause,
+ * and the operator did not ask for it on this visit.
  */
 interface PersistedFilters {
   statuses: MaintenanceStatus[];
@@ -85,7 +109,7 @@ export function serializeFilters(f: CalendarFilterState): PersistedFilters {
  * Read persisted status/scope from localStorage, validating every field against
  * the known enums (stored JSON is untrusted — a stale/hand-edited value must not
  * crash or smuggle in an unknown status). Returns the default state on anything
- * unexpected, with `resourceIds` always reset to empty. SSR-safe (no `window`).
+ * unexpected, with `resources` always reset to empty. SSR-safe (no `window`).
  */
 export function readStoredFilters(): CalendarFilterState {
   const fallback = defaultFilterState();
@@ -111,7 +135,7 @@ export function readStoredFilters(): CalendarFilterState {
     return {
       statuses: statuses && statuses.length > 0 ? new Set(statuses) : new Set(DEFAULT_STATUSES),
       scope,
-      resourceIds: new Set(),
+      resources: new Map(),
     };
   } catch {
     return fallback;
@@ -119,46 +143,22 @@ export function readStoredFilters(): CalendarFilterState {
 }
 
 /**
- * True when a maintenance passes the CLIENT filter dimensions: scope + resource.
+ * True when a maintenance passes the one remaining CLIENT filter dimension:
+ * scope.
  *
- * Status is deliberately NOT checked here — the backend filters by status
- * server-side (the calendar query sends the active `statuses`), so `items`
- * already only contains the selected statuses. Re-checking status on the client
- * would double-filter and reintroduce the very `items`-vs-rendered drift this
- * split removes. Scope stays client-side because the backend ignores `scope`.
+ * Status and resource are both filtered SERVER-SIDE — the calendar query sends
+ * the active `statuses` and the selected `resource_ids`, so `items` arrives
+ * already narrowed on both. Re-checking either here would double-filter and
+ * reintroduce the `items`-vs-rendered drift this split removes.
+ *
+ * Scope alone stays client-side, because the backend ignores it.
  */
 export function matchesFilters(m: CalendarEvent, f: CalendarFilterState): boolean {
-  if (f.scope !== "all" && m.scope !== f.scope) return false;
-  if (f.resourceIds.size > 0) {
-    const touches = m.resources.some((r) => f.resourceIds.has(r.id));
-    if (!touches) return false;
-  }
-  return true;
+  return f.scope === "all" || m.scope === f.scope;
 }
 
 export function applyCalendarFilters(items: CalendarEvent[], f: CalendarFilterState): CalendarEvent[] {
   return items.filter((m) => matchesFilters(m, f));
-}
-
-export interface ResourceOption {
-  id: string;
-  name: string;
-  type?: string;
-}
-
-/**
- * Distinct resources present across the loaded maintenances, sorted by name.
- * Drives the resource search/picker so the rail only offers resources that
- * actually appear in the current window (no extra catalog fetch needed).
- */
-export function resourceOptions(items: CalendarEvent[]): ResourceOption[] {
-  const byId = new Map<string, ResourceOption>();
-  for (const m of items) {
-    for (const r of m.resources) {
-      if (!byId.has(r.id)) byId.set(r.id, { id: r.id, name: r.name, type: r.type });
-    }
-  }
-  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**

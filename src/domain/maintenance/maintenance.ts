@@ -158,12 +158,19 @@ export interface CalendarEvent {
   scope: MaintenanceScope;
   planned_period: Period;
   /**
-   * Always empty until the backend adds `resources` to calendar events
-   * (RUK-256). Kept rather than dropped because the sidebar reads it — both
-   * `matchesFilters` and `resourceOptions` in `calendar-filters.ts` — so
-   * deleting the field would delete the resource filter, not clean up waste.
-   * The day the backend ships it, this field goes live with no type change;
-   * `calendar.contract.test.ts` fails that day by design.
+   * Always empty, and — since RUK-256 — read by NOTHING.
+   *
+   * The backend confirmed it will not add `resources` to calendar events: the
+   * endpoint takes `resource_ids` as a filter instead and answers with an
+   * already-narrowed window. So the sidebar stopped filtering on this field
+   * (`matchesFilters` now checks `scope` alone, and `resourceOptions` is gone),
+   * and nothing replaced those readers.
+   *
+   * That makes this a dormant stub. Retiring it — here, in
+   * `mapCalendarResponse`, in `MOCK_CALENDAR_EVENTS`, in the payload contract
+   * test, and moving its row in `docs/contract-gaps.md` from Класс B to Класс C
+   * — is a follow-up ticket, kept separate because detection and repair are
+   * separate changes (AGENTS.md). Do not build anything new on this field.
    */
   resources: MaintenanceResource[];
   /**

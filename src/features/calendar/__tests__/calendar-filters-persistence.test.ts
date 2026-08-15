@@ -38,16 +38,16 @@ const state = (over: Partial<CalendarFilterState> = {}): CalendarFilterState => 
 });
 
 describe("serializeFilters", () => {
-  it("projects statuses (as array) + scope, dropping resourceIds", () => {
+  it("projects statuses (as array) + scope, dropping the resource selection", () => {
     const out = serializeFilters(
       state({
         statuses: new Set(["completed", "canceled"]),
         scope: "global",
-        resourceIds: new Set(["r-1"]),
+        resources: new Map([["r-1", "db"]]),
       }),
     );
     expect(out).toEqual({ statuses: ["completed", "canceled"], scope: "global" });
-    expect("resourceIds" in out).toBe(false);
+    expect("resources" in out).toBe(false);
   });
 });
 
@@ -56,7 +56,7 @@ describe("readStoredFilters", () => {
     const f = readStoredFilters();
     expect([...f.statuses].sort()).toEqual([...DEFAULT_STATUSES].sort());
     expect(f.scope).toBe("all");
-    expect(f.resourceIds.size).toBe(0);
+    expect(f.resources.size).toBe(0);
   });
 
   it("round-trips a persisted selection", () => {
@@ -66,7 +66,7 @@ describe("readStoredFilters", () => {
     const f = readStoredFilters();
     expect([...f.statuses].sort()).toEqual(["completed", "draft"]);
     expect(f.scope).toBe("resource");
-    expect(f.resourceIds.size).toBe(0); // never restored
+    expect(f.resources.size).toBe(0); // never restored
   });
 
   it("drops unknown statuses and falls back when none remain", () => {
@@ -136,6 +136,6 @@ describe("readStoredFilters — SSR (no window)", () => {
     const f = readStoredFilters();
     expect([...f.statuses].sort()).toEqual([...DEFAULT_STATUSES].sort());
     expect(f.scope).toBe("all");
-    expect(f.resourceIds.size).toBe(0);
+    expect(f.resources.size).toBe(0);
   });
 });

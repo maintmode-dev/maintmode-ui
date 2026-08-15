@@ -47,11 +47,16 @@ export function mentionableUsersKey(search: string) {
  * (SPEC §2.2.1). Hence: no `roles` sent, no client re-filter, and its own cache
  * key (see `mentionableUsersKey`).
  *
- * Server-side `search` is deliberately not forwarded (RUK-218 SPEC §13.1):
- * client filtering over the loaded rows is enough HERE, because the dangerous
- * half of the problem — an unreachable id silently dropping a chip — is closed
- * by `mergeMentionChips`. The approver picker has no such merge, so the same
- * argument does NOT transfer to it (SPEC §9.1, tracked as RUK-251).
+ * `search` IS forwarded to the server (RUK-266). It used to be accepted and then
+ * quietly dropped: RUK-218 §13.1 argued client filtering over the loaded rows was
+ * enough here, because `mergeMentionChips` closes the dangerous half — an
+ * unreachable id silently losing its chip.
+ *
+ * That reasoning covered data loss, not findability, and the gap it left is
+ * measurable: 10203 mentionable users against a 200-row page, so ~98% of people
+ * could not be found by typing. The warning below fired for exactly this and
+ * nothing acted on it. `mergeMentionChips` still matters — it keeps an already
+ * tagged person intact — but it cannot help someone who has to be found first.
  */
 export function mentionableUsersQueryOptions(search?: string) {
   return {
@@ -74,14 +79,23 @@ export function mentionableUsersQueryOptions(search?: string) {
         }));
       }
       const qs = new URLSearchParams({ limit: String(ASSIGNABLE_USERS_LIMIT) });
+      // The whole point of RUK-266: without this the query string was identical
+      // for every keystroke, so the server always returned the same first page
+      // and cmdk filtered it locally.
+      const trimmed = search?.trim();
+      if (trimmed) qs.set("search", trimmed);
       const data = await bffFetch<{ users: AssignableUser[]; total?: number }>(
         `/api/users/assignable?${qs.toString()}`,
       );
+      // Still worth warning about, but it now means something narrower: even the
+      // SEARCH matched more rows than one page holds, so the operator has to type
+      // a longer prefix. Before the search was forwarded it meant the picker was
+      // showing an arbitrary slice of everyone.
       if ((data.total ?? 0) > ASSIGNABLE_USERS_LIMIT) {
         warnOnce(
           "mentions-partial-slice",
           `[mentions-picker] total=${data.total} > limit=${ASSIGNABLE_USERS_LIMIT} — ` +
-            `picker shows a partial slice; server-side search needed (RUK-251)`,
+            `more matches than one page; narrow the search`,
         );
       }
       // `?? []` so a malformed response degrades to an empty picker with an

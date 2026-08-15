@@ -197,8 +197,18 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
   // Status is filtered SERVER-SIDE: send the active status set as query params so
   // `items` already only holds the selected statuses (no client status filter).
   // Sorted + memoized so the query key is stable and toggling chips refetches
-  // only when the set actually changes. Scope/resource stay client-side below.
+  // only when the set actually changes. Only `scope` stays client-side below.
   const statusParam = useMemo(() => Array.from(filters.statuses).sort(), [filters.statuses]);
+
+  // Resource is filtered SERVER-SIDE too (RUK-256): the backend accepts repeated
+  // `resource_ids` and applies its 1000-event cap AFTER filtering, so a client
+  // predicate would narrow an already-truncated window and silently lose matches
+  // past the cap.
+  //
+  // Sorted, and here is the subtle part: `calendarKey` sorts `statuses` itself
+  // but passes `resourceIds` through as given. So THIS sort is the only thing
+  // keeping "pick A then B" and "pick B then A" on one cache entry.
+  const resourceParam = useMemo(() => Array.from(filters.resources.keys()).sort(), [filters.resources]);
 
   // The window the REQUEST uses, which lags the one the header renders. Every
   // chevron click is a brand-new cache key, so without this a burst costs one
@@ -220,8 +230,13 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
   const windowSettled = sameWindow(debouncedWindow, rawWindow);
 
   const queryParams = useMemo(
-    () => ({ from: debouncedWindow.from, to: debouncedWindow.to, statuses: statusParam }),
-    [debouncedWindow, statusParam],
+    () => ({
+      from: debouncedWindow.from,
+      to: debouncedWindow.to,
+      statuses: statusParam,
+      resourceIds: resourceParam,
+    }),
+    [debouncedWindow, statusParam, resourceParam],
   );
 
   const query = useCalendarQuery(
@@ -247,9 +262,25 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
   });
 
   const items = useMemo(() => query.data ?? [], [query.data]);
-  // `items` is already status-filtered by the server; here we apply only the
-  // CLIENT dimensions (scope + resource). The sidebar still sees the full status-
-  // filtered `items` so its resource picker + Up next reflect the window.
+
+  // Which empty state is truthful? Before RUK-256 this was `items.length`: rows
+  // present meant the client filters had hidden them, rows absent meant the
+  // period really was empty. Server-side resource filtering breaks that test —
+  // a resource filter matching nothing now returns NO rows, so the page would
+  // claim "nothing is scheduled for this period" (false — work exists, it is
+  // filtered out) and would hide "Reset filters", the only control that undoes
+  // it, exactly when the operator needs it.
+  //
+  // So the question becomes "is a filter narrowing this view?" instead.
+  //
+  // `statuses` is deliberately NOT part of it: a non-default status selection
+  // can also empty the grid and also lands on the period-empty card. That is
+  // pre-existing behaviour on a different axis, and widening this predicate to
+  // cover it is a change this ticket did not set out to make.
+  const filtersNarrowing = filters.scope !== "all" || filters.resources.size > 0;
+  // `items` is already status- AND resource-filtered by the server; the only
+  // client dimension left is `scope`. The sidebar gets the same `items` for its
+  // "Up next" panel (its resource picker reads the catalogue, not the window).
   const filteredItems = useMemo(() => applyCalendarFilters(items, filters), [items, filters]);
   const status: "loading" | "error" | "ready" = query.isPending
     ? "loading"
@@ -425,12 +456,12 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
                   down and give the page a scrollbar 1.5s after a click. */}
               {showStaleNotice ? <CalendarStaleWindowNotice onRetry={retryWindow} /> : null}
               {filteredItems.length === 0 ? (
-                // The grid renders the client-filtered set, so the empty overlay
-                // keys off `filteredItems`. We distinguish the two reasons it's
-                // empty: the server returned nothing for the active statuses
-                // (`items` empty) vs. scope/resource hid everything (`items` has
-                // rows). A lightweight STATIC backdrop stands in for the grid — we
-                // no longer mount a second live FullCalendar just for decoration.
+                // The grid renders the scope-filtered set, so the empty overlay
+                // keys off `filteredItems`. Which of the two empty states is
+                // truthful is decided by `filtersNarrowing` above, not by
+                // `items.length` — see the note there. A lightweight STATIC
+                // backdrop stands in for the grid; we no longer mount a second
+                // live FullCalendar just for decoration.
                 <>
                   {/* Static backdrop standing in for the grid. Uses the SAME
                     viewport-bound height as the populated grid (see
@@ -446,8 +477,8 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
                       `CalendarEmpty` says "No maintenance scheduled for this
                       period" — a claim about the period in the HEADER, which is
                       not the period these (absent) events came from. If the
-                      retained window is empty, or the client-side scope/resource
-                      filters empty it, the page would assert that nothing is
+                      retained window is empty, or the client-side scope filter
+                      empties it, the page would assert that nothing is
                       scheduled in a period it has not loaded, directly beside a
                       banner saying it is still loading. That is the same lie to
                       the operator this ticket removes, in a new costume. The
@@ -456,7 +487,27 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
                   {showStaleNotice ? null : (
                     <div className="absolute inset-0 grid place-items-center">
                       <div className="bg-bg-elev-1 border border-border rounded-md shadow-md">
-                        {items.length === 0 ? (
+                        {filtersNarrowing ? (
+                          <CalendarEmpty
+                            title="No maintenance matches your filters"
+                            // No count: resource is filtered server-side now, so
+                            // `items` no longer holds the rows a resource filter
+                            // hid — it holds none of them. Printing `items.length`
+                            // here would confidently say "0 hidden", which is the
+                            // kind of precise-and-wrong number RUK-252 exists to
+                            // keep off the screen.
+                            caption="Hidden by the current Scope or Resource filters."
+                            cta={
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setFilters(defaultFilterState())}
+                              >
+                                Reset filters
+                              </Button>
+                            }
+                          />
+                        ) : (
                           <CalendarEmpty
                             // Guest: neutral empty state, no create link. `cta={false}`
                             // (not undefined) suppresses CalendarEmpty's default
@@ -474,28 +525,15 @@ export function CalendarPage({ staleNoticeDelayMs = STALE_NOTICE_DELAY_MS }: Cal
                               )
                             }
                           />
-                        ) : (
-                          <CalendarEmpty
-                            title="No maintenance matches your filters"
-                            caption={`${items.length} hidden by the current Scope or Resource filters.`}
-                            cta={
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setFilters(defaultFilterState())}
-                              >
-                                Reset filters
-                              </Button>
-                            }
-                          />
                         )}
                       </div>
                     </div>
                   )}
                 </>
               ) : (
-                // The grid renders the client-filtered set; the sidebar reads the
-                // full status-filtered window for its options.
+                // The grid renders the scope-filtered set; the sidebar reads the
+                // same window for its "Up next" panel (its resource picker reads
+                // the catalogue, not this).
                 <CalendarGrid
                   view={view}
                   anchor={anchor}

@@ -55,6 +55,24 @@ export interface MultiSelectProps {
    * below.
    */
   errorText?: string;
+  /**
+   * Lift the search box's text to the caller, so it can fetch `options` from the
+   * server instead of filtering a page it already holds.
+   *
+   * Why this exists: without it the search text never leaves this component, and
+   * cmdk filters whatever `options` happen to be loaded. That silently caps a
+   * picker at its first page — measured on the maintenance form, 200 of 5781
+   * resources and 200 of 10203 people were reachable, and the rest could not be
+   * found by typing at all (RUK-251, RUK-266).
+   *
+   * Passing it turns OFF cmdk's own filtering (`shouldFilter={false}`): the
+   * server has already decided what matches, and a second client-side pass over
+   * that answer can only remove rows the server deliberately returned.
+   *
+   * Omit it and the component keeps filtering client-side exactly as before —
+   * right for small, fully-loaded lists (cancel reasons).
+   */
+  onSearchChange?: (search: string) => void;
   disabled?: boolean;
   className?: string;
   ariaLabel?: string;
@@ -83,6 +101,7 @@ export function MultiSelect({
   searchPlaceholder = "Search…",
   emptyText = "No results.",
   errorText,
+  onSearchChange,
   disabled,
   className,
   ariaLabel,
@@ -96,6 +115,17 @@ export function MultiSelect({
   // silently does nothing) while hijacking arrow-key highlighting.
   const [search, setSearch] = useState("");
   const selectedSet = new Set(value);
+
+  // Server-searching callers get cmdk's own filter turned OFF. `options` is then
+  // the server's answer, and filtering it again here could only drop rows the
+  // server chose to return — most visibly when the query matches a field the
+  // option's `searchValue` does not carry.
+  const serverSearch = onSearchChange !== undefined;
+
+  const updateSearch = (next: string) => {
+    setSearch(next);
+    onSearchChange?.(next);
+  };
 
   const toggle = (next: string) => {
     onChange(selectedSet.has(next) ? value.filter((v) => v !== next) : [...value, next]);
@@ -168,7 +198,11 @@ export function MultiSelect({
         open={open}
         onOpenChange={(next) => {
           setOpen(next);
-          if (!next) setSearch("");
+          // Through `updateSearch`, so a server-searching caller hears the reset
+          // too. Leaving it on `setSearch` would clear the visible box while the
+          // caller kept fetching the last query — and the reopened picker would
+          // show those stale results under an empty search box.
+          if (!next) updateSearch("");
         }}
       >
         <PopoverTrigger asChild>
@@ -186,8 +220,8 @@ export function MultiSelect({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-          <Command>
-            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={setSearch} />
+          <Command shouldFilter={!serverSearch}>
+            <CommandInput placeholder={searchPlaceholder} value={search} onValueChange={updateSearch} />
             <CommandList>
               {/* Two different facts, two different sentences. cmdk mounts this
                   node on `filtered.count === 0`, which means "the filter matched
@@ -218,9 +252,29 @@ export function MultiSelect({
                   0 against space-free labels — channel slugs, timezone ids — so
                   `filtered.count` really can hit 0 and render quote marks around
                   apparent nothing. */}
-              <CommandEmpty>
-                {search.trim() && options.length > 0 ? `No matches for "${search}"` : emptyText}
-              </CommandEmpty>
+              {/* With `shouldFilter={false}` cmdk stops counting matches, so
+                  `CommandEmpty` — which mounts on `filtered.count === 0` —
+                  never fires. The server-search branch therefore decides for
+                  itself, on the only fact that means anything there: the
+                  server came back with no rows.
+
+                  The two branches say different things on purpose. Client-side,
+                  "no matches" is a claim about the LOADED page and needs
+                  `options.length > 0` to avoid asserting it over a pending or
+                  failed load. Server-side, an empty `options` under a non-empty
+                  query IS the server's answer, and the caller still routes
+                  loading/failure through `emptyText`. */}
+              {serverSearch ? (
+                options.length === 0 ? (
+                  <div className="py-6 text-center text-sm" role="presentation">
+                    {search.trim() ? `No matches for "${search}"` : emptyText}
+                  </div>
+                ) : null
+              ) : (
+                <CommandEmpty>
+                  {search.trim() && options.length > 0 ? `No matches for "${search}"` : emptyText}
+                </CommandEmpty>
+              )}
               {/* Not memoized, unlike the twin list in `combobox.tsx`. That one
                   pays for the query living in React state because its
                   `description` accepts a THUNK, so a re-render re-evaluates it
