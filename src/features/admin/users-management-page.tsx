@@ -509,12 +509,26 @@ function InvitationsTable({ invitations, filter }: { invitations: Invitation[]; 
       <table className="w-full text-left text-sm">
         <thead className="bg-bg-elev-2 border-b border-border-subtle">
           <tr>
-            {["Email", "Roles", "Invited by", "Sent at", "Expires", "Status", ""].map((h, i) => (
+            {/* The two stamps are right-aligned and width-capped: under
+                `table-layout: auto` their columns stretched and left-aligned
+                dates ended up floating mid-column. Email/Roles take the slack. */}
+            {[
+              { label: "Email", className: "" },
+              { label: "Roles", className: "" },
+              { label: "Invited by", className: "" },
+              { label: "Sent at", className: "w-[180px] text-right" },
+              { label: "Expires", className: "w-[180px] text-right" },
+              { label: "Status", className: "" },
+              { label: "", className: "w-32" },
+            ].map((h) => (
               <th
-                key={i}
-                className="px-3 py-2 text-2xs font-semibold uppercase tracking-[0.08em] text-fg-dim"
+                key={h.label}
+                className={cn(
+                  "px-3 py-2 text-2xs font-semibold uppercase tracking-[0.08em] text-fg-dim",
+                  h.className,
+                )}
               >
-                {h}
+                {h.label}
               </th>
             ))}
           </tr>
@@ -547,10 +561,10 @@ function InvitationsTable({ invitations, filter }: { invitations: Invitation[]; 
                   ))}
                 </td>
                 <td className="px-3 py-2.5 font-mono text-xs text-fg-muted">@{inviterHandle(i.inviter)}</td>
-                <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-fg-muted">
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-fg-muted whitespace-nowrap">
                   {formatUtc(i.sent_at)}
                 </td>
-                <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-fg-muted">
+                <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-fg-muted whitespace-nowrap">
                   {formatUtc(i.expires_at)}
                 </td>
                 <td className="px-3 py-2.5">

@@ -12,6 +12,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { Switch } from "@/shared/ui/shadcn/switch";
 import { Label } from "@/shared/ui/shadcn/label";
 import { Stack } from "@/shared/ui/domain/stack";
+import { cn } from "@/shared/ui/lib/cn";
 import { formatUtc } from "@/shared/ui/lib/format";
 
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
@@ -158,12 +159,23 @@ export function ResourcesListPage() {
             <table className="w-full text-left text-sm">
               <thead className="bg-bg-elev-2 border-b border-border-subtle">
                 <tr>
-                  {["Name", "Created", ""].map((h, i) => (
+                  {/* `Created` is right-aligned and width-capped so the stamp sits
+                      against the chevron instead of floating in the middle of a
+                      column that `table-layout: auto` had grown to ~24% of the
+                      table. Name takes the slack. */}
+                  {[
+                    { label: "Name", className: "" },
+                    { label: "Created", className: "w-[200px] text-right" },
+                    { label: "", className: "w-12" },
+                  ].map((h) => (
                     <th
-                      key={i}
-                      className="px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim"
+                      key={h.label}
+                      className={cn(
+                        "px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-fg-dim",
+                        h.className,
+                      )}
                     >
-                      {h}
+                      {h.label}
                     </th>
                   ))}
                 </tr>
@@ -199,7 +211,7 @@ export function ResourcesListPage() {
                         </div>
                         {r.description ? <div className="text-xs text-fg-dim">{r.description}</div> : null}
                       </td>
-                      <td className="px-3 py-2.5 font-mono tabular-nums text-xs text-fg-muted">
+                      <td className="px-3 py-2.5 text-right font-mono tabular-nums text-xs text-fg-muted whitespace-nowrap">
                         {formatUtc(r.created_at)}
                       </td>
                       <td className="px-3 py-2.5 w-12 text-right">

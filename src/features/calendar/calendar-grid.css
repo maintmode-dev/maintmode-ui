@@ -106,3 +106,35 @@
 .fc .fc-timegrid-now-indicator-arrow {
   display: none;
 }
+
+/* The now-indicator ships at z-index 4, but FullCalendar stacks every event
+   harness above it (z-index grows per column, ~158 on a busy day). On a sparse
+   calendar the line happens to fall on empty space and reads fine; once events
+   cover the current hour it is painted underneath them and disappears. Lift it
+   over the harnesses so "now" stays legible at any event density.
+   `pointer-events: none` keeps the events beneath it clickable. */
+.fc .fc-timegrid-now-indicator-line {
+  z-index: 200;
+  pointer-events: none;
+}
+
+/* In week view FC draws the line inside the current day's column only, so it
+   stops at that column's edge (~136px of a 1003px grid) and reads as a stray
+   dash rather than a time reference. Span it across the whole week so "now" can
+   be compared against every day; the day view already spans its single column.
+
+   The container is the today column, so the line is stretched by pinning it to
+   the grid edges with negative offsets rather than a width: `left` walks back
+   across the columns preceding today (6 at most, hence -600%) and `right` does
+   the same for the ones after it. `width: auto` is required — FC sets an inline
+   width on the element, which would otherwise win over the offsets. The parent
+   grid clips the overflow, so the excess never paints outside the calendar. */
+.fc-timeGridWeek-view .fc-timegrid-now-indicator-container {
+  overflow: visible;
+}
+
+.fc-timeGridWeek-view .fc-timegrid-now-indicator-line {
+  left: -600%;
+  right: -600%;
+  width: auto;
+}

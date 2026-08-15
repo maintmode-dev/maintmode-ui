@@ -349,6 +349,8 @@ function MaintenanceDetailView({ id }: { id: string }) {
           <div className="space-y-3">
             {detail.conflicts.map((c) => {
               const unreviewed = isUnreviewedConflict(detail.status, c);
+              const shared = sharedResourceNames(c.resources, detail.resources);
+              const duration = overlapDuration(c.overlap_start, c.overlap_end);
               return (
                 <ConflictCard
                   key={c.maintenance_id}
@@ -363,6 +365,12 @@ function MaintenanceDetailView({ id }: { id: string }) {
                         value={formatRange(c.overlap_start, c.overlap_end, zone)}
                         mono
                       />
+                      {/* "Where" names only resources BOTH windows touch. A
+                          global-scope neighbour holds none, so the row is
+                          dropped rather than showing an empty value. */}
+                      {shared.length ? (
+                        <ConflictGridItem label="Where" value={shared.join(", ")} mono />
+                      ) : null}
                       {unreviewed ? (
                         // Deliberately not "appeared after approval": the backend
                         // reports the same `false` when its snapshot read fails,
@@ -370,6 +378,21 @@ function MaintenanceDetailView({ id }: { id: string }) {
                         <ConflictGridItem label="Review" value="Not seen at approval" />
                       ) : null}
                     </>
+                  }
+                  overlap={
+                    <span>
+                      Overlaps{" "}
+                      <span className="font-mono tabular-nums">
+                        {formatRange(c.overlap_start, c.overlap_end, zone)}
+                      </span>
+                      {duration ? <> · {duration}</> : null}
+                      {shared.length ? (
+                        <>
+                          {" on "}
+                          <span className="font-mono">{shared.join(", ")}</span>
+                        </>
+                      ) : null}
+                    </span>
                   }
                   state={c.resolved ? "resolved" : unreviewed ? "new" : "active"}
                 />
@@ -420,6 +443,40 @@ function Section({
       <div className="text-sm text-fg">{children}</div>
     </section>
   );
+}
+
+/**
+ * Overlap length, derived from the overlap window. The backend sends no
+ * duration field for a conflict, but the window itself is authoritative, so
+ * this is arithmetic on data we already have — not a stub. Sub-minute and
+ * malformed windows yield `undefined` so the caller drops the clause rather
+ * than printing "0m".
+ */
+function overlapDuration(startIso: string, endIso: string): string | undefined {
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return undefined;
+  const minutes = Math.round((end - start) / 60_000);
+  if (minutes < 1) return undefined;
+  return formatDuration(String(minutes));
+}
+
+/**
+ * Resources to name in the overlap callout.
+ *
+ * `conflict.resources` lists what the NEIGHBOUR touches, which may include
+ * resources this maintenance has nothing to do with — so naming them raw would
+ * assert an overlap that doesn't exist. Intersect with the viewed maintenance's
+ * own resources and show only the shared ones; that is what "conflicts on X"
+ * means. An empty intersection is normal for a global-scope neighbour (it holds
+ * no resources at all), in which case the callout stays time-only.
+ */
+function sharedResourceNames(
+  conflictResources: MaintenanceDetail["conflicts"][number]["resources"],
+  ownResources: MaintenanceDetail["resources"],
+): string[] {
+  const own = new Set(ownResources.map((r) => r.id));
+  return conflictResources.filter((r) => own.has(r.id)).map((r) => r.name);
 }
 
 /**
