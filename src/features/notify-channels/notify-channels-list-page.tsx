@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { ChevronRight, Filter, MessageCircle, Plus, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { canWrite } from "@/domain/auth/permissions";
 import { isNotifyChannelArchived } from "@/domain/notify-channel/notify-channel";
@@ -20,6 +20,7 @@ import { CalendarError } from "@/shared/ui/states";
 import { cn } from "@/shared/ui/lib/cn";
 import { formatUtc } from "@/shared/ui/lib/format";
 
+import { useDebouncedValue } from "@/features/_shared/hooks/use-debounced-value";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 
 import { useNotifyChannelsQuery } from "./queries/use-notify-channels-query";
@@ -45,10 +46,24 @@ const NotifyChannelCreateDialog = dynamic(
 );
 
 /**
+ * Sent explicitly rather than left to the backend's default, which happens to be
+ * the same 50. Depending on that default is the trap this ticket exists to fix
+ * one layer up: the backend silently substitutes it for out-of-range input.
+ */
+const PAGE_SIZE = 50;
+
+/**
  * Channels catalog (`/channels`) — verbatim sibling of the resources list, with
- * a Transport-pill column standing in for the resource status. The backend list
- * has no `name` filter, so search is applied client-side over the loaded page;
- * the `Show archived` toggle is server-side (it widens `include_archived`).
+ * a Transport-pill column standing in for the resource status.
+ *
+ * Search is server-side (RUK-274). It used to be a client-side filter over the
+ * loaded page, which was harmless while the backend returned the catalog whole
+ * — and became a defect the moment it started answering fifty rows at a time:
+ * the box would silently fail to find channels that exist. The backend matches
+ * on the channel NAME only, so a channel is no longer findable by typing its
+ * transport or its `transport_channel_id`.
+ *
+ * The `Show archived` toggle stays server-side (it widens `include_archived`).
  */
 export function NotifyChannelsListPage() {
   const router = useRouter();
@@ -72,23 +87,30 @@ export function NotifyChannelsListPage() {
     void import("./notify-channel-create-dialog");
   };
 
-  const channelsQuery = useNotifyChannelsQuery({ archived: showArchived });
+  // `|| undefined` rather than the empty string: the query key is built from
+  // this object, so `name: ""` would open a second cache entry holding exactly
+  // the rows the unfiltered one already holds.
+  const debouncedQuery = useDebouncedValue(query.trim(), 300);
+  const channelsQuery = useNotifyChannelsQuery({
+    name: debouncedQuery || undefined,
+    archived: showArchived,
+    limit: PAGE_SIZE,
+  });
   const channelsData = channelsQuery.data;
 
-  const trimmedQuery = query.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    const channels = channelsData ?? [];
-    return trimmedQuery ? channels.filter((c) => c.name.toLowerCase().includes(trimmedQuery)) : channels;
-  }, [channelsData, trimmedQuery]);
-
-  const isFiltering = trimmedQuery.length > 0;
+  // The server did the filtering; these rows ARE the answer to the query. Named
+  // for what they hold rather than `filtered`, which would claim a client-side
+  // filter step that no longer exists (RUK-274). Mirrors the resources list.
+  const channels = channelsData?.channels ?? [];
+  const isFiltering = debouncedQuery.length > 0;
 
   // `N active · N archived` caption (contract). Counts come from the loaded set:
   // archived rows are only present once `Show archived` widens the fetch, so the
   // archived count reads 0 until the toggle is on — accurate to what's loaded.
-  const allChannels = channelsData ?? [];
-  const archivedCount = allChannels.filter((c) => isNotifyChannelArchived(c)).length;
-  const activeCount = allChannels.length - archivedCount;
+  // `hasMore` below is what keeps "what's loaded" from reading as "what exists".
+  const archivedCount = channels.filter((c) => isNotifyChannelArchived(c)).length;
+  const activeCount = channels.length - archivedCount;
+  const hasMore = channelsData ? channelsData.total > channels.length : false;
 
   return (
     <div className="mx-auto max-w-[1200px] p-6 space-y-4">
@@ -153,7 +175,7 @@ export function NotifyChannelsListPage() {
         </div>
       ) : channelsQuery.isError ? (
         <CalendarError onRetry={() => channelsQuery.refetch()} />
-      ) : filtered.length === 0 ? (
+      ) : channels.length === 0 ? (
         isFiltering ? (
           <Stack
             icon={<Filter aria-hidden="true" />}
@@ -220,7 +242,7 @@ export function NotifyChannelsListPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => {
+              {channels.map((c) => {
                 const archived = isNotifyChannelArchived(c);
                 // null for "ok"; disabled / not_configured / unknown statuses
                 // all yield a warning badge (fail-visible).
@@ -287,6 +309,16 @@ export function NotifyChannelsListPage() {
           </table>
         </div>
       )}
+
+      {/* The header caption counts what is loaded, which is honest but easy to
+          read as "what exists". This line names the denominator whenever the
+          two differ — under a search `total` is the number of MATCHES, so it
+          stays the right denominator there too. Mirrors the resources list. */}
+      {hasMore ? (
+        <p className="text-xs text-fg-dim">
+          Showing {channels.length} of {channelsData?.total}. Refine the search to narrow results.
+        </p>
+      ) : null}
 
       {canCreate ? <NotifyChannelCreateDialog open={createOpen} onOpenChange={setCreateOpen} /> : null}
     </div>

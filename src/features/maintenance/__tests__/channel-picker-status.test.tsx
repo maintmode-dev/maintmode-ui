@@ -30,8 +30,17 @@ afterEach(() => {
 // The form pulls from several queries; stub them so we render deterministically
 // and drive only the channel-status behaviour.
 const channelsData = vi.fn<() => NotifyChannel[]>(() => []);
+// The hook answers the backend's pagination window, not a bare array (RUK-274).
+// Cases still set `channelsData` to the rows they care about; the window is
+// assembled here so a `data.channels` read in the component keeps working.
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
-  useNotifyChannelsQuery: () => ({ data: channelsData(), isPending: false }),
+  useNotifyChannelsQuery: () => {
+    const channels = channelsData();
+    return {
+      data: { channels, limit: channels.length, offset: 0, total: channels.length },
+      isPending: false,
+    };
+  },
 }));
 vi.mock("../queries/use-assignable-users-query", () => ({
   useAssignableUsersQuery: () => ({ data: [], isPending: false, isError: false }),

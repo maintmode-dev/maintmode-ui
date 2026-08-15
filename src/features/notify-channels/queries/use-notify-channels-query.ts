@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { bffFetch, BffError } from "@/features/_shared/api/bff-fetch";
@@ -8,15 +8,37 @@ import type { NotifyChannel } from "@/domain/notify-channel/notify-channel";
 
 /**
  * Notification-channel catalog + detail + CRUD, wired BFF-only (no mock
- * branch). The list endpoint answers a plain `{ channels }` envelope with
- * no pagination window — the catalog is small and returned whole, sorted
- * newest-first by the backend. Archive/unarchive are idempotent and reconcile
- * the UI through query invalidation.
+ * branch). The list reads the backend's paginated `{ channels, limit, offset,
+ * total }` window verbatim so callers can page through `total` rather than
+ * assume the response holds every channel (RUK-274). Archive/unarchive are
+ * idempotent and reconcile the UI through query invalidation.
+ *
+ * The catalog is NOT returned whole and is NOT sorted newest-first — both were
+ * claimed here before the endpoint grew a window, and both are now false. See
+ * `mapNotifyChannelList` for the measured ordering.
  */
 
+export interface NotifyChannelListPage {
+  channels: NotifyChannel[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 export interface NotifyChannelListParams {
+  /**
+   * Name filter forwarded to the backend's server-side contains match. Matches
+   * the channel NAME only — not the transport, not `transport_channel_id`.
+   *
+   * Pass `undefined` rather than `""` for "no filter": the query key is built
+   * from this object and hashed structurally, so an empty string would open a
+   * second cache entry holding the same rows as the unfiltered one.
+   */
+  name?: string;
   /** When true, include archived channels (backend `include_archived=true`). */
   archived?: boolean;
+  limit?: number;
+  offset?: number;
 }
 
 export function notifyChannelsKey(params: NotifyChannelListParams = {}) {
@@ -28,7 +50,10 @@ export function notifyChannelDetailKey(id: string) {
 
 function listQueryString(params: NotifyChannelListParams): string {
   const qs = new URLSearchParams();
+  if (params.name) qs.set("name", params.name);
   if (params.archived) qs.set("archived", "true");
+  if (params.limit != null) qs.set("limit", String(params.limit));
+  if (params.offset != null) qs.set("offset", String(params.offset));
   const s = qs.toString();
   return s ? `?${s}` : "";
 }
@@ -36,13 +61,18 @@ function listQueryString(params: NotifyChannelListParams): string {
 export function useNotifyChannelsQuery(params: NotifyChannelListParams = {}) {
   return useQuery({
     queryKey: notifyChannelsKey(params),
-    queryFn: async (): Promise<NotifyChannel[]> => {
-      const { channels } = await bffFetch<{ channels: NotifyChannel[] }>(
-        `/api/notifications/channels${listQueryString(params)}`,
-      );
-      return channels;
-    },
+    queryFn: (): Promise<NotifyChannelListPage> =>
+      bffFetch<NotifyChannelListPage>(`/api/notifications/channels${listQueryString(params)}`),
     staleTime: 15_000,
+    // Hold the previous window on screen while the next one loads. Every search
+    // keystroke past the debounce is a NEW cache key with no data, so without
+    // this the catalog swaps its table for a skeleton of a different height on
+    // each window — and, worse, renders "No channels match these filters" in the
+    // gap, telling the operator their search failed while it is still running.
+    //
+    // Same reason and same mechanism as `use-calendar-query.ts` and
+    // `use-users-queries.ts`; channels were the last paginated list without it.
+    placeholderData: keepPreviousData,
   });
 }
 

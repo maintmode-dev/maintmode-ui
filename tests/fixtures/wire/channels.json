@@ -1,0 +1,62 @@
+{
+  "channels": [
+    {
+      "id": "<uuid-1>",
+      "transport": "slack",
+      "transport_status": "disabled",
+      "transport_channel_id": "TestCreateMany/duplicate-<uuid-2>",
+      "name": "chan-<uuid-3>",
+      "description": "test channel",
+      "created_at": "<ts-1>",
+      "created_by": null,
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-4>",
+      "transport": "slack",
+      "transport_status": "disabled",
+      "transport_channel_id": "TestCreateMany/duplicate-<uuid-5>",
+      "name": "chan-<uuid-6>",
+      "description": "test channel",
+      "created_at": "<ts-2>",
+      "created_by": null,
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-7>",
+      "transport": "slack",
+      "transport_status": "disabled",
+      "transport_channel_id": "TestCreateMany/ok-<uuid-8>",
+      "name": "chan-<uuid-9>",
+      "description": "test channel",
+      "created_at": "<ts-3>",
+      "created_by": null,
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-10>",
+      "transport": "slack",
+      "transport_status": "disabled",
+      "transport_channel_id": "TestCreateMany/ok-<uuid-11>",
+      "name": "chan-<uuid-12>",
+      "description": "test channel",
+      "created_at": "<ts-4>",
+      "created_by": null,
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-13>",
+      "transport": "slack",
+      "transport_status": "disabled",
+      "transport_channel_id": "TestDelete/ok-<uuid-14>",
+      "name": "chan-<uuid-15>",
+      "description": "test channel",
+      "created_at": "<ts-5>",
+      "created_by": null,
+      "updated_by": null
+    }
+  ],
+  "total": 500,
+  "limit": 5,
+  "offset": 0
+}

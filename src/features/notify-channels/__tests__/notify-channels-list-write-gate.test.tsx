@@ -38,12 +38,18 @@ vi.mock("@/features/_shared/queries/use-me-query", () => ({
 const channelsData = vi.fn<() => NotifyChannel[]>(() => []);
 vi.mock("../queries/use-notify-channels-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../queries/use-notify-channels-query")>()),
-  useNotifyChannelsQuery: () => ({
-    data: channelsData(),
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
+  // Pagination window, not a bare array (RUK-274). `total` tracks the row count
+  // here: this suite is about the create gate, and a `Showing N of M` line would
+  // be noise in it.
+  useNotifyChannelsQuery: () => {
+    const channels = channelsData();
+    return {
+      data: { channels, limit: channels.length, offset: 0, total: channels.length },
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+  },
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 

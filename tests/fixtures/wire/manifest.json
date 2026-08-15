@@ -167,6 +167,15 @@
           ]
         }
       }
+    },
+    "channels": {
+      "url": "http://localhost:9000/maintmode/api/v1/notifications/channels?limit=5",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-08-15T15:59:16.478Z",
+      "why": "RUK-274: the BFF discarded `total`/`limit`/`offset` entirely, so the catalog silently looked like the whole catalog.",
+      "handEdited": false,
+      "totalObserved": "500+ (threshold 200: EXCEEDED)"
     }
   },
   "gateway": "http://localhost:9000"

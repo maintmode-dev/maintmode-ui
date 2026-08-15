@@ -61,7 +61,13 @@ vi.mock("../queries/use-mentionable-users-query", () => ({
   useMentionableUsersQuery: () => ({ data: [], isPending: false, isError: false }),
 }));
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
-  useNotifyChannelsQuery: () => ({ data: [], isPending: false, isError: false }),
+  // Pagination window, not a bare array (RUK-274). This suite is about the zone
+  // seed and wants the channel picker empty either way.
+  useNotifyChannelsQuery: () => ({
+    data: { channels: [], limit: 0, offset: 0, total: 0 },
+    isPending: false,
+    isError: false,
+  }),
 }));
 vi.mock("@/features/resources/queries/use-resources-query", () => ({
   useResourcesQuery: () => ({ data: { resources: [] }, isPending: false }),

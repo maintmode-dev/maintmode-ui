@@ -254,9 +254,19 @@ export interface ChannelDto {
   updated_by?: UserSummaryDto;
 }
 
-/** `apimodels.ChannelsResponse` — `{ channels: Channel[] }`, no pagination window. */
+/**
+ * `apimodels.ChannelsResponse` — a paginated window, same shape as
+ * `ListResourcesResponseDto`.
+ *
+ * `total` is the count the query matched, not the catalog size: under a `name`
+ * filter it is the number of matches (measured — 246 across two disjoint pages),
+ * and `include_archived` widens it.
+ */
 export interface ChannelsResponseDto {
   channels?: ChannelDto[];
+  limit?: number;
+  offset?: number;
+  total?: number;
 }
 
 /** `apimodels.CreateChannelRequest` — all fields free-text; backend enforces requireds. */

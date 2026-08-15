@@ -69,12 +69,26 @@ vi.mock("@/features/_shared/api/data-source", () => ({ DATA_SOURCE: { assignable
 const channelsData = vi.fn<() => NotifyChannel[]>(() => []);
 const channelsPending = vi.fn<() => boolean>(() => false);
 const channelsError = vi.fn<() => boolean>(() => false);
+/**
+ * Records the params it was called with. A zero-argument stub cannot observe
+ * `name` reaching the hook, which is the whole point of the server-side search
+ * (RUK-274) — the picker could stop forwarding the query and this file would
+ * stay green.
+ *
+ * The window is assembled from `channelsData` so existing cases, which set the
+ * rows they care about, need no change.
+ */
+const channelsCalls = vi.fn<(params: unknown) => void>();
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
-  useNotifyChannelsQuery: () => ({
-    data: channelsData(),
-    isPending: channelsPending(),
-    isError: channelsError(),
-  }),
+  useNotifyChannelsQuery: (params: unknown) => {
+    channelsCalls(params);
+    const channels = channelsData();
+    return {
+      data: { channels, limit: channels.length, offset: 0, total: channels.length },
+      isPending: channelsPending(),
+      isError: channelsError(),
+    };
+  },
 }));
 vi.mock("@/features/resources/queries/use-resources-query", () => ({
   useResourcesQuery: () => ({ data: { resources: [] }, isPending: false, isError: false }),
@@ -850,5 +864,178 @@ describe("approver picker announces a failed load to assistive tech (RUK-269)", 
     );
 
     expect(live.textContent).toBe("");
+  });
+});
+
+/**
+ * RUK-274 — the channel picker searches server-side.
+ *
+ * Two things have to survive a query change, and they fail independently: the
+ * chip's NAME (visible, obvious) and its delivery WARNING (invisible until it
+ * matters, and the reason the whole capture exists). A chip that keeps its name
+ * while quietly dropping the warning looks perfectly healthy and is the worse
+ * of the two bugs — the channel still ships in the submit payload.
+ */
+describe("channel picker survives a server-side search (RUK-274)", () => {
+  function ch(id: string, name: string, overrides: Partial<NotifyChannel> = {}): NotifyChannel {
+    return {
+      id,
+      name,
+      transport: "slack",
+      transportStatus: "ok",
+      transportChannelId: `C-${id}`,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "",
+      ...overrides,
+    };
+  }
+
+  function openChannels() {
+    fireEvent.click(screen.getByRole("combobox", { name: "Notify channels" }));
+  }
+
+  function typeSearch(value: string) {
+    fireEvent.change(screen.getByPlaceholderText("Search channels…"), { target: { value } });
+  }
+
+  beforeEach(() => {
+    channelsPending.mockImplementation(() => false);
+    channelsError.mockImplementation(() => false);
+  });
+
+  it("AC-3: hands the typed query to the hook instead of filtering the page", async () => {
+    channelsData.mockImplementation(() => [ch("1", "payments alerts")]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+
+    typeSearch("ops");
+
+    // Debounced at 300ms. The assertion is that the query reaches the hook at
+    // all — under client-side filtering `name` would never leave the component.
+    await waitFor(() =>
+      expect(channelsCalls.mock.calls.some(([params]) => (params as { name?: string })?.name === "ops")).toBe(
+        true,
+      ),
+    );
+  });
+
+  it("AC-5: a picked channel keeps its name after its row leaves the page", async () => {
+    channelsData.mockImplementation(() => [ch("1", "payments alerts")]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+    fireEvent.click(screen.getByText("payments alerts"));
+
+    // The next search returns a disjoint page — the picked row is simply gone.
+    channelsData.mockImplementation(() => [ch("2", "database maintenance")]);
+    typeSearch("database");
+    await waitFor(() => expect(screen.getByText("database maintenance")).toBeTruthy());
+
+    // Without the capture this chip reads "1" — a raw uuid in production.
+    expect(screen.getByRole("button", { name: "Remove payments alerts" })).toBeTruthy();
+  });
+
+  it("AC-5: the undeliverable warning survives too, not just the name", async () => {
+    channelsData.mockImplementation(() => [ch("1", "payments alerts", { transportStatus: "disabled" })]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+    fireEvent.click(screen.getByText("payments alerts"));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+
+    channelsData.mockImplementation(() => [ch("2", "database maintenance")]);
+    typeSearch("database");
+    await waitFor(() => expect(screen.getByText("database maintenance")).toBeTruthy());
+
+    // The half a name-only capture would silently lose: the channel is still in
+    // `channelIds` and still won't deliver.
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByText(/is disabled/)).toBeTruthy();
+  });
+
+  it("AC-9: the selected id set is unchanged by a search that hides its row", async () => {
+    channelsData.mockImplementation(() => [ch("1", "payments alerts")]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+    fireEvent.click(screen.getByText("payments alerts"));
+
+    channelsData.mockImplementation(() => [ch("2", "database maintenance")]);
+    typeSearch("database");
+    await waitFor(() => expect(screen.getByText("database maintenance")).toBeTruthy());
+
+    // One chip, and it is the one that was picked — the capture is a display
+    // fallback, never a second source of ids for the payload.
+    expect(screen.getByRole("button", { name: "Remove payments alerts" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove database maintenance" })).toBeNull();
+  });
+
+  it("lets a repaired integration stop warning, because the live page outranks the capture", async () => {
+    // The direction the fallback must NOT win. An admin fixes the integration
+    // between two searches; the server now says `ok`, and the chip has to stop
+    // warning. If the capture were consulted first, the warning would be frozen
+    // at whatever it was when the operator clicked — and would come back on
+    // every subsequent search, indistinguishable from a real regression.
+    channelsData.mockImplementation(() => [ch("1", "payments alerts", { transportStatus: "disabled" })]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+    fireEvent.click(screen.getByText("payments alerts"));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+
+    // Same channel, same id, integration repaired.
+    channelsData.mockImplementation(() => [ch("1", "payments alerts", { transportStatus: "ok" })]);
+    typeSearch("payments");
+
+    await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+    // Still selected — the warning went away, not the channel.
+    expect(screen.getByRole("button", { name: "Remove payments alerts" })).toBeTruthy();
+  });
+
+  it("keeps every channel picked across separate searches, not just the last one", async () => {
+    // The capture is append-only, and one selection cannot prove it: with a
+    // single channel, "append" and "replace" are indistinguishable. `MAX_CHANNELS`
+    // is 10, so picking from two different result pages is ordinary use — and
+    // under a replacing capture the FIRST channel silently degrades to its raw
+    // uuid and loses its warning while still being submitted.
+    channelsData.mockImplementation(() => [ch("1", "payments alerts")]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+    fireEvent.click(screen.getByText("payments alerts"));
+
+    // Second search, disjoint page, second pick.
+    channelsData.mockImplementation(() => [ch("2", "database maintenance")]);
+    typeSearch("database");
+    await waitFor(() => expect(screen.getByText("database maintenance")).toBeTruthy());
+    fireEvent.click(screen.getByText("database maintenance"));
+
+    // Third search: neither picked row is on the page any more.
+    channelsData.mockImplementation(() => [ch("3", "cache eviction")]);
+    typeSearch("cache");
+    await waitFor(() => expect(screen.getByText("cache eviction")).toBeTruthy());
+
+    expect(screen.getByRole("button", { name: "Remove payments alerts" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove database maintenance" })).toBeTruthy();
+  });
+
+  it("a failed refetch does not strip the warning off an already-picked channel", async () => {
+    channelsData.mockImplementation(() => [ch("1", "payments alerts", { transportStatus: "disabled" })]);
+    renderForm();
+    openChannels();
+    await waitFor(() => expect(screen.getByText("payments alerts")).toBeTruthy());
+    fireEvent.click(screen.getByText("payments alerts"));
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+
+    // An empty page because the request FAILED is not the server saying the
+    // channel is healthy. Reading it as truth would drop every warning at the
+    // exact moment the app lost contact with the backend.
+    channelsData.mockImplementation(() => []);
+    channelsError.mockImplementation(() => true);
+    typeSearch("anything");
+
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    expect(screen.getByText(/is disabled/)).toBeTruthy();
   });
 });

@@ -30,6 +30,15 @@ function mapActor(dto: UserSummaryDto | undefined): NotifyChannelActor | undefin
   };
 }
 
+/** Domain projection of one page of the channel catalog. Mirrors `ResourceList`. */
+export interface NotifyChannelList {
+  channels: NotifyChannel[];
+  /** Echoed pagination window so the UI can read total without re-deriving it. */
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 /** `apimodels.Channel` → domain `NotifyChannel`, defaulting swagger-optional scalars. */
 export function mapNotifyChannel(dto: ChannelDto): NotifyChannel {
   return {
@@ -53,12 +62,29 @@ export function mapNotifyChannel(dto: ChannelDto): NotifyChannel {
 }
 
 /**
- * `GET /api/v1/notifications/channels` → domain list. The envelope is a plain
- * `{ channels }` with no pagination window (unlike resources), so the mapper
- * just projects each item; the backend already sorts newest-first.
+ * `GET /api/v1/notifications/channels` → domain window, mirroring
+ * `mapResourceList`: callers page through `total` rather than assume the
+ * response holds every channel (RUK-274).
+ *
+ * `total` falls back to the row count, NOT to 0 — a response without metadata
+ * means "we were told nothing about the catalog size", and 0 would render as an
+ * empty catalog.
+ *
+ * Ordering is `transport_channel_id` ascending. This corrects an earlier comment
+ * here that claimed the backend sorts newest-first: measured against a seeded
+ * catalog, 149 of 199 adjacent pairs invert against `created_at`, and the
+ * endpoint accepts no sort parameter (`sort`, `order_by`, `sort_by` are all
+ * ignored with a 200). So the catalog is ordered by a field the operator never
+ * sees — recorded in `docs/contract-gaps.md`, not fixed here.
  */
-export function mapNotifyChannelList(dto: ChannelsResponseDto): NotifyChannel[] {
-  return (dto.channels ?? []).map(mapNotifyChannel);
+export function mapNotifyChannelList(dto: ChannelsResponseDto): NotifyChannelList {
+  const channels = (dto.channels ?? []).map(mapNotifyChannel);
+  return {
+    channels,
+    limit: dto.limit ?? channels.length,
+    offset: dto.offset ?? 0,
+    total: dto.total ?? channels.length,
+  };
 }
 
 /** One transport option from the catalog, in domain (camelCase) shape. */

@@ -96,13 +96,46 @@ describe("mapNotifyChannelList", () => {
       ],
     };
     const result = mapNotifyChannelList(dto);
-    expect(result).toHaveLength(2);
-    expect(result[0].transport).toBe("slack");
-    expect(result[1].name).toBe("b");
+    expect(result.channels).toHaveLength(2);
+    expect(result.channels[0].transport).toBe("slack");
+    expect(result.channels[1].name).toBe("b");
+  });
+
+  it("carries the pagination window through verbatim", () => {
+    const result = mapNotifyChannelList({
+      channels: [{ id: "c-1", name: "a", transport: "slack" }],
+      limit: 50,
+      offset: 100,
+      total: 1338,
+    });
+    expect(result.limit).toBe(50);
+    expect(result.offset).toBe(100);
+    // The point of the whole window: `total` is the catalog, not the page.
+    expect(result.total).toBe(1338);
+  });
+
+  it("falls back to the row count when the backend sends no window", () => {
+    // NOT 0. A response without metadata means "nothing was said about the
+    // catalog size"; defaulting `total` to 0 would render a populated page as an
+    // empty catalog, and the caller would hide rows it is holding.
+    const result = mapNotifyChannelList({
+      channels: [
+        { id: "c-1", name: "a", transport: "slack" },
+        { id: "c-2", name: "b", transport: "telegram" },
+      ],
+    });
+    expect(result.total).toBe(2);
+    expect(result.limit).toBe(2);
+    expect(result.offset).toBe(0);
   });
 
   it("handles an empty/absent channels array", () => {
-    expect(mapNotifyChannelList({})).toEqual([]);
+    expect(mapNotifyChannelList({})).toEqual({
+      channels: [],
+      limit: 0,
+      offset: 0,
+      total: 0,
+    });
   });
 });
 

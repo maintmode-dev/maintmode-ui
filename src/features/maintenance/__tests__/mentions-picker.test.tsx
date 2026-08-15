@@ -72,7 +72,12 @@ vi.mock("../queries/use-mentionable-users-query", () => ({
   }),
 }));
 vi.mock("@/features/notify-channels/queries/use-notify-channels-query", () => ({
-  useNotifyChannelsQuery: () => ({ data: [], isPending: false }),
+  // The hook answers a pagination window, not a bare array (RUK-274). This
+  // suite is about mentions and wants the channel picker empty either way.
+  useNotifyChannelsQuery: () => ({
+    data: { channels: [], limit: 0, offset: 0, total: 0 },
+    isPending: false,
+  }),
 }));
 vi.mock("@/features/resources/queries/use-resources-query", () => ({
   useResourcesQuery: () => ({ data: { resources: [] }, isPending: false }),
@@ -503,5 +508,37 @@ describe("approver picker's live region respects pending precedence (RUK-269)", 
         "Couldn't load people. Retry or check your access.",
       ),
     );
+  });
+});
+
+/**
+ * RUK-274 — a selected channel with no record anywhere.
+ *
+ * This file is the natural home for the case because it renders EDIT mode over
+ * a draft: `channelIds` hydrates from `detail.notify_targets`, while the channel
+ * hook here answers an empty window. So `c-1` is selected, absent from the
+ * loaded page, and was never picked in this session — the one state where the
+ * picker has an id and nothing else.
+ *
+ * With a server-side search that state is reachable in production: on edit, a
+ * channel attached earlier need not appear in the first page of twenty.
+ */
+describe("channel chips claim nothing they cannot know (RUK-274)", () => {
+  it("renders no delivery warning for a selected channel with no record", async () => {
+    render(<MaintenanceEditMode detail={draft([])} onClose={() => undefined} />);
+    await waitFor(() => expect(screen.getByLabelText(/^Title/)).toBeTruthy());
+
+    // `NotifyChannel.transportStatus` is required and has no "unknown" value:
+    // blank normalises to `not_configured`, which RENDERS A WARNING. Filling the
+    // field in — the obvious shortcut — invents a delivery failure for a channel
+    // that may be perfectly healthy, and the operator has no way to tell.
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText(/will not be delivered/i)).toBeNull();
+    expect(screen.queryByText(/No transport integration is configured/i)).toBeNull();
+
+    // The chip itself still renders — the channel is selected and must not
+    // vanish just because its record is unavailable. It shows the id, which is
+    // the honest last resort.
+    expect(screen.getByRole("button", { name: "Remove c-1" })).toBeTruthy();
   });
 });

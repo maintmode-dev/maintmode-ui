@@ -95,6 +95,18 @@ const ENDPOINTS = [
     why: "Load-bearing read path behind the approvals queue.",
   },
   {
+    name: "channels",
+    base: API_BASE,
+    // `limit` is deliberately far below the catalog size. The point of this
+    // fixture is a recorded `total` that EXCEEDS its own row count, so the
+    // contract test can prove the whole window survives the BFF rather than
+    // just the rows. Five rows keep the file readable; `total > channels.length`
+    // then holds on any seeded database, and the assertion never has to name a
+    // number that the next reseed would invalidate.
+    path: "/api/v1/notifications/channels?limit=5",
+    why: "RUK-274: the BFF discarded `total`/`limit`/`offset` entirely, so the catalog silently looked like the whole catalog.",
+  },
+  {
     name: "me",
     base: AUTH_BASE,
     path: "/api/v1/me",
@@ -615,7 +627,11 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   const manifest = loadManifest();
   const token = await login();
-  const ctx = await resolveContext(token);
+  // Only resolved when something in THIS run needs it. It reads the calendar and
+  // throws when the window holds no maintenances — which used to fail a capture
+  // of, say, `channels` alone for a reason that had nothing to do with it.
+  const needsContext = selected.some((e) => typeof e.path === "function");
+  const ctx = needsContext ? await resolveContext(token) : {};
   const capturedAt = new Date().toISOString();
 
   for (const endpoint of selected) {

@@ -33,6 +33,7 @@ import { MAX_REMINDERS, offsetLabel, toFireAt, toOffsetFromFireAt } from "@/doma
 import { MaintenanceRemindersField } from "./maintenance-reminders-field";
 import { useAssignableUsersQuery } from "./queries/use-assignable-users-query";
 import { useMentionableUsersQuery } from "./queries/use-mentionable-users-query";
+import type { NotifyChannel } from "@/domain/notify-channel/notify-channel";
 import { useNotifyChannelsQuery } from "@/features/notify-channels/queries/use-notify-channels-query";
 import { transportDisplayTitle, transportStatusCopy } from "@/features/notify-channels/transports";
 import { useResourcesQuery } from "@/features/resources/queries/use-resources-query";
@@ -47,6 +48,20 @@ import {
 
 /** Backend cap on notify targets. */
 const MAX_CHANNELS = 10;
+
+/**
+ * A selected channel as the chips and the inline warning need it.
+ *
+ * Not a `NotifyChannel`, and that is forced rather than stylistic: a channel the
+ * current page no longer carries has no known delivery health, and
+ * `NotifyChannel.transportStatus` is required with no value meaning "unknown" —
+ * `normalizeTransportStatus` turns blank into `not_configured`, and
+ * `transportStatusCopy` renders every value except `ok` as a warning. So any
+ * status we could invent would either fake a clean bill of health or warn about
+ * a channel that may be fine. Absent is the only honest third state.
+ */
+type SelectedChannel = Pick<NotifyChannel, "id" | "name" | "transport"> &
+  Partial<Pick<NotifyChannel, "transportStatus">>;
 
 export interface MaintenanceEditModeProps {
   /** Existing maintenance to edit. Omit (with `creating`) for the create flow. */
@@ -215,7 +230,20 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // The approver query must be narrowed by the SERVER, which means its own
   // request under its own key.
   const mentionable = useMentionableUsersQuery(debouncedMentionSearch || undefined);
-  const channelsQuery = useNotifyChannelsQuery();
+  // Server-side search (RUK-274). The catalog reached 3617 rows against a picker
+  // that filtered client-side, so every keystroke re-scored the whole list and
+  // ~1.4 MB crossed the wire on every form open.
+  //
+  // NOT gated on a non-empty query, unlike resources: an operator picking a
+  // notify channel browses rather than knowing the name in advance — the same
+  // argument the approver picker above makes — and a 20-row page is cheap.
+  // `|| undefined` so an empty box lands on the same cache key as mount.
+  const [channelSearch, setChannelSearch] = useState("");
+  const debouncedChannelSearch = useDebouncedValue(channelSearch.trim(), 300);
+  const channelsQuery = useNotifyChannelsQuery({
+    name: debouncedChannelSearch || undefined,
+    limit: 20,
+  });
   // Server-side search, debounced (RUK-266). A single `limit: 200` page used to
   // BE the searchable universe: cmdk filtered those rows client-side, so with
   // 5781 resources on the wire, 5581 of them could not be found by typing at
@@ -278,7 +306,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // would otherwise re-allocate the whole list.
   const channelOptions = useMemo<MultiSelectOption[]>(
     () =>
-      (channelsQuery.data ?? []).map((c) => {
+      (channelsQuery.data?.channels ?? []).map((c) => {
         const statusCopy = transportStatusCopy(c.transportStatus);
         const idLine = c.transportChannelId ? `${c.transport} · ${c.transportChannelId}` : c.transport;
         return {
@@ -359,23 +387,69 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     const fromDetail = detail?.resources.find((r) => r.id === id);
     return { id, name: pickedNames.get(id) ?? fromCatalog?.name ?? fromDetail?.name ?? id };
   });
-  const selectedChannels = useMemo(
-    () => (channelsQuery.data ?? []).filter((c) => channelIds.includes(c.id)),
-    [channelsQuery.data, channelIds],
-  );
+  // Every channel this picker has shown, accumulated as they were PICKED.
+  //
+  // Required once the search is server-side (RUK-274): `channelsQuery.data`
+  // holds only the current query's page, so typing a new prefix drops a
+  // previously-picked channel out of it. Without this the chip falls through to
+  // its raw id and — worse — the undeliverable warning below silently stops
+  // firing for a channel that is still in `channelIds` and still goes to the
+  // backend.
+  //
+  // The whole record, not just the name (contrast `pickedNames` for resources):
+  // `transportStatusCopy` needs `transportStatus`, and a name cannot produce it.
+  //
+  // Append-only, captured at selection time — the one moment the channel is
+  // guaranteed to be on screen. Same shape and same reasoning as
+  // `pickedMentions` below.
+  const [pickedChannels, setPickedChannels] = useState<NotifyChannel[]>([]);
+
+  const selectedChannels = useMemo<SelectedChannel[]>(() => {
+    const page = channelsQuery.data?.channels ?? [];
+    return channelIds.map((id) => {
+      // Current page first so a freshly-loaded row wins: its `transportStatus`
+      // is the newest the server said, so a repaired integration stops warning.
+      // The capture is never rewritten — it is simply shadowed while the row is
+      // on the page, which is what keeps this free of an effect.
+      //
+      // A miss here is a MISS, not an answer: while the query is pending or
+      // failed the page is empty, and falling through to the capture is exactly
+      // right. Treating "page has no rows" as truth would strip every warning at
+      // the moment a refetch fails.
+      const fromPage = page.find((c) => c.id === id);
+      if (fromPage) return fromPage;
+
+      const captured = pickedChannels.find((c) => c.id === id);
+      if (captured) return captured;
+
+      // Neither source knows it. Render the id and claim NOTHING about
+      // delivery: `transportStatus` is deliberately absent rather than "ok"
+      // (which would assert a health check nobody ran) or "not_configured"
+      // (which would warn about a channel that may be perfectly healthy).
+      // Mirrors `hasTag: undefined` in `mergeMentionChips`.
+      return { id, name: id, transport: "" };
+    });
+  }, [channelsQuery.data, channelIds, pickedChannels]);
+
   // Selected channels whose integration won't deliver — surfaced inline so the
   // operator sees the risk after the picker closes, not only inside it. Weak
   // binding: this warns, it doesn't block save.
+  //
+  // Chips with no status are SKIPPED, not treated as healthy: "we never learned"
+  // is neither a warning nor a clean bill of health.
   const undeliverableChannels = useMemo(
-    () => selectedChannels.filter((c) => transportStatusCopy(c.transportStatus) != null),
+    () => selectedChannels.filter((c) => c.transportStatus && transportStatusCopy(c.transportStatus) != null),
     [selectedChannels],
   );
-  // MERGE, not `filter` over the options (the channel chips above do filter, and
-  // copying that here would be a bug): a selected person can legitimately be
+  // MERGE, not `filter` over the options: a selected person can legitimately be
   // absent from the options — blocked after the draft was saved, or beyond the
   // picker's limit. `filter` would hide them while they stay in `mentionIds`, and
   // the operator would then save or clear a list they were never shown. See
   // `mergeMentionChips`.
+  //
+  // The channel chips above used to be the counter-example here — they filtered.
+  // They no longer do (RUK-274): once their search went server-side, filtering
+  // the page would have dropped a selected channel the moment the query changed.
   // Everyone this picker has shown so far, accumulated across searches.
   //
   // Needed once the search is server-side (RUK-266): `mentionable.data` holds
@@ -703,7 +777,21 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
           <MultiSelect
             options={channelOptions}
             value={channelIds}
-            onChange={setChannelIds}
+            onChange={(next) => {
+              // Capture the newly-picked channels before the search can move on
+              // and take their rows off the page. Append-only: `pickedChannels`
+              // is a display fallback, never the source of the submit payload,
+              // which stays `channelIds`.
+              setPickedChannels((prev) => {
+                const known = new Set(prev.map((c) => c.id));
+                const added = (channelsQuery.data?.channels ?? []).filter(
+                  (c) => next.includes(c.id) && !known.has(c.id),
+                );
+                return added.length ? [...prev, ...added] : prev;
+              });
+              setChannelIds(next);
+            }}
+            onSearchChange={setChannelSearch}
             placeholder="Select channels…"
             searchPlaceholder="Search channels…"
             // Three states, three strings — the last of the three pickers to get
@@ -742,7 +830,10 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
                   key={c.id}
                   className="inline-flex items-center gap-1.5 rounded-sm border border-border-subtle bg-bg-elev-3 px-2 py-[3px] text-xs text-fg"
                 >
-                  <span className="text-fg-muted">{c.transport}</span>
+                  {/* Omitted rather than rendered empty for a channel neither
+                      the page nor the capture knows: an empty span still costs
+                      the flex gap, leaving a chip that looks mis-padded. */}
+                  {c.transport ? <span className="text-fg-muted">{c.transport}</span> : null}
                   <span className="font-medium">{c.name}</span>
                   <button
                     type="button"
@@ -761,7 +852,10 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
               <TriangleAlert aria-hidden={true} />
               <AlertDescription className="gap-1.5 text-xs">
                 {undeliverableChannels.map((c) => {
-                  const copy = transportStatusCopy(c.transportStatus);
+                  // `undeliverableChannels` already dropped the status-less
+                  // chips; this keeps the narrowing visible to the type checker
+                  // rather than asserting it.
+                  const copy = c.transportStatus ? transportStatusCopy(c.transportStatus) : null;
                   if (!copy) return null;
                   return (
                     <span key={c.id}>
