@@ -30,7 +30,7 @@ smoke-run/
 # Keep the numbers in docs/perf/, not the raw dump.
 Trace-*.json.gz
 
-SPEC.md
+SPEC*.md
 
 .agents/tasks/
 

@@ -6,9 +6,8 @@ import type { ComponentProps } from "react";
  * lucide-react does not ship a `Slack` icon, and the transport pill must show
  * the brand mark rather than a generic `#` hash (see channel-detail /
  * channels-list snapshots → "Transport pill" → `slack` = Slack four-bar glyph).
- * The path data is lifted verbatim from the design snapshot's
- * `design-snapshots/channel-detail/project/icons.jsx` so the implementation and
- * mockup share one source of truth.
+ * The path data is lifted verbatim from the channel-detail design snapshot,
+ * so the implementation and the mockup share one source of truth.
  *
  * Drawn on the lucide 24×24 / `stroke-width:2` grid and styled like a lucide
  * icon (`fill: none; stroke: currentColor`) so it sits flush with the Send /

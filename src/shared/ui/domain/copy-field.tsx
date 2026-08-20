@@ -15,8 +15,8 @@ export interface CopyFieldProps {
 
 /**
  * Mono value + inline copy button, used in catalog detail meta rows for the
- * record id and the transport/external identifier. Source: design-snapshots
- * detail READMEs → meta row entries marked "(mono + copy)".
+ * record id and the transport/external identifier. Source: the catalog
+ * detail snapshots → meta row entries marked "(mono + copy)".
  */
 export function CopyField({ value, label, className }: CopyFieldProps) {
   const [copied, setCopied] = useState(false);

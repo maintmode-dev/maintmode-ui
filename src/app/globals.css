@@ -7,7 +7,7 @@
 
 /* ============================================================================
    MaintMode — Colors & Type
-   Source of truth: maintmode-docs/design-snapshots/calendar/project/tokens.css
+   Source of truth for these tokens is the frozen calendar design snapshot.
 
    Dark-first, data-dense. Color carries semantics (status / impact / conflict /
    destructive). Everything else is monochrome. Light mode is supported but

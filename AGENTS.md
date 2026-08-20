@@ -54,7 +54,7 @@
 ## Contract Policy (FE↔BE)
 
 Five drift incidents reached production because nothing executed the BFF proxy
-in a test. See `SPEC-RUK-254.md` and `docs/contract-gaps.md`.
+in a test. See `docs/contract-gaps.md`.
 
 - **A new BFF route ships with a contract test.** Any route added under
   `src/app/api/` gets `tests/contracts/<name>.contract.test.ts`, answering four
@@ -82,14 +82,13 @@ in a test. See `SPEC-RUK-254.md` and `docs/contract-gaps.md`.
 
 ## Prototype Policy
 
-- `maintmode-docs/design-snapshots/<screen>/` is the source of truth for visuals and frozen decisions per screen.
-- Snapshots are reference HTML/JSX prototypes. Read them; do not copy wholesale into the app.
-- When porting a snapshot, re-express its intent using shadcn primitives + `src/shared/ui/domain/**` components and our tokens.
-- Frozen decisions in `maintmode-docs/design-plan.md` and per-snapshot `README.md` are not up for renegotiation without an explicit design ticket.
+- Each screen has a frozen design snapshot — a reference HTML/JSX prototype — that is the source of truth for its visuals and frozen decisions. The snapshots are a separate design artifact and are not part of this repository.
+- Where a component's doc comment cites its snapshot, that decision is frozen: re-express its intent using shadcn primitives + `src/shared/ui/domain/**` components and our tokens, and do not change the visual outcome on taste alone.
+- Frozen decisions are not up for renegotiation without an explicit design ticket.
 
 ## Styling
 
-- All colors / radii / typography flow from CSS variables defined in `src/app/globals.css`. The canonical source is `maintmode-docs/design-snapshots/calendar/project/tokens.css`.
+- All colors / radii / typography flow from CSS variables defined in `src/app/globals.css`, which is the in-repo copy of the frozen design-snapshot token set. Add tokens there; do not hardcode values at call sites.
 - Tailwind utilities consume these via the `@theme inline` block (e.g. `bg-bg-elev-2`, `text-fg-muted`, `border-border-strong`, `text-[var(--conflict-fg)]`).
 - shadcn primitives consume the bridge variables (`--background`, `--primary`, `--popover`, …) mapped onto our tokens at the bottom of `globals.css`. Do not rebind those bridge variables elsewhere.
 - Brand indigo is `bg-brand` (Tailwind) / `var(--accent)` (CSS); shadcn's `bg-accent` Tailwind class is rebased to a low-contrast hover surface so generated components keep their intended look.

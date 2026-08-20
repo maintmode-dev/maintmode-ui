@@ -7,7 +7,7 @@ import type { ComponentProps } from "react";
  * mockups share one source of truth. Provider marks keep their vendor colours —
  * no per-theme recolouring.
  *
- * Source: maintmode-docs/design-snapshots/{login,user-settings}/project/icons.jsx
+ * Source: the login + user-settings design snapshots.
  */
 
 export type BrandProvider = "google" | "github" | "microsoft" | "okta";
@@ -105,7 +105,7 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
 /**
  * Notification-transport brand marks for the integrations registry (screen 19).
  * Slack/Telegram keep their vendor colours; email is a neutral mail glyph.
- * Source: maintmode-docs/design-snapshots/integrations-settings/project/icons.jsx
+ * Source: the integrations-settings design snapshot.
  */
 export type IntegrationBrand = "slack" | "telegram" | "email";
 

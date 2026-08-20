@@ -2,8 +2,8 @@
  * Per-kind UI metadata for the integrations registry — labels, config-field
  * descriptors, and secret descriptors. Data, not branching: the sheet renders
  * whatever the active kind declares. Mirrors the backend kind registry
- * (`internal/services/integration/kinds/`) and the frozen decisions in
- * `maintmode-docs/design-snapshots/integrations-settings/README.md`.
+ * (`internal/services/integration/kinds/`) and the frozen decisions of the
+ * integrations-settings design snapshot.
  */
 
 import type { IntegrationKind } from "@/domain/admin/integration";

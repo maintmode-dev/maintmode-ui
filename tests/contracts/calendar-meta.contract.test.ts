@@ -116,7 +116,8 @@ describe("GET /api/calendar meta pass-through (wave 2 W1)", () => {
 
   it("drops a `count` that is not a finite number, keeping the truncation signal", async () => {
     // `count` is rendered into the notice's copy, so a non-number would print
-    // "первые null работ". Truncation is still reported — only the quantity goes.
+    // "the first null maintenances". Truncation is still reported — only the
+    // quantity goes.
     backendRequest.mockResolvedValue({
       events: [],
       meta: { truncated: true, count: null as unknown as number },

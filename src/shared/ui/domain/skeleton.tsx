@@ -18,7 +18,7 @@ const TYPE_STYLES: Record<SkelType, string> = {
 
 /**
  * Opacity-shimmer skeleton, 0.55 ↔ 0.85 at 1.6s ease-in-out (per snapshot).
- * Source: maintmode-docs/design-snapshots/empty-states/project/states.css → `.es-skel`.
+ * Source: the empty-states design snapshot → `.es-skel`.
  * Distinct from the shadcn `<Skeleton>` (which uses pulse/animate-pulse).
  */
 export function Skeleton({ type = "bar", width, height, className }: SkeletonProps) {

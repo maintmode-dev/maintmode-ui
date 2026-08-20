@@ -10,7 +10,7 @@ export interface ChipProps extends HTMLAttributes<HTMLSpanElement> {
 
 /**
  * Generic chip — filter chip, tag chip, etc.
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/styles.css → `.mm-chip`.
+ * Source: the maintenance-details-page design snapshot → `.mm-chip`.
  */
 export function Chip({ leadingIcon, trailing, selected, className, children, ...rest }: ChipProps) {
   return (

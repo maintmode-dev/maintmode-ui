@@ -1,241 +1,260 @@
-# Реестр расхождений FE↔BE
+# FE↔BE contract gap registry
 
-RUK-254, [SPEC-RUK-254.md §4.4](../SPEC-RUK-254.md). Одна строка — одно расхождение
-между тем, что читает фронт, и тем, что реально приходит с провода.
+RUK-254. One row — one discrepancy between what the frontend reads and what
+actually arrives on the wire.
 
-**Реестр исполняем, а не декоративен.** Каждую строку сверяет
-[`tests/contracts/contract-gaps.test.ts`](../tests/contracts/contract-gaps.test.ts) с
-записанными фикстурами из `tests/fixtures/wire/`. Поле появилось у бэкенда → тест
-падает с «расхождение устарело». Так реестр не превращается в кладбище — ровно та
-ошибка, из-за которой триггер `total > 200` сработал ×53 незамеченным
-([SPEC.md §1.7](../SPEC.md)).
+**The registry is executable, not decorative.** Every row is checked by
+[`tests/contracts/contract-gaps.test.ts`](../tests/contracts/contract-gaps.test.ts)
+against the recorded fixtures in `tests/fixtures/wire/`. The backend starts
+sending a field → the test fails with "gap is stale". That is what keeps the
+registry from turning into a graveyard — exactly the failure that let the
+`total > 200` trigger fire 53 times unnoticed.
 
-**Источник правды — фикстура, не тикет.** Каждая строка ниже проверена командой по
-байтам записанного ответа. Утверждения тикета, не прошедшие эту проверку, вынесены
-в отдельный раздел, а не удалены молча: неверная запись в реестре опаснее её
-отсутствия, потому что на неё ссылаются.
+**The fixture is the source of truth, not the ticket.** Every row below was
+verified byte-wise against the recorded response. Ticket claims that did not
+survive that check are moved to a separate section rather than deleted quietly:
+a wrong entry in the registry is more dangerous than a missing one, because
+people cite it.
 
-**Границы (SPEC §5).** Здесь ничего не чинится. Расхождение фиксируется, тикет
-заводится/обновляется владельцем. Строка удаляется только вместе с включением фичи.
-
----
-
-## Класс B — фронт читает поле, бэкенд его не шлёт
-
-| Поле        | Где нужно                                 | Что на проводе                         | Тикет   | Заглушка                    |
-| ----------- | ----------------------------------------- | -------------------------------------- | ------- | --------------------------- |
-| `resources` | календарь: ничего (поле больше не читают) | нет ключа в событии `CalendarEventDto` | RUK-256 | `maintenance-mapper.ts:236` |
-
-**Расхождение закрыто, но не тем способом, который здесь был записан.** Прежняя
-редакция предписывала «заполнить поле в маппере», когда бэкенд начнёт его слать.
-Бэкенд по RUK-256 ответил, что слать не начнёт: `GET /ui/v1/calendar` принимает
-`resource_ids` как ФИЛЬТР и возвращает уже суженную выдачу, а ресурсные данные в
-ответе не нужны. Фильтр уехал на сервер, `matchesFilters` проверяет только
-`scope`, `resourceOptions` удалена.
-
-**Строка остаётся здесь, потому что заглушка в маппере жива.** `resources: []`
-всё ещё пишется на каждое событие, и реестр обязан её называть — иначе грепалка
-в [`contract-gaps.test.ts`](../tests/contracts/contract-gaps.test.ts) увидит
-незарегистрированную заглушку. Читателей у поля при этом нет: доккомментарий в
-[`maintenance.ts`](../src/domain/maintenance/maintenance.ts) помечает его как
-dormant и запрещает строить на нём новое.
-
-**Что осталось сделать** (не срочно, ничего не ломает): убрать поле с
-`CalendarEvent`, убрать `resources: []` из `mapCalendarResponse` и из
-`MOCK_CALENDAR_EVENTS`, поправить четыре ассерта в
-`calendar-payload.contract.test.ts`, перенести эту строку в Класс C и ослабить
-предусловие `expect(stubbed.length).toBeGreaterThan(0)` — после удаления это
-единственная заглушка календарного маппера, так что она уронит собственную
-проверку. Пошаговый разбор был в `SPEC.md` §8.0 на ветке `feature/ruk-256`.
-
-**Почему `resources` — не «законно пусто».** Деталь (`/ui/v1/maintenances/{id}`)
-отдаёт `resources` заполненным — в записанной фикстуре их два. Календарь ключа не
-шлёт вообще. Это разница КОНТРАКТОВ двух эндпоинтов, а не отсутствие данных, и
-именно поэтому тип-уровневая сверка её не ловит (SPEC §4.2). Эта асимметрия и
-была причиной дефекта: сайдбар фильтровал по полю, которого на проводе нет, а
-юнит-тесты оставались зелёными, потому что гонялись на рукописных фикстурах с
-непустыми `resources`.
+**Boundaries (SPEC §5).** Nothing is fixed here. A discrepancy is recorded, and
+the owner files or updates the ticket. A row is deleted only together with the
+feature being turned on.
 
 ---
 
-### `updated_at` у каналов — объявлен фронтом, не приходит ни разу
+## Class B — the frontend reads a field, the backend does not send it
 
-| Поле         | Где нужно                                | Что на проводе                         | Тикет   | Заглушка                      |
-| ------------ | ---------------------------------------- | -------------------------------------- | ------- | ----------------------------- |
-| `updated_at` | `NotifyChannel.updatedAt`, деталь канала | ключа нет **ни в одной** строке из 200 | RUK-274 | `notify-channel-mapper.ts:49` |
+| Field       | Where it is needed                        | What is on the wire                       | Ticket  | Stub                        |
+| ----------- | ----------------------------------------- | ----------------------------------------- | ------- | --------------------------- |
+| `resources` | calendar: nothing (the field is no longer read) | no such key in the `CalendarEventDto` event | RUK-256 | `maintenance-mapper.ts:236` |
 
-DTO обещает «Null until the channel is first edited», то есть ключ с `null`.
-Проверено на 200 элементах живой выдачи: ключа нет вообще. Маппер подставляет
-`""`, поэтому доменное `updatedAt` пустое всегда — не только у неотредактированных
-каналов.
+**The gap is closed, but not in the way this row originally prescribed.** The
+earlier revision called for "filling the field in the mapper" once the backend
+started sending it. Under RUK-256 the backend answered that it will not start:
+`GET /ui/v1/calendar` takes `resource_ids` as a FILTER and returns an
+already-narrowed result, so resource data is not needed in the response. The
+filter moved to the server, `matchesFilters` now checks `scope` only, and
+`resourceOptions` was deleted.
 
-**Строка прозаическая, не исполняемая, и это надо знать.** `contract-gaps.test.ts`
-пришпилен к `maintenance-mapper.ts` (`MAPPER_PATH`) и сканирует только
-`mapCalendarResponse`, поэтому ни одна проверка её не покрывает. Расширять скан —
-рост объёма за пределы RUK-274; сказано прямо, чтобы строка не выглядела
-защищённой механизмом, которого у неё нет.
+**The row stays here because the stub in the mapper is still alive.**
+`resources: []` is still written onto every event, and the registry is obliged
+to name it — otherwise the grep in
+[`contract-gaps.test.ts`](../tests/contracts/contract-gaps.test.ts) would see an
+unregistered stub. The field has no readers, though: the doc comment in
+[`maintenance.ts`](../src/domain/maintenance/maintenance.ts) marks it as dormant
+and forbids building anything new on it.
 
----
+**What is left to do** (not urgent, breaks nothing): drop the field from
+`CalendarEvent`, drop `resources: []` from `mapCalendarResponse` and from
+`MOCK_CALENDAR_EVENTS`, fix four assertions in
+`calendar-payload.contract.test.ts`, move this row to Class C, and relax the
+`expect(stubbed.length).toBeGreaterThan(0)` precondition — after the removal it
+is the calendar mapper's only stub, so it would bring down its own check. A
+step-by-step breakdown was in `SPEC.md` §8.0 on the `feature/ruk-256` branch.
 
-## Класс C — фронт больше не запрашивает поле
-
-Расхождение не закрыто, а стало **недостижимым**: фронт перестал читать поле, и
-пропадать больше нечему. Строки не удалены — они объясняют, почему поля исчезли
-из кода, и что должно произойти, чтобы они вернулись.
-
-| Поле             | Где было нужно                                | Что случилось                                                                     | Тикет   |
-| ---------------- | --------------------------------------------- | --------------------------------------------------------------------------------- | ------- |
-| `notify_targets` | календарь: показ каналов оповещения           | удалено из календарного типа: экран так и не появился, а маппер синтезировал `[]` | RUK-258 |
-| `steps`          | календарь: превью шагов без перехода в деталь | то же — заглушка стоила байтов в каждом событии и не давала ничего                | RUK-258 |
-
-**Как вернуть.** Оба поля есть на детальном эндпоинте и заполнены в
-`mapMaintenanceView`. Если продукт решит показывать их прямо на сетке, порядок
-такой: сначала бэкенд добавляет поле в `CalendarEventDto`, затем оно объявляется
-на `CalendarEvent` — и только тогда появляется в маппере. Обратный порядок
-(объявить на типе «про запас») — это ровно тот дефект, который RUK-258 убрал.
-
----
-
-## Класс B′ — бэкенд шлёт, фронт не читает
-
-Обратное направление. Не ломает экран, но означает, что данные, которые бэкенд уже
-посчитал, до оператора не доезжают.
-
-| Поле                     | Что на проводе                                                                                       | Где теряется                                                                                                                                                                   | Тикет |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
-| ~~`facets.integration`~~ | **ЗАКРЫТО** — поле объявлено в `AuditFacetsDto` и доменном `AuditFacets`, счётчик доезжает до домена | —                                                                                                                                                                              | —     |
-| `prune-*` (action)       | бэкенд шлёт служебные действия `prune-expired`/`prune-none`                                          | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) отдаёт `undefined` для неизвестного действия, и роут **выбрасывает строку целиком** | —     |
-
-**`prune-*` — самая серьёзная запись в этом файле.** Остальные расхождения означают
-«поле не доехало»; это означает **«строки не доехало»**. На снимке из 12 записей до клиента
-доходят 10: журнал безопасности молча показывает меньше, чем произошло. Обнаружено
-ассертом `does not silently drop recorded rows the domain enum has not heard of`
-([`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts)) — тем самым,
-чей комментарий заранее описывал ровно этот сценарий как «drift arriving».
-
-Чинится добавлением действий в доменный enum, но решение — за владельцем: возможно, служебные
-`prune-*` в UI и не нужны, и тогда правильный фикс — **явно** их отфильтровать, а не терять
-из-за пробела в whitelist. Сейчас ассерт пропускает только `prune-*`; любое **новое**
-неизвестное действие уронит тест и назовёт себя.
-
-**`facets.integration` — закрыто, и это первый гап, который механизм закрыл целиком.**
-Бэкенд шлёт шесть счётчиков (`all/auth/roles/block/maintenance/integration`), DTO объявлял
-пять — шестой отбрасывался в `mapAuditFacets`. Обнаружено **сверкой фикстуры с DTO**, а не
-глазами: значение на dev-сиде равно `0`, поэтому видимого симптома не существовало в принципе.
-Поле объявлено, ассерт в `contract-gaps.test.ts` **инвертирован** — теперь падает, если поле
-снова уберут.
-
-**Что осталось незакрытым осознанно:** видимой вкладки «Integration» нет. Счётчик доезжает до
-домена, но `AuditCategory` (`audit-presentation.ts:49`) её не знает, а `CATEGORY_ACTIONS` нужны
-действия интеграций, которых в `AUDIT_ACTIONS` пока нет. Это продуктовое решение, а не правка
-маппинга — записано, а не сделано молча. Ассерт «counter only» инвертируется, когда вкладка
-поедет.
+**Why `resources` is not "legitimately empty".** The detail endpoint
+(`/ui/v1/maintenances/{id}`) returns `resources` populated — two of them in the
+recorded fixture. The calendar does not send the key at all. This is a
+difference between the CONTRACTS of two endpoints, not missing data, and that is
+precisely why a type-level reconciliation does not catch it (SPEC §4.2). That
+asymmetry was the cause of the defect: the sidebar filtered on a field that is
+not on the wire, while the unit tests stayed green because they ran on
+hand-written fixtures with non-empty `resources`.
 
 ---
 
-## Непроверенные снимки — фикстура не доказывает форму строки
+### `updated_at` on channels — declared by the frontend, never arrives
 
-Не расхождение, а **дыра в доказательстве**. Фикстура снята, эндпоинт «покрыт», но
-записанный ответ пуст и не пиннит ни одного поля строки. Считать это покрытием —
-та же ошибка класса B, только со стороны тестов.
+| Field        | Where it is needed                        | What is on the wire                     | Ticket  | Stub                          |
+| ------------ | ----------------------------------------- | --------------------------------------- | ------- | ----------------------------- |
+| `updated_at` | `NotifyChannel.updatedAt`, channel detail | the key is absent from **all** 200 rows | RUK-274 | `notify-channel-mapper.ts:49` |
 
-| Эндпоинт            | Что записано                                               | Чего не хватает                                                                                                                                       |
-| ------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/ui/v1/approvals`  | `{maintenances: [], total: 0}`                             | ни одной строки очереди → форма `ApprovalRowDto` не проверена                                                                                         |
-| `/api/v1/audit/log` | 12 новейших строк, состав окна меняется от съёмки к съёмке | ни `entity_type: "maintenance"` (→ `metadata.maint_title` не проверен), ни строк с `actor_display_name` — какие действия попадут в окно, решает время |
+The DTO promises "Null until the channel is first edited", i.e. a key holding
+`null`. Verified on 200 items of live output: the key is not there at all. The
+mapper substitutes `""`, so the domain-level `updatedAt` is always empty — not
+just for channels that were never edited.
 
-**Почему аудит-снимок нельзя закрыть пересъёмкой** (проверено, попытка сделана и
-откачена). Одна съёмка принесла 12 строк `maintenance`, ассерт переписали на
-требование — и следующая съёмка их потеряла. Причина двойная: лог **упорядочен по
-времени**, `limit=20` отдаёт новейшие, и **съёмка загрязняет собственный предмет** —
-каждый `fixtures:refresh` делает dev-bypass-логин, который пишет `login.success` и
-выталкивает старые строки со страницы. Требовать форму, которая появляется через раз,
-значит завести тест, падающий во вторник без чьей-либо ошибки.
-
-Закрывается не тестом, а выборкой: нужен фильтр `entity_type` на съёмке. Эндпоинт
-такого параметра сейчас не принимает (проверено по `src/app/api/audit/route.ts` —
-в whitelist его нет) → это запрос к бэкенду, отдельным тикетом.
-
-Строка про `approvals` закрывается сид-данными (обслуживание, ждущее аппрува), а не более
-хитрым тестом, и самоистекает: как только снимок перестаёт быть пустым, тест падает и просит
-удалить строку.
-
-**Цена урока — четыре переписанных ассерта.** Про `actor_display_name` последовательно
-утверждалось: «есть на всех 12 строках» → «есть на каждой строке с `actor_id`» → «есть хотя бы
-на одной». Каждое было **подсчётом по одному снимку**, выданным за инвариант, и каждое ломала
-следующая съёмка. Правило, которое стоит унести из этого: утверждать можно то, что не зависит
-от состава окна — тип значения там, где оно есть. Всё остальное про этот эндпоинт остаётся
-переписью, пока съёмка не научится выбирать строки.
+**This row is prose, not executable, and that needs to be known.**
+`contract-gaps.test.ts` is pinned to `maintenance-mapper.ts` (`MAPPER_PATH`) and
+scans `mapCalendarResponse` only, so no check covers this row. Widening the scan
+is scope growth beyond RUK-274; it is said plainly here so the row does not look
+protected by a mechanism it does not have.
 
 ---
 
-## Проверено и НЕ подтвердилось
+## Class C — the frontend no longer requests the field
 
-Утверждения, которые звучали как расхождения, но провод их опроверг. Оставлены
-здесь, чтобы их не завели заново.
+The gap was not closed — it became **unreachable**: the frontend stopped reading
+the field, so there is nothing left to go missing. The rows are not deleted —
+they explain why the fields disappeared from the code, and what would have to
+happen for them to come back.
 
-| Утверждение                                                     | Что на самом деле                                                                                                                                                                                                                                                                        |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `actor_display_name` отсутствует в аудит-логе (RUK-171)         | **Неверно, но и «всегда есть» неверно.** Поле ездит на ДЕЙСТВИИ: `roles.changed` и `maintenance.*` его несут, `login.success` несёт `actor_id` без него, `prune-*` — ни того ни другого. Тикетное «никогда не шлётся» опровергнуто; правило «всегда шлётся» опровергнуто тоже — см. ниже |
-| `created_by` в календаре — только display name без id (RUK-192) | **Устарело.** Событие несёт `created_by` объектом с `id`/`display_name`/`email`. Блокер отменённой RUK-192 снят — решение за владельцем (SPEC §10.3)                                                                                                                                     |
-| `timezone` не доехал до бэкенда (RUK-202)                       | **Неверно.** Ключ есть в `/api/v1/me`; значение `null` — это «пользователь не выбрал», а не «поля нет»                                                                                                                                                                                   |
+| Field            | Where it was needed                                | What happened                                                                            | Ticket  |
+| ---------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------- |
+| `notify_targets` | calendar: displaying notification channels          | removed from the calendar type: the screen never shipped, and the mapper synthesized `[]` | RUK-258 |
+| `steps`          | calendar: previewing steps without opening the detail | same — the stub cost bytes on every event and gave nothing back                          | RUK-258 |
 
-Подтверждённая половина RUK-171 остаётся: `details` приходит **плоской строкой**
-(`"login success for …"`), а не структурированным объектом. Богатый рендер диффа на
-этих данных не строится. Проверяется тестом; когда бэкенд начнёт слать объект, тест
-упадёт — и это будет сигнал, что фичу можно включать.
+**How to bring them back.** Both fields exist on the detail endpoint and are
+populated in `mapMaintenanceView`. If the product decides to show them directly
+on the grid, the order is: first the backend adds the field to
+`CalendarEventDto`, then it is declared on `CalendarEvent` — and only then does
+it appear in the mapper. The reverse order (declaring it on the type "just in
+case") is exactly the defect RUK-258 removed.
 
 ---
 
-## Каталог notify-каналов (RUK-274)
+## Class B′ — the backend sends it, the frontend does not read it
 
-Две записи не про поля, а про **поведение эндпоинта**, поэтому ни в один из
-классов выше они не ложатся. Обе измерены живыми запросами 2026-08-15 на
-засеянной базе; обе прозаические — исполнить их нечем (см. оговорку про
-`MAPPER_PATH` выше).
+The opposite direction. It does not break a screen, but it means data the
+backend has already computed never reaches the operator.
 
-### Сортировка — не «newest-first», а по невидимому полю
+| Field                    | What is on the wire                                                                                    | Where it is lost                                                                                                                                                                 | Ticket |
+| ------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                                | —      |
+| `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                      | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —      |
 
-`GET /api/v1/notifications/channels` **не** сортирует по дате создания. Замер на
-200 элементах: 149 из 199 соседних пар идут против убывания `created_at`.
-Фактический ключ — **`transport_channel_id` по возрастанию** (проверено: строгий
-ASC по всем 200; по `id` и `name` порядок не отсортирован).
+**`prune-*` is the most serious entry in this file.** The other discrepancies
+mean "a field did not arrive"; this one means **"a row did not arrive"**. In a
+snapshot of 12 records, 10 reach the client: the security log silently shows
+less than what happened. Found by the assertion `does not silently drop recorded
+rows the domain enum has not heard of`
+([`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts)) —
+the very one whose comment described exactly this scenario in advance as "drift
+arriving".
 
-Параметров сортировки эндпоинт не принимает: `sort`, `order_by`, `sort_by`,
-`order` — все отвечают 200 и порядок не меняют.
+It is fixed by adding the actions to the domain enum, but the decision belongs to
+the owner: possibly the service `prune-*` actions are not needed in the UI at
+all, in which case the correct fix is to filter them out **explicitly** rather
+than lose them to a hole in the whitelist. Right now the assertion lets only
+`prune-*` through; any **new** unknown action will fail the test and name itself.
 
-Прежний комментарий в `notify-channel-mapper.ts` утверждал «the backend already
-sorts newest-first». Это было **непроверенным убеждением фронта** — ровно тот
-класс, ради которого заведён этот файл. Комментарий исправлен на измеренный факт;
-сам порядок не чинится (RUK-274 — детекция и починка разные изменения).
+**`facets.integration` — closed, and the first gap this mechanism closed
+end-to-end.** The backend sends six counters
+(`all/auth/roles/block/maintenance/integration`), the DTO declared five — the
+sixth was dropped in `mapAuditFacets`. Found by **reconciling the fixture against
+the DTO**, not by eye: the value on the dev seed is `0`, so a visible symptom
+could not exist in principle. The field is now declared and the assertion in
+`contract-gaps.test.ts` is **inverted** — it now fails if the field is ever
+removed again.
 
-**Что это значит для оператора.** Каталог отсортирован по полю, которого нет в
-UI, так что «новые сверху» не будет. Пагинация при этом безопасна: ключ
-стабильный и уникальный, страницы не пересекаются и не теряют строк (проверено —
-`offset=0` и `offset=10` не пересекаются, две страницы по 10 поэлементно равны
-одной `limit=20`).
+**What is deliberately left open:** there is no visible "Integration" tab. The
+counter reaches the domain, but `AuditCategory` (`audit-presentation.ts:49`) does
+not know about it, and `CATEGORY_ACTIONS` needs integration actions that
+`AUDIT_ACTIONS` does not have yet. That is a product decision rather than a
+mapping fix — recorded instead of done quietly. The "counter only" assertion
+inverts when the tab ships.
 
-**Чинится на бэкенде**: либо `ORDER BY created_at DESC`, либо параметр сортировки.
-До тех пор фронт показывает то, что прислали.
+---
 
-### Поиск матчит только имя — по transport и channel id канал больше не найти
+## Unproven captures — the fixture proves no row shape
 
-`name` — единственный работающий параметр поиска (`search`, `q`, `query`,
-`filter` принимаются с 200 и **нефильтрованным** списком). Матч — подстрока,
-регистронезависимо, **только по полю `name`**: проверено контролем — строка из
-`description` даёт `total=0`, `slack` из `transport` даёт 0, `TestCreateMany` из
-`transport_channel_id` даёт 0.
+Not a discrepancy but a **hole in the evidence**. The fixture is captured, the
+endpoint is "covered", but the recorded response is empty and pins no field of a
+row. Counting that as coverage is the same class-B mistake, only from the testing
+side.
 
-Это **сужение относительно прежнего поведения фронта**, и внесено оно этой же
-задачей. До RUK-274 пикер каналов фильтровался клиентом через cmdk по
-`searchValue`, куда входили `name`, `transport` и `transport_channel_id` — то
-есть канал находился набором его slack-id. Серверный поиск выключает
-клиентскую фильтрацию (`shouldFilter={false}`), и эти два поля перестают быть
-искомыми.
+| Endpoint            | What is recorded                                                    | What is missing                                                                                                                                                    |
+| ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/ui/v1/approvals`  | `{maintenances: [], total: 0}`                                      | not a single queue row → the shape of `ApprovalRowDto` is unverified                                                                                                |
+| `/api/v1/audit/log` | the 12 newest rows; the contents of the window change between captures | neither `entity_type: "maintenance"` (→ `metadata.maint_title` unverified) nor rows with `actor_display_name` — which actions land in the window is decided by timing |
 
-Размен сознательный: без серверного поиска недостижимы ~96% каталога (3617 строк
-против страницы в 50). Но потеря реальна и записана здесь, а не оставлена на
-обнаружение в проде.
+**Why the audit capture cannot be closed by re-capturing** (verified: the attempt
+was made and rolled back). One capture brought in 12 `maintenance` rows, the
+assertion was rewritten into a requirement — and the next capture lost them. The
+cause is twofold: the log is **time-ordered** and `limit=20` returns the newest
+rows, and **the capture pollutes its own subject** — every `fixtures:refresh`
+performs a dev-bypass login, which writes `login.success` rows and pushes older
+rows off the page. Requiring a shape that appears only some of the time means
+writing a test that fails on a Tuesday through nobody's mistake.
 
-**Чинится на бэкенде**: расширить матч `name` до `transport_channel_id` (и,
-возможно, `description`), либо добавить отдельный параметр.
+It is closed not by a test but by selection: the capture needs an `entity_type`
+filter. The endpoint does not currently accept such a parameter (verified against
+`src/app/api/audit/route.ts` — it is not in the whitelist) → that is a request to
+the backend, as a separate ticket.
+
+The `approvals` row is closed by seed data (a maintenance awaiting approval), not
+by a cleverer test, and it self-expires: as soon as the capture stops being
+empty, the test fails and asks for the row to be deleted.
+
+**The lesson cost four rewritten assertions.** About `actor_display_name` it was
+successively claimed: "present on all 12 rows" → "present on every row with an
+`actor_id`" → "present on at least one". Each was a **tally over a single
+capture** passed off as an invariant, and each was broken by the next capture.
+The rule worth taking away: you may assert what does not depend on the contents
+of the window — the type of a value where that value exists. Everything else
+about this endpoint stays a census until the capture learns to select rows.
+
+---
+
+## Checked and NOT confirmed
+
+Claims that sounded like discrepancies, but the wire refuted them. Kept here so
+they do not get filed again.
+
+| Claim                                                                | What is actually the case                                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actor_display_name` is absent from the audit log (RUK-171)          | **False — but "always present" is false too.** The field rides on the ACTION: `roles.changed` and `maintenance.*` carry it, `login.success` carries an `actor_id` without it, `prune-*` carries neither. The ticket's "never sent" is refuted; the rule "always sent" is refuted as well — see below |
+| calendar `created_by` is a display name only, without an id (RUK-192) | **Stale.** The event carries `created_by` as an object with `id`/`display_name`/`email`. The blocker of the cancelled RUK-192 is lifted — the decision is the owner's (SPEC §10.3)                                                                                                |
+| `timezone` never reached the backend (RUK-202)                       | **False.** The key is present in `/api/v1/me`; the value `null` means "the user has not chosen one", not "the field is missing"                                                                                                                                                   |
+
+The confirmed half of RUK-171 stands: `details` arrives as a **flat string**
+(`"login success for …"`) rather than a structured object. Rich diff rendering
+cannot be built on that data. It is checked by a test; when the backend starts
+sending an object the test will fail — and that will be the signal that the
+feature can be turned on.
+
+---
+
+## Notify channel catalogue (RUK-274)
+
+Two entries that are not about fields but about **endpoint behavior**, so they do
+not fit any of the classes above. Both were measured with live requests on
+2026-08-15 against a seeded database; both are prose — there is nothing to
+execute them with (see the `MAPPER_PATH` caveat above).
+
+### Sorting — not "newest-first", but by an invisible field
+
+`GET /api/v1/notifications/channels` does **not** sort by creation date. Measured
+over 200 items: 149 of 199 adjacent pairs run against a descending `created_at`.
+The actual key is **`transport_channel_id` ascending** (verified: strict ASC
+across all 200; by `id` and by `name` the order is unsorted).
+
+The endpoint accepts no sorting parameters: `sort`, `order_by`, `sort_by` and
+`order` all answer 200 and leave the order unchanged.
+
+A previous comment in `notify-channel-mapper.ts` asserted that "the backend
+already sorts newest-first". That was an **unverified frontend belief** — exactly
+the class this file exists for. The comment has been corrected to the measured
+fact; the ordering itself is not fixed (RUK-274 — detection and repair are
+separate changes).
+
+**What this means for the operator.** The catalogue is sorted by a field that
+does not appear in the UI, so "newest on top" will not happen. Pagination is safe
+regardless: the key is stable and unique, pages neither overlap nor lose rows
+(verified — `offset=0` and `offset=10` do not intersect, and two pages of 10
+equal one `limit=20` element for element).
+
+**Fixed on the backend**: either `ORDER BY created_at DESC` or a sorting
+parameter. Until then the frontend shows what it was sent.
+
+### Search matches the name only — a channel can no longer be found by transport or channel id
+
+`name` is the only working search parameter (`search`, `q`, `query` and `filter`
+are accepted with a 200 and an **unfiltered** list). The match is a substring,
+case-insensitive, **on the `name` field only**: verified by control — a string
+from `description` yields `total=0`, `slack` from `transport` yields 0, and
+`TestCreateMany` from `transport_channel_id` yields 0.
+
+This is a **narrowing relative to the frontend's previous behavior**, and it was
+introduced by this very task. Before RUK-274 the channel picker was filtered
+client-side through cmdk on `searchValue`, which included `name`, `transport` and
+`transport_channel_id` — meaning a channel could be found by typing its slack id.
+Server-side search turns client-side filtering off (`shouldFilter={false}`), and
+those two fields stop being searchable.
+
+The trade-off is deliberate: without server-side search roughly 96% of the
+catalogue is unreachable (3617 rows against a page of 50). But the loss is real
+and is recorded here rather than left to be discovered in production.
+
+**Fixed on the backend**: widen the match from `name` to `transport_channel_id`
+(and possibly `description`), or add a separate parameter.

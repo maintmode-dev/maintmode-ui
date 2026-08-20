@@ -26,7 +26,7 @@ import { useCreateIntegration, useUpdateIntegration } from "./queries/use-integr
 
 /**
  * Create ↔ edit dialog for one integration kind (Grafana-OAuth-style form,
- * frozen in `design-snapshots/integrations-settings/`).
+ * frozen in the integrations-settings design snapshot).
  *
  * Secrets are write-only: a stored secret renders as a locked "Configured"
  * plate with Replace (and Clear where the secret is optional). Untouched

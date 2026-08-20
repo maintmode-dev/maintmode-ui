@@ -1,37 +1,37 @@
 # UI Rules — Maintenance Calendar
 
 ## RULE-01 Visibility
-События и их ключевой текст должны быть видимы без hover.
+Events and their key text must be visible without hover.
 
 ## RULE-02 Minimum size
-Событие должно оставаться читаемым в day/week/month. Если места мало — корректный truncate с ellipsis.
+An event must stay readable in day/week/month. If space is tight — proper truncation with an ellipsis.
 
 ## RULE-03 Conflict indicator
-Конфликт должен иметь явный визуальный индикатор (иконка/stripe/badge), видимый до клика.
+A conflict must have an explicit visual indicator (icon/stripe/badge), visible before the click.
 
 ## RULE-04 Planned vs Actual
-Плановое и фактическое время должны различаться визуально, а не только текстом.
+Planned and actual time must differ visually, not by text alone.
 
 ## RULE-05 Overlap readability
-Нельзя допускать наложение текста событий друг на друга.
+Event text must never be allowed to overlap other event text.
 
 ## RULE-06 Overflow behavior
-В month view переполнение контента должно обрабатываться аккуратно (`+N more`/ellipsis).
+In month view, content overflow must be handled cleanly (`+N more`/ellipsis).
 
 ## RULE-07 Semantic colors
-Один смысл = один цвет. Нельзя смешивать значения статусов в одинаковой цветовой семантике.
+One meaning = one color. Status meanings must not be mixed within the same color semantics.
 
 ## RULE-08 Empty/error/loading states
-Состояния `loading`, `error`, `empty` обязаны быть явными и понятными.
+The `loading`, `error` and `empty` states must be explicit and understandable.
 
 ## RULE-09 Interaction affordance
-Интерактивные элементы должны выглядеть интерактивными (курсор, hover, фокус).
+Interactive elements must look interactive (cursor, hover, focus).
 
 ## RULE-10 Fail-first
-Если невозможно уверенно подтвердить соответствие правилу — фиксировать FAIL.
+If compliance with a rule cannot be confirmed with confidence — record a FAIL.
 
 ## RULE-11 Month packing priority
-Для month view действует обязательный контракт `.agents/project-details/ui-specific/calendar_month_packing.md`:
-- приоритет размещения: `spanning` перед `timed-single-day`;
-- `+N more` только в нижней строке ячейки;
-- timed-событие обязано показывать время начала.
+Month view is governed by the mandatory contract `.agents/project-details/ui-specific/calendar_month_packing.md`:
+- packing priority: `spanning` before `timed-single-day`;
+- `+N more` only in the bottom row of the cell;
+- a timed event must show its start time.

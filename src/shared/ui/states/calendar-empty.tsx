@@ -19,7 +19,7 @@ export interface CalendarEmptyProps {
  * top of a dimmed week grid (the parent route preserves the grid at
  * `opacity: 0.4` per design-plan; this component is just the overlay card).
  *
- * Copy is canonical from `design-snapshots/empty-states/project/states.jsx`,
+ * Copy is canonical from the empty-states design snapshot,
  * with ONE deliberate exception: the default `title` says "for this period"
  * where the snapshot still says "for this week". The snapshot is wrong — this
  * component renders in all three calendar views and takes no `view` prop

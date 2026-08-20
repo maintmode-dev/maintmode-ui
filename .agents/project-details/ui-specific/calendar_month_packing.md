@@ -1,53 +1,53 @@
 # Calendar Month Packing Contract
 
-Цель: зафиксировать единый алгоритм упаковки событий в `month view` на базе наблюдаемого поведения Apple Calendar, чтобы все агентные стадии (`fe-architect`, `fe-dev`, `fe-ui-inspector`, `fe-ux-reviewer`, `fe-gate`) проверяли одно и то же.
+Goal: pin down a single algorithm for packing events into the `month view`, based on the observed behavior of Apple Calendar, so that every agent stage (`fe-architect`, `fe-dev`, `fe-ui-inspector`, `fe-ux-reviewer`, `fe-gate`) verifies the same thing.
 
 ## Scope
-- Применяется только к `month view`.
-- Не меняет правила рендера `day/week`.
+- Applies to `month view` only.
+- Does not change the `day/week` rendering rules.
 
-## Термины
-- `segment` — недельный фрагмент события в сетке месяца (событие предварительно режется по границам недель).
-- `spanning` — событие, занимающее более одного календарного дня.
-- `timed-single-day` — событие внутри одного календарного дня с конкретным временем.
-- `visible_rows_limit` — максимальное число видимых строк событий в ячейке дня.
+## Terms
+- `segment` — the weekly fragment of an event in the month grid (an event is pre-sliced along week boundaries).
+- `spanning` — an event occupying more than one calendar day.
+- `timed-single-day` — an event within a single calendar day at a specific time.
+- `visible_rows_limit` — the maximum number of visible event rows in a day cell.
 
-## Нормативные правила упаковки (обязательно)
-1. Единица раскладки: неделя. Перед размещением событие режется на `segment` по границам недель.
-2. Внутри недели используется `first-fit`: каждый `segment` кладется в самую верхнюю свободную дорожку без пересечения по дням.
-3. Приоритет упаковки: `spanning` выше `timed-single-day`.
-4. `spanning` должен рендериться непрерывной полосой по всем дням сегмента недели.
-5. `timed-single-day` занимает только свою дату и не резервирует соседние дни.
-6. `visible_rows_limit` для month view фиксируется как `5`.
-7. `+N more` всегда отображается внизу ячейки дня (после видимых строк событий).
-8. `N` считается по скрытым `segment` именно этого календарного дня; счетчик не шарится между соседними днями.
-9. После добавления/удаления одного события верхние видимые дорожки не должны хаотично перестраиваться (детерминированная раскладка).
+## Normative packing rules (mandatory)
+1. Unit of layout: the week. Before placement, an event is sliced into `segment`s along week boundaries.
+2. Within a week, `first-fit` is used: each `segment` goes into the topmost free track that does not overlap by day.
+3. Packing priority: `spanning` above `timed-single-day`.
+4. A `spanning` event must render as a continuous bar across every day of its weekly segment.
+5. A `timed-single-day` event occupies only its own date and does not reserve neighboring days.
+6. `visible_rows_limit` for month view is fixed at `5`.
+7. `+N more` is always displayed at the bottom of the day cell (after the visible event rows).
+8. `N` counts the hidden `segment`s of that specific calendar day; the counter is not shared between neighboring days.
+9. After a single event is added or removed, the upper visible tracks must not rearrange chaotically (deterministic layout).
 
-## Поведение текста в month view
-1. Для `timed-single-day` показывается время старта.
-2. Для `spanning` допускается отображение маркера окончания на финальном дне сегмента (`ends HH:mm`) при наличии места.
+## Text behavior in month view
+1. For `timed-single-day`, the start time is shown.
+2. For `spanning`, an end marker on the segment's final day (`ends HH:mm`) is allowed where space permits.
 
-## Baseline верификации (кейс Feb 23 - Mar 1)
-1. `23 Feb`: ровно 5 видимых строк, без `+N`.
-2. `24 Feb`: переполнение на 1 -> `+1 more`.
-3. `25 Feb`: сильное переполнение -> `+4 more` (после добавления 1 события -> `+5 more`, после удаления обратно `+4 more`).
-4. `26-27 Feb`: микс однодневных и многодневных, `+N` считается по каждой дате отдельно.
-5. `28 Feb` и `1 Mar`: переход недели, счетчик и раскладка независимы для каждой даты.
-6. Добавление события `24-27 Feb` поднимает его в верхнюю дорожку и перераспределяет overflow на затронутых днях.
+## Verification baseline (case Feb 23 - Mar 1)
+1. `23 Feb`: exactly 5 visible rows, no `+N`.
+2. `24 Feb`: overflow by 1 -> `+1 more`.
+3. `25 Feb`: heavy overflow -> `+4 more` (after adding 1 event -> `+5 more`, after removing it back to `+4 more`).
+4. `26-27 Feb`: a mix of single-day and multi-day events, `+N` counted per date separately.
+5. `28 Feb` and `1 Mar`: week boundary crossing, counter and layout independent for each date.
+6. Adding an event on `24-27 Feb` lifts it into the top track and redistributes overflow on the affected days.
 
-## Рекомендованный baseline на FullCalendar API
-- Использовать стандартные механизмы FullCalendar как source of behavior:
+## Recommended baseline on the FullCalendar API
+- Use standard FullCalendar mechanisms as the source of behavior:
   - `eventOrder`
   - `eventOrderStrict`
   - `dayMaxEventRows` / `dayMaxEvents`
   - `eventContent`
   - `moreLinkClick`
-- Кастомный layout допускается только если поведение невозможно получить через штатные API.
+- A custom layout is permitted only if the behavior cannot be obtained through the built-in APIs.
 
-## Проверяемые acceptance checks (для UI/UX/Gate)
-1. В дне, где есть и `spanning`, и `timed-single-day`, сначала видны `spanning`.
-2. `spanning` не обрывается внутри недельного сегмента.
-3. При переполнении видно не более 5 строк, `+N more` находится строго внизу ячейки.
-4. `+N` в разных днях одной недели считается независимо.
-5. После add/remove одного события раскладка верхних дорожек детерминирована и предсказуема.
-6. В month view видны время старта для `timed-single-day`; для длинных событий сохраняется читаемость конца сегмента.
+## Verifiable acceptance checks (for UI/UX/Gate)
+1. On a day holding both `spanning` and `timed-single-day` events, the `spanning` ones are visible first.
+2. A `spanning` event is not interrupted inside its weekly segment.
+3. On overflow, no more than 5 rows are visible and `+N more` sits strictly at the bottom of the cell.
+4. `+N` is counted independently for different days of the same week.
+5. After adding/removing a single event, the layout of the upper tracks is deterministic and predictable.
+6. In month view, start times are visible for `timed-single-day` events; for long events, the readability of the segment's end is preserved.

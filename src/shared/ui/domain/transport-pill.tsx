@@ -13,7 +13,7 @@ import { cn } from "@/shared/ui/lib/cn";
  * pass `archived` to desaturate the brand hue (an archived channel must not
  * read as live).
  *
- * Source intent: maintmode-docs/design-snapshots/channels-list (transport pill).
+ * Source intent: the channels-list design snapshot (transport pill).
  */
 type Glyph = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
 

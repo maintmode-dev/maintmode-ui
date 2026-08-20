@@ -14,7 +14,7 @@ export interface ChannelChipProps {
  * `ResourceChip` exactly (same border/bg/spacing) so a maintenance's Notify
  * channels read as the same family as its Resources.
  *
- * Source: maintmode-docs/design-snapshots/maintenance-quick-sheet → NOTIFY
+ * Source: the maintenance-quick-sheet design snapshot → NOTIFY
  * CHANNELS section (transport glyph + mono name, `.chip` primitive).
  */
 export function ChannelChip({ name, transport, className }: ChannelChipProps) {

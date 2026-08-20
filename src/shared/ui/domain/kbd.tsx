@@ -7,7 +7,7 @@ export interface KbdProps {
 }
 
 /**
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/styles.css → `.mm-kbd`.
+ * Source: the maintenance-details-page design snapshot → `.mm-kbd`.
  * Do NOT use on MaintenanceDetailsPage (frozen). Calendar / Users management OK.
  */
 export function Kbd({ children, className }: KbdProps) {

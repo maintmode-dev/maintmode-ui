@@ -1,22 +1,22 @@
 # UX Heuristics — SRE-first
 
 ## H-01 Visual hierarchy (critical)
-Риски и конфликты должны читаться первыми.
+Risks and conflicts must be read first.
 
 ## H-02 Readability (critical)
-Текст и тайминг должны читаться быстро без напряжения.
+Text and timing must be readable quickly, without strain.
 
 ## H-03 Consistency (high)
-Одинаковые сущности и статусы должны выглядеть одинаково во всех view.
+Identical entities and statuses must look identical across all views.
 
 ## H-04 Cognitive load (critical)
-Пользователь не должен проводить дополнительный анализ для базовых решений.
+The user must not have to perform extra analysis to make basic decisions.
 
 ## H-05 Risk visibility (critical)
-Риск должен быть виден до клика.
+Risk must be visible before the click.
 
 ## H-06 Affordance (high)
-Понятно, куда можно кликнуть и какой будет результат действия.
+It is clear what can be clicked and what the result of the action will be.
 
 ## H-07 Information density (high)
-Минимально достаточный объём информации на экране; детали — по раскрытию.
+The minimum sufficient amount of information on screen; details on expansion.

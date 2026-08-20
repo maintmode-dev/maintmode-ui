@@ -24,7 +24,7 @@ export interface ImpactBadgeProps {
 /**
  * Impact is orthogonal to status. partial=amber (distinct from in_progress orange),
  * full=red (distinct from destructive red — different hue ramp).
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/components.jsx → `ImpactBadge`.
+ * Source: the maintenance-details-page design snapshot → `ImpactBadge`.
  */
 export function ImpactBadge({ impact, size = "sm", className }: ImpactBadgeProps) {
   return (

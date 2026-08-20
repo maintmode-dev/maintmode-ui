@@ -29,7 +29,7 @@ export interface StepRowProps {
  *   - check-icon overlay (done)
  *   - dimmed/strikethrough text (skipped)
  *
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/styles.css
+ * Source: the maintenance-details-page design snapshot
  *   → `.ap-step`, `.ap-step--done`, `.ap-step--skipped`.
  */
 export function StepRow({

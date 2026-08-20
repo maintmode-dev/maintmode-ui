@@ -20,7 +20,7 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
  * `channel_ids` (forwarded through the `/api/calendar` BFF and
  * `useCalendarQuery`).
  *
- * Source intent: maintmode-docs/design-snapshots/channel-detail (Section 2).
+ * Source intent: the channel-detail design snapshot (Section 2).
  *
  * Presentational: the window and the query live in `useRelatedMaintenanceQuery`,
  * called by NotifyChannelDetailPage above its early returns, and arrive here as

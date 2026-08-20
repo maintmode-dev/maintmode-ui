@@ -19,7 +19,7 @@ export interface ConflictCardProps {
 }
 
 /**
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/styles.css
+ * Source: the maintenance-details-page design snapshot
  *   → `.ap-confcard`, `.ap-confcard.is-new`, `.ap-confcard.is-resolved`, `.ap-overlap`.
  * Fuchsia 3px left rail; switches to green for resolved. With `onClick` the whole
  * card is a button that opens the conflicting maintenance (in the quick-sheet

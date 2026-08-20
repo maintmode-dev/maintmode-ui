@@ -168,7 +168,7 @@ export interface CalendarEvent {
    *
    * That makes this a dormant stub. Retiring it — here, in
    * `mapCalendarResponse`, in `MOCK_CALENDAR_EVENTS`, in the payload contract
-   * test, and moving its row in `docs/contract-gaps.md` from Класс B to Класс C
+   * test, and moving its row in `docs/contract-gaps.md` from Class B to Class C
    * — is a follow-up ticket, kept separate because detection and repair are
    * separate changes (AGENTS.md). Do not build anything new on this field.
    */

@@ -19,7 +19,7 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
  * from the calendar feed filtered server-side by `resource_ids` (an existing
  * backend filter, forwarded through the `/api/calendar` BFF and useCalendarQuery).
  *
- * Source intent: maintmode-docs/design-snapshots/resource-detail (Section 2).
+ * Source intent: the resource-detail design snapshot (Section 2).
  * Mirrors the channel-detail Related section.
  *
  * Presentational: the window and the query live in `useRelatedMaintenanceQuery`,

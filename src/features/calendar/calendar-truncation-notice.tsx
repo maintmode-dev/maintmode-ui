@@ -10,22 +10,22 @@ import type { CalendarMeta } from "./queries/use-calendar-query";
  * silently, so an operator surveying a busy month saw a plausible-looking grid
  * with work missing from it and no way to tell (RUK-252). This is that signal.
  *
- * The copy is FIXED by owner decision (plan §6.1) and is deliberately Russian
- * while the rest of the UI is English — that is the owner's call, not an
- * oversight. The app has no i18n layer (no `next-intl`/`react-intl`/`lingui`,
- * no message catalogue); every user-facing string in this codebase is inline,
- * so this one is too. It lives in a named constant rather than in the JSX only
- * so the test can pin it character for character.
+ * The copy is FIXED by owner decision (plan §6.1). The app has no i18n layer
+ * (no `next-intl`/`react-intl`/`lingui`, no message catalogue); every
+ * user-facing string in this codebase is inline, so this one is too. It lives
+ * in a named constant rather than in the JSX only so the test can pin it
+ * character for character.
  *
  * Do not reword it. Each clause was chosen against a rejected alternative:
- *   - "Показаны первые …" states a FACT, not a failure — the system did what it
- *     was designed to do. ("Показаны не все работы" was rejected: sounds broken.)
- *   - "сузьте фильтры" is a concrete action that does not dictate one specific
- *     fix. ("переключитесь на неделю" was rejected: the operator opened the
- *     month deliberately; "Много работ, уточните фильтры" was rejected: it
- *     leaves unclear whether anything is missing at all.)
- *   - "остальные", not "все" — narrowing is not promised to be sufficient, so
- *     the text must not promise a complete result.
+ *   - "Showing the first …" states a FACT, not a failure — the system did what
+ *     it was designed to do. ("Not all maintenances are shown" was rejected:
+ *     it reads as a malfunction rather than a cap doing its job.)
+ *   - "narrow your filters" is a concrete action that does not dictate one
+ *     specific fix. ("switch to week view" was rejected: the operator opened
+ *     the month deliberately; "Too many maintenances, refine your filters" was
+ *     rejected: it leaves unclear whether anything is missing at all.)
+ *   - "to see more", not "to see them all" — narrowing is not promised to be
+ *     sufficient, so the text must not promise a complete result.
  *
  * The QUANTITY comes from the response (`meta.count`), never from a constant.
  * The cap is the backend's to choose and it reports what it actually returned;
@@ -33,12 +33,14 @@ import type { CalendarMeta } from "./queries/use-calendar-query";
  * while telling the operator a specific false number the day the cap moves — a
  * confidently wrong count is worse than the silent truncation this closes.
  * `TRUNCATION_MESSAGE_NO_COUNT` covers a backend that flags `truncated` without
- * a `count` (both fields are optional): same clauses, no quantity claimed.
+ * a `count` (both fields are optional): same clauses, no quantity claimed. It
+ * says "a partial window" rather than naming a number, keeping the same
+ * factual register instead of degrading into a failure report.
  */
 const truncationMessage = (count: number): string =>
-  `Показаны первые ${count} работ — сузьте фильтры, чтобы увидеть остальные`;
+  `Showing the first ${count} maintenances — narrow your filters to see more`;
 
-const TRUNCATION_MESSAGE_NO_COUNT = "Показаны не все работы — сузьте фильтры, чтобы увидеть остальные";
+const TRUNCATION_MESSAGE_NO_COUNT = "Showing a partial window — narrow your filters to see more";
 
 /**
  * Is the window known to be truncated?
@@ -73,7 +75,7 @@ export function CalendarTruncationNotice({ meta }: { meta: CalendarMeta | undefi
   // Only a finite number is worth showing. `count` is optional and arrives from
   // the backend, so anything else (absent, NaN, Infinity, a non-number that beat
   // the type) falls back to the quantity-free wording rather than rendering
-  // "первые undefined работ".
+  // "the first undefined maintenances".
   const count = meta?.count;
   const message =
     typeof count === "number" && Number.isFinite(count)

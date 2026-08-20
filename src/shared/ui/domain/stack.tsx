@@ -12,7 +12,7 @@ export interface StackProps {
 /**
  * Composition primitive used by Empty / Error / Loading states.
  * Centered icon → title → caption → optional CTA, 80px vertical padding.
- * Source: maintmode-docs/design-snapshots/empty-states/project/states.jsx → `Stack`.
+ * Source: the empty-states design snapshot → `Stack`.
  */
 export function Stack({ icon, title, caption, cta, className }: StackProps) {
   return (

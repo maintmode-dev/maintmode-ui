@@ -79,7 +79,7 @@ describe("mapCalendarResponse — the projected event shape is pinned", () => {
           ? `${field}: absent`
           : `${field}: BACK ON ${carrying} event(s). RUK-258 removed it because the calendar ` +
               `wire never carried it and nothing reads it. If a screen now needs it, the backend ` +
-              `must send it first — see docs/contract-gaps.md, Класс C.`,
+              `must send it first — see docs/contract-gaps.md, Class C.`,
       ).toBe(`${field}: absent`);
     }
   });

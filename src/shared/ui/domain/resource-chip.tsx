@@ -19,7 +19,7 @@ function ResourceIcon({ type }: { type?: ResourceType }) {
 }
 
 /**
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/components.jsx → `ResourceChip`.
+ * Source: the maintenance-details-page design snapshot → `ResourceChip`.
  * The X-button variant is the edit-mode chip.
  */
 export function ResourceChip({ name, type, onRemove, className }: ResourceChipProps) {

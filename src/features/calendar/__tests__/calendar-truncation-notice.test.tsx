@@ -65,8 +65,8 @@ import { CalendarTruncationNotice, isTruncated } from "../calendar-truncation-no
  * nothing about where the count came from.
  */
 const expectedText = (count: number) =>
-  `Показаны первые ${count} работ — сузьте фильтры, чтобы увидеть остальные`;
-const EXPECTED_TEXT_NO_COUNT = "Показаны не все работы — сузьте фильтры, чтобы увидеть остальные";
+  `Showing the first ${count} maintenances — narrow your filters to see more`;
+const EXPECTED_TEXT_NO_COUNT = "Showing a partial window — narrow your filters to see more";
 
 /** Body of the next `/api/calendar` response. */
 let calendarBody: unknown = { items: [] };
@@ -117,9 +117,10 @@ describe("CalendarPage — truncation notice (RUK-252)", () => {
 
     const notice = await screen.findByTestId("calendar-truncation-notice");
     // Exact copy, not a substring match: the wording was settled with the owner
-    // and each clause is deliberate ("Показаны первые" = a fact, not a failure;
-    // "сузьте фильтры" = a concrete action that doesn't dictate one fix;
-    // "остальные" not "все" — narrowing isn't promised to be sufficient).
+    // and each clause is deliberate ("Showing the first" = a fact, not a failure;
+    // "narrow your filters" = a concrete action that doesn't dictate one fix;
+    // "to see more" not "to see them all" — narrowing isn't promised to be
+    // sufficient).
     expect(notice.textContent).toBe(expectedText(500));
     expect(notice.textContent).not.toContain("1000");
     // Announced passively: it's present on load rather than raised by an action.
@@ -128,7 +129,7 @@ describe("CalendarPage — truncation notice (RUK-252)", () => {
 
   it("claims no quantity when the backend flags truncation without a count", async () => {
     // Both meta fields are optional. Truncation is still worth reporting, but
-    // "первые undefined работ" must never reach the operator.
+    // "the first undefined maintenances" must never reach the operator.
     calendarBody = { items: [], meta: { truncated: true } };
 
     await renderSettled();
@@ -144,7 +145,7 @@ describe("CalendarPage — truncation notice (RUK-252)", () => {
     await renderSettled();
 
     expect(screen.queryByTestId("calendar-truncation-notice")).toBeNull();
-    expect(document.body.textContent).not.toContain("Показаны первые");
+    expect(document.body.textContent).not.toContain("Showing the first");
   });
 
   it("renders nothing when meta is absent — and does NOT treat that as 'complete'", async () => {
@@ -156,9 +157,9 @@ describe("CalendarPage — truncation notice (RUK-252)", () => {
     // Nothing is shown, because we cannot claim the window IS truncated...
     expect(screen.queryByTestId("calendar-truncation-notice")).toBeNull();
     // ...but the absence must not be a positive claim of completeness either:
-    // no "all shown" / "полностью" reassurance is rendered anywhere.
-    expect(document.body.textContent).not.toMatch(/показаны\s+вс[её]/i);
-    expect(document.body.textContent).not.toMatch(/все работы показаны/i);
+    // no "showing all" / "complete" reassurance is rendered anywhere.
+    expect(document.body.textContent).not.toMatch(/show(?:ing|n)\s+all\b/i);
+    expect(document.body.textContent).not.toMatch(/all\s+maintenances\s+(?:are\s+)?shown/i);
   });
 
   it("reserves no space when absent: the notice is the element, not a wrapper", () => {

@@ -51,7 +51,7 @@ const STALE = (field: string, where: string) =>
  * no gap left to guard. Their assertions would have stayed GREEN — they test the
  * wire, which did not change — while describing stubs that no longer exist, and
  * a green assertion about a vanished line is precisely the graveyard this file
- * warns about above. They live on in docs/contract-gaps.md under Класс C.
+ * warns about above. They live on in docs/contract-gaps.md under Class C.
  */
 const CALENDAR_EVENT_GAPS = [{ field: "resources", stub: "resources: []", ticket: "RUK-256" }] as const;
 
@@ -126,7 +126,7 @@ describe("registry — class B: fields the calendar wants and the wire does not 
  *
  * The assertion is INVERTED like the rest: it holds while the field stays out of
  * the mapper, and fails the day someone re-adds it — at which point the row in
- * Класс C is wrong and must move back to Class B with a ticket.
+ * Class C is wrong and must move back to Class B with a ticket.
  */
 const CALENDAR_RETIRED_FIELDS = ["notify_targets", "steps"] as const;
 
@@ -142,25 +142,25 @@ describe("registry — class C: fields the calendar no longer requests (RUK-258)
   });
 
   for (const field of CALENDAR_RETIRED_FIELDS) {
-    it(`\`${field}\` is gone from the mapper and recorded under Класс C`, () => {
+    it(`\`${field}\` is gone from the mapper and recorded under Class C`, () => {
       expect(
         calendarFn.includes(`${field}:`)
           ? `${field}: BACK IN THE MAPPER. It was retired in RUK-258 because the wire ` +
               `never carried it. If it is genuinely needed now, the backend must send it ` +
-              `first — move the row from Класс C back to Класс B with a ticket.`
+              `first — move the row from Class C back to Class B with a ticket.`
           : `${field}: retired`,
       ).toBe(`${field}: retired`);
 
       // The row must survive too: without this, the section could be deleted
       // and the knowledge of why these fields vanished would go with it.
-      expect(`${field} recorded in Класс C: ${registry.includes(`\`${field}\``)}`).toBe(
-        `${field} recorded in Класс C: true`,
+      expect(`${field} recorded in Class C: ${registry.includes(`\`${field}\``)}`).toBe(
+        `${field} recorded in Class C: true`,
       );
     });
   }
 
-  it("keeps the Класс C section itself, not just the field names", () => {
-    expect(`registry has Класс C: ${registry.includes("## Класс C")}`).toBe("registry has Класс C: true");
+  it("keeps the Class C section itself, not just the field names", () => {
+    expect(`registry has Class C: ${registry.includes("## Class C")}`).toBe("registry has Class C: true");
   });
 });
 
@@ -362,7 +362,7 @@ describe("the registry file itself", () => {
     // Only what this suite ACTUALLY enforces. `notify_targets` and `steps` were
     // dropped here in RUK-258 along with their CALENDAR_EVENT_GAPS entries:
     // leaving them would have kept this assertion green (they are still named in
-    // the registry, now under Класс C) while claiming an enforcement that no
+    // the registry, now under Class C) while claiming an enforcement that no
     // longer happens — a false statement no test would ever catch.
     const enforced = ["resources", "details", "facets.integration"];
     const undocumented = enforced.filter((field) => !registry.includes(field));

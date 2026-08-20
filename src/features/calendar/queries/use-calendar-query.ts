@@ -236,7 +236,7 @@ export function useCalendarQuery(params: CalendarQueryParams, options: CalendarQ
   // a new window `keepPreviousData` keeps the previous window's `items` on
   // screen, and its `meta` would come with them — so the truncation notice would
   // render the previous window's COUNT against the new date header. That number
-  // is shown verbatim to the operator ("Показаны первые N работ"), and
+  // is shown verbatim to the operator ("Showing the first N maintenances"), and
   // `calendar-truncation-notice.tsx` states the rule it would break: a
   // confidently wrong count is worse than the silent truncation the notice
   // closes. `undefined` here means "unknown", which the notice renders as

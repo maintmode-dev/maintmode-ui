@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
  * read) creates a hazard the previous implementation did not have: with
  * `keepPreviousData`, a step to a new window keeps the PREVIOUS window's `items`
  * on screen — and `meta` would ride along with them. The notice renders its
- * quantity verbatim ("Показаны первые N работ"), so that would put a specific,
+ * quantity verbatim ("Showing the first N maintenances"), so that would put a
  * confidently wrong number under the new date header.
  *
  * `calendar-truncation-notice.tsx` states the rule directly: the count comes

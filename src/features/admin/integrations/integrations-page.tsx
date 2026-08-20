@@ -21,7 +21,7 @@ import {
 
 /**
  * Admin-only registry of notification transports at /admin/integrations
- * (screen 19, `design-snapshots/integrations-settings/`). A closed list of
+ * (screen 19, integrations-settings design snapshot). A closed list of
  * three kinds; a row is either configured (status + enabled switch +
  * Configure) or not (Set up → create sheet). No Delete — disable is the only
  * off-switch; no Test-connection (no backend endpoint).

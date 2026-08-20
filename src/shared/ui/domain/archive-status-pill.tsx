@@ -7,7 +7,7 @@ export interface ArchiveStatusPillProps {
 
 /**
  * Active / Archived status pill for catalog detail headers (channel + resource).
- * Source: design-snapshots/{channel,resource}-detail README "Page header" →
+ * Source: the channel/resource-detail snapshots, "Page header" →
  * `Active` green outline / `Archived` zinc outline, mono uppercase 10/600.
  */
 export function ArchiveStatusPill({ archived, className }: ArchiveStatusPillProps) {

@@ -32,7 +32,7 @@ export interface StatusBadgeProps {
 }
 
 /**
- * Source: maintmode-docs/design-snapshots/maintenance-details-page/project/components.jsx → `StatusBadge`.
+ * Source: the maintenance-details-page design snapshot → `StatusBadge`.
  * Canceled variant automatically receives `.is-canceled` for strikethrough.
  */
 export function StatusBadge({ status, dot = true, size = "sm", className }: StatusBadgeProps) {

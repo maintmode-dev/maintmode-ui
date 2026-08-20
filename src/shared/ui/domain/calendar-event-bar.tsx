@@ -41,7 +41,7 @@ const STATUS_BAR_CLASSES: Record<MaintenanceStatus, string> = {
  * warning icon (lucide AlertTriangle, color #E879F9, 14px) and NOTHING else.
  * No stripes, no special border, no badge. Stripes live in ConflictCard.
  *
- * Source: maintmode-docs/design-plan.md → frozen decisions.
+ * Source: the design plan's frozen decisions.
  */
 export function CalendarEventBar({
   status,
