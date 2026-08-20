@@ -127,7 +127,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/${{ github.repository }}/ui
+          images: ghcr.io/${{ github.repository_owner }}/maintmode-ui
           tags: |
             type=ref,event=branch
             type=ref,event=tag
