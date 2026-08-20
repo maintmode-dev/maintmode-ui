@@ -24,8 +24,8 @@ feature being turned on.
 
 ## Class B — the frontend reads a field, the backend does not send it
 
-| Field       | Where it is needed                        | What is on the wire                       | Ticket  | Stub                        |
-| ----------- | ----------------------------------------- | ----------------------------------------- | ------- | --------------------------- |
+| Field       | Where it is needed                              | What is on the wire                         | Ticket  | Stub                        |
+| ----------- | ----------------------------------------------- | ------------------------------------------- | ------- | --------------------------- |
 | `resources` | calendar: nothing (the field is no longer read) | no such key in the `CalendarEventDto` event | RUK-256 | `maintenance-mapper.ts:236` |
 
 **The gap is closed, but not in the way this row originally prescribed.** The
@@ -89,10 +89,10 @@ the field, so there is nothing left to go missing. The rows are not deleted —
 they explain why the fields disappeared from the code, and what would have to
 happen for them to come back.
 
-| Field            | Where it was needed                                | What happened                                                                            | Ticket  |
-| ---------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------- |
-| `notify_targets` | calendar: displaying notification channels          | removed from the calendar type: the screen never shipped, and the mapper synthesized `[]` | RUK-258 |
-| `steps`          | calendar: previewing steps without opening the detail | same — the stub cost bytes on every event and gave nothing back                          | RUK-258 |
+| Field            | Where it was needed                                   | What happened                                                                             | Ticket  |
+| ---------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------- |
+| `notify_targets` | calendar: displaying notification channels            | removed from the calendar type: the screen never shipped, and the mapper synthesized `[]` | RUK-258 |
+| `steps`          | calendar: previewing steps without opening the detail | same — the stub cost bytes on every event and gave nothing back                           | RUK-258 |
 
 **How to bring them back.** Both fields exist on the detail endpoint and are
 populated in `mapMaintenanceView`. If the product decides to show them directly
@@ -108,10 +108,10 @@ case") is exactly the defect RUK-258 removed.
 The opposite direction. It does not break a screen, but it means data the
 backend has already computed never reaches the operator.
 
-| Field                    | What is on the wire                                                                                    | Where it is lost                                                                                                                                                                 | Ticket |
-| ------------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                                | —      |
-| `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                      | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —      |
+| Field                    | What is on the wire                                                                                                    | Where it is lost                                                                                                                                                               | Ticket |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                              | —      |
+| `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                                     | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —      |
 
 **`prune-*` is the most serious entry in this file.** The other discrepancies
 mean "a field did not arrive"; this one means **"a row did not arrive"**. In a
@@ -153,9 +153,9 @@ endpoint is "covered", but the recorded response is empty and pins no field of a
 row. Counting that as coverage is the same class-B mistake, only from the testing
 side.
 
-| Endpoint            | What is recorded                                                    | What is missing                                                                                                                                                    |
-| ------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/ui/v1/approvals`  | `{maintenances: [], total: 0}`                                      | not a single queue row → the shape of `ApprovalRowDto` is unverified                                                                                                |
+| Endpoint            | What is recorded                                                       | What is missing                                                                                                                                                       |
+| ------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/ui/v1/approvals`  | `{maintenances: [], total: 0}`                                         | not a single queue row → the shape of `ApprovalRowDto` is unverified                                                                                                  |
 | `/api/v1/audit/log` | the 12 newest rows; the contents of the window change between captures | neither `entity_type: "maintenance"` (→ `metadata.maint_title` unverified) nor rows with `actor_display_name` — which actions land in the window is decided by timing |
 
 **Why the audit capture cannot be closed by re-capturing** (verified: the attempt
@@ -191,11 +191,11 @@ about this endpoint stays a census until the capture learns to select rows.
 Claims that sounded like discrepancies, but the wire refuted them. Kept here so
 they do not get filed again.
 
-| Claim                                                                | What is actually the case                                                                                                                                                                                                                                                        |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `actor_display_name` is absent from the audit log (RUK-171)          | **False — but "always present" is false too.** The field rides on the ACTION: `roles.changed` and `maintenance.*` carry it, `login.success` carries an `actor_id` without it, `prune-*` carries neither. The ticket's "never sent" is refuted; the rule "always sent" is refuted as well — see below |
-| calendar `created_by` is a display name only, without an id (RUK-192) | **Stale.** The event carries `created_by` as an object with `id`/`display_name`/`email`. The blocker of the cancelled RUK-192 is lifted — the decision is the owner's (SPEC §10.3)                                                                                                |
-| `timezone` never reached the backend (RUK-202)                       | **False.** The key is present in `/api/v1/me`; the value `null` means "the user has not chosen one", not "the field is missing"                                                                                                                                                   |
+| Claim                                                                 | What is actually the case                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actor_display_name` is absent from the audit log (RUK-171)           | **False — but "always present" is false too.** The field rides on the ACTION: `roles.changed` and `maintenance.*` carry it, `login.success` carries an `actor_id` without it, `prune-*` carries neither. The ticket's "never sent" is refuted; the rule "always sent" is refuted as well — see below |
+| calendar `created_by` is a display name only, without an id (RUK-192) | **Stale.** The event carries `created_by` as an object with `id`/`display_name`/`email`. The blocker of the cancelled RUK-192 is lifted — the decision is the owner's (SPEC §10.3)                                                                                                                   |
+| `timezone` never reached the backend (RUK-202)                        | **False.** The key is present in `/api/v1/me`; the value `null` means "the user has not chosen one", not "the field is missing"                                                                                                                                                                      |
 
 The confirmed half of RUK-171 stands: `details` arrives as a **flat string**
 (`"login success for …"`) rather than a structured object. Rich diff rendering
