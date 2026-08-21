@@ -90,7 +90,11 @@ export function LoginPage({ error, signInAction }: LoginPageProps) {
             )}
           </div>
 
-          <p className="caption text-center">Internal tool · Access by invitation only</p>
+          {/* "Internal tool" was true when this only ran in one company. It now
+              ships as a self-hosted product, where the reader may well be the
+              person who installed it. The invitation half stays: signup is
+              closed by default once the first administrator exists. */}
+          <p className="caption text-center">Access by invitation</p>
         </div>
       </main>
     </TooltipProvider>
