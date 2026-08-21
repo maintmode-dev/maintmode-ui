@@ -118,6 +118,9 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      # Registers binfmt handlers so buildx can run the arm64 stages on an
+      # amd64 runner. Without it a multi-platform build fails on the first RUN.
+      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -136,6 +139,10 @@ jobs:
         with:
           context: .
           file: deployment/.build/Dockerfile
+          # Both architectures: an operator self-hosting on an ARM Mac cannot
+          # pull an amd64-only image. The build runs once per platform, which
+          # roughly doubles this job — the GHA cache below absorbs most of it.
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
