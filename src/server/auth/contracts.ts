@@ -73,5 +73,18 @@ export const AUTH_ERROR_CODES = {
   // nothing and lets the UI say "wrong account". Other accept failures stay
   // generic for anti-enumeration.
   emailMismatch: "email_mismatch",
+  // Built-in sign-in (RUK-288). The OTP browser binding is missing or does not
+  // match: the tab that requested the code is gone, so the code cannot be
+  // checked here. Surfaced distinctly and NOT as a wrong-code error, because a
+  // user holding a correct code otherwise has no idea why it fails. Leaks
+  // nothing: it names a fact about this browser, never about an account.
+  otpSessionMismatch: "otp_session_mismatch",
+  // Every other verify failure — wrong code, expired, attempts exhausted. The
+  // backend collapses them into one 401 on purpose (anti-enumeration) and so do
+  // we; the copy tells the user to re-check or request a new code.
+  otpVerificationFailed: "otp_verification_failed",
+  // Uniform password-login failure. Never says which field was wrong: naming
+  // one would enumerate accounts.
+  invalidCredentials: "invalid_credentials",
 } as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];

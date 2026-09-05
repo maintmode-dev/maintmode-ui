@@ -9,6 +9,9 @@ const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
 const LOGOUT_ALL_PATH = "/api/v1/logout/all";
 const ME_PATH = "/api/v1/me";
+const OTP_REQUEST_PATH = "/api/v1/login/otp/request";
+const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
+const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
 
 /**
  * BFF-owned OAuth.
@@ -65,6 +68,72 @@ export async function exchangeGoogleIdToken(idToken: string, testRoles = ""): Pr
  * non-2xx this throws `BackendAuthError`, which the `signIn` callback maps to
  * a generic sign-in failure code — no invitation detail leaks to the UI.
  */
+/**
+ * Step one of the email OTP flow: ask the backend to mail a code (RUK-288).
+ *
+ * The backend answers 202 for EVERY outcome — unknown address, blocked account,
+ * malformed body, burnt-code barrier — with a well-formed nonce either way, and
+ * floors every response to ~300ms. That is deliberate anti-enumeration, so this
+ * function reports success identically in all those cases and the UI must never
+ * translate any of them into "no such account".
+ *
+ * The returned `session_nonce` is the browser binding. It is stored in an
+ * httpOnly cookie by the caller and never returned to the browser.
+ */
+export async function requestOtpCode(email: string): Promise<{ session_nonce: string }> {
+  return postBackendJson<{ session_nonce: string }>(
+    OTP_REQUEST_PATH,
+    { email },
+    (value): value is { session_nonce: string } =>
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { session_nonce?: unknown }).session_nonce === "string",
+  );
+}
+
+/**
+ * Step two: trade the code plus its binding for a token pair.
+ *
+ * Two failures are distinguishable, both 401: `otp_session_mismatch` (the nonce
+ * is missing or does not match — the tab that requested the code is gone) and
+ * `unauthorized` (everything else: wrong code, expired, attempts exhausted).
+ * The backend checks the nonce BEFORE the code, so a user who lost their tab
+ * gets the actionable answer even if they also mistyped.
+ */
+export async function verifyOtpCode(args: {
+  email: string;
+  code: string;
+  sessionNonce: string;
+}): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    OTP_VERIFY_PATH,
+    { email: args.email, code: args.code, session_nonce: args.sessionNonce },
+    // `refresh_token` carries `omitempty` and may legitimately be absent, so —
+    // unlike the Google path — it is not required here.
+    (parsed) => Boolean(parsed?.access_token),
+  );
+}
+
+/**
+ * Email + password sign-in. Serves both the bootstrap break-glass admin and,
+ * later, `email_password`; the backend decides internally and the frontend
+ * cannot and need not tell them apart.
+ *
+ * Every failure is one uniform 401 — wrong password, blocked account, refused
+ * signup, exhausted seats — deliberately not routed through the shared error
+ * mapper, which would leak `signup_disabled` and `seats_limit_exceeded`.
+ */
+export async function loginWithPassword(args: {
+  email: string;
+  password: string;
+}): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    PASSWORD_LOGIN_PATH,
+    { email: args.email, password: args.password },
+    (parsed) => Boolean(parsed?.access_token),
+  );
+}
+
 export async function acceptInvitation(args: {
   invitationToken: string;
   provider: string;

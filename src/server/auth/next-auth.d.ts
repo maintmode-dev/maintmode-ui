@@ -38,6 +38,24 @@ declare module "next-auth" {
      * structural — any future writer must supply a valid role.
      */
     role?: Role;
+    /**
+     * Built-in sign-in (RUK-288). Returned from the `backend-login` provider's
+     * `authorize` and read by the `signIn` callback, which performs the actual
+     * backend exchange.
+     *
+     * Carried on the user object rather than read from the callback's
+     * `credentials` argument, which is typed `Record<string, CredentialInput>`
+     * and would need a cast. This mirrors how `role` reaches the callback for
+     * dev-bypass, keeping the "validated in `authorize`" invariant structural.
+     *
+     * These are inputs to the exchange, never tokens: no secret material and
+     * nothing derived from a session lives here, and none of it reaches the
+     * browser.
+     */
+    signInKind?: "otp" | "password";
+    email?: string | null;
+    otpCode?: string;
+    password?: string;
   }
 }
 
