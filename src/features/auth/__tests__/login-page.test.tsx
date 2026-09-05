@@ -11,7 +11,16 @@ afterEach(() => cleanup());
 const noopSignIn = vi.fn(async () => {});
 
 function renderLogin(error?: string) {
-  render(<LoginPage error={error} signInAction={noopSignIn} />);
+  render(
+    <LoginPage
+      error={error}
+      signInAction={noopSignIn}
+      requestOtpAction={async () => ({})}
+      otpSignInAction={async () => ({})}
+      passwordSignInAction={async () => ({})}
+      changeEmailAction={async () => {}}
+    />,
+  );
 }
 
 describe("LoginPage error messages", () => {

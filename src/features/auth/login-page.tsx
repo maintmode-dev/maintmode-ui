@@ -6,6 +6,8 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
 import { BrandIcon, MaintMark, type BrandProvider } from "@/shared/ui/icons/brand-icons";
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
+import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
+import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
 
 export interface LoginPageProps {
   error?: string;
@@ -23,6 +25,13 @@ export interface LoginPageProps {
    * to `/api/auth/signin/<id>` omits it and fails with `MissingCSRF`.
    */
   signInAction: (providerId: string) => Promise<void>;
+  /** Step one of the OTP flow: mails a code and binds it to this browser. */
+  requestOtpAction: (email: string) => Promise<{ error?: string }>;
+  /** Step two, and the password form: establishes the session. */
+  otpSignInAction: (email: string, code: string) => Promise<{ error?: string }>;
+  passwordSignInAction: (email: string, password: string) => Promise<{ error?: string }>;
+  /** Abandons the current OTP flow so another address can be used. */
+  changeEmailAction: () => Promise<void>;
 }
 
 /**
@@ -54,7 +63,15 @@ const BREAK_GLASS_METHODS: SignInMethod[] = [
 /** Disabled providers are gated until backend support ships. */
 const COMING_SOON_TOOLTIP = "Coming soon — additional providers are on the way";
 
-export function LoginPage({ error, methods, signInAction }: LoginPageProps) {
+export function LoginPage({
+  error,
+  methods,
+  signInAction,
+  requestOtpAction,
+  otpSignInAction,
+  passwordSignInAction,
+  changeEmailAction,
+}: LoginPageProps) {
   const resolvedFailed = methods === undefined;
   const builtIn = (resolvedFailed ? BREAK_GLASS_METHODS : methods).filter((m) => !OAUTH_IDS.has(m.id));
 
@@ -115,7 +132,14 @@ export function LoginPage({ error, methods, signInAction }: LoginPageProps) {
             )}
 
             {builtIn.map((method) => (
-              <BuiltInMethod key={method.id} method={method} />
+              <BuiltInMethod
+                key={method.id}
+                method={method}
+                requestOtpAction={requestOtpAction}
+                otpSignInAction={otpSignInAction}
+                passwordSignInAction={passwordSignInAction}
+                changeEmailAction={changeEmailAction}
+              />
             ))}
           </div>
 
@@ -142,19 +166,37 @@ export function LoginPage({ error, methods, signInAction }: LoginPageProps) {
  * build knows how to draw. An unknown type reaches `redirect` and renders inert
  * rather than crashing the page or pretending to be a working way in.
  */
-function BuiltInMethod({ method }: { method: SignInMethod }) {
-  if (method.type === "password" || method.type === "code") {
-    // Forms land in T4; until then the method is visible and announced, so the
-    // list is already driven by the backend rather than by a literal.
+function BuiltInMethod({
+  method,
+  requestOtpAction,
+  otpSignInAction,
+  passwordSignInAction,
+  changeEmailAction,
+}: {
+  method: SignInMethod;
+  requestOtpAction: (email: string) => Promise<{ error?: string }>;
+  otpSignInAction: (email: string, code: string) => Promise<{ error?: string }>;
+  passwordSignInAction: (email: string, password: string) => Promise<{ error?: string }>;
+  changeEmailAction: () => Promise<void>;
+}) {
+  if (method.type === "password") {
     return (
-      <Button
-        variant="outline"
-        className="w-full justify-start gap-2.5 px-3"
-        data-method-type={method.type}
-        disabled
-      >
-        {method.display_name}
-      </Button>
+      <div data-method-type="password">
+        <PasswordSignInForm label={method.display_name} submit={passwordSignInAction} />
+      </div>
+    );
+  }
+
+  if (method.type === "code") {
+    return (
+      <div data-method-type="code">
+        <OtpSignInFlow
+          label={method.display_name}
+          requestCode={requestOtpAction}
+          submitCode={otpSignInAction}
+          onChangeEmail={changeEmailAction}
+        />
+      </div>
     );
   }
 
