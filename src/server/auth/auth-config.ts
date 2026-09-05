@@ -14,9 +14,12 @@ import {
 } from "@/server/auth/backend-token-exchange";
 import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
 import { isRole } from "@/domain/auth/permissions";
+import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
+import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
 import {
   AUTH_ERROR_CODES,
   BackendAuthError,
+  type AuthErrorCode,
   type AuthSessionUser,
   type BackendTokenPair,
 } from "@/server/auth/contracts";
@@ -35,6 +38,17 @@ const authConfig = getAuthConfig();
 
 const DEV_BYPASS_PROVIDER_ID = "dev-bypass";
 
+/**
+ * Built-in sign-in — email OTP and email+password (RUK-288).
+ *
+ * A Credentials provider rather than a BFF route because the session must be
+ * established through NextAuth's jwt cookie: no route in this app forwards a
+ * backend `Set-Cookie`, and the backend's contract is a JSON token pair. Doing
+ * the exchange here means the tokens are born inside NextAuth and never cross a
+ * route boundary, so "the browser never sees a token" holds by construction.
+ */
+const BACKEND_LOGIN_PROVIDER_ID = "backend-login";
+
 // Auth providers are resolved ONCE at module load. `devAuthBypassEnabled`
 // already encodes the prod-safety decision (see parseMaintmodeAuthConfig:
 // it returns false when NODE_ENV === "production"). No further runtime
@@ -46,6 +60,49 @@ const providers: NextAuthConfig["providers"] = [
     authorization: { params: { prompt: "select_account", access_type: "offline" } },
   }),
 ];
+
+providers.push(
+  Credentials({
+    id: BACKEND_LOGIN_PROVIDER_ID,
+    name: "Email sign-in",
+    credentials: { kind: {}, email: {}, code: {}, password: {} },
+    /**
+     * Shape validation ONLY — deliberately no network call. The exchange lives
+     * in the `signIn` callback so the backend call and its error mapping stay in
+     * one place, exactly as the dev-bypass provider defers to
+     * `runBackendExchange`. Splitting them would mean verifying a 6-digit code
+     * twice, and the backend allows five attempts per code before burning it.
+     */
+    async authorize(credentials) {
+      const kind = typeof credentials?.kind === "string" ? credentials.kind : "";
+      const email = typeof credentials?.email === "string" ? credentials.email.trim() : "";
+      if (!email) {
+        return null;
+      }
+
+      if (kind === "otp") {
+        const code = typeof credentials?.code === "string" ? credentials.code.trim() : "";
+        // Rejecting a malformed code here avoids spending one of the five
+        // backend attempts on a value that cannot win. Shared with the client
+        // form so the two cannot drift.
+        if (!isWellFormedOtpCode(code)) {
+          return null;
+        }
+        return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "otp" as const, email, otpCode: code };
+      }
+
+      if (kind === "password") {
+        const password = typeof credentials?.password === "string" ? credentials.password : "";
+        if (!password) {
+          return null;
+        }
+        return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "password" as const, email, password };
+      }
+
+      return null;
+    },
+  }),
+);
 
 if (authConfig.devAuthBypassEnabled) {
   providers.push(
@@ -127,6 +184,20 @@ export const config = {
         // with it.
         const role = typeof user?.role === "string" ? user.role : "";
         return runBackendExchange(account, "dev-bypass", role);
+      }
+      if (account.provider === BACKEND_LOGIN_PROVIDER_ID) {
+        try {
+          return await runBuiltInSignIn(account, user);
+        } catch (error) {
+          // `built-in-sign-in.ts` deliberately does not import NextAuth, so its
+          // failures arrive as a plain error and are rewrapped here. Without
+          // this, the code would not reach `/login` as `?code=` and every
+          // built-in sign-in failure would read as a generic one.
+          if (error instanceof BuiltInSignInError) {
+            throw new BackendExchangeError(error.code as AuthErrorCode);
+          }
+          throw error;
+        }
       }
       return false;
     },

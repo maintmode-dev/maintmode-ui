@@ -118,6 +118,12 @@ const ENDPOINTS = [
     path: "/api/v1/audit/log?limit=20",
     why: "RUK-171: `details` is a flat string, `actor` an email — FE renders degraded.",
   },
+  {
+    name: "auth-providers",
+    base: AUTH_BASE,
+    path: "/api/v1/auth/providers",
+    why: "RUK-288: /login renders from this list, so a shape change here is a login page nobody can use. Public + unauthenticated, so the bearer token is ignored.",
+  },
 ];
 
 /**
