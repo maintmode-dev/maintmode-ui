@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
+import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
 
 /**
  * Two-step email one-time-code sign-in (RUK-288).
@@ -88,7 +89,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     // Each stray submit spends one of five attempts, and the backend floors
     // every response to ~300ms, so a double-click is a live risk.
     if (inFlight.current || pending || expired) return;
-    if (!/^\d{6}$/.test(code.trim())) {
+    if (!isWellFormedOtpCode(code)) {
       setError("invalid_code_format");
       return;
     }
@@ -240,8 +241,11 @@ export function flowErrorMessage(code: string): string {
       return "Enter the 6-digit code.";
     case "invalid_email":
       return "Enter a valid email address.";
-    case "otp_rate_limited":
+    case "otp_requests_rate_limited":
+      // Request step: no code has been checked, so "attempts" would be wrong.
       return "Too many requests. Wait a moment and try again.";
+    case "otp_rate_limited":
+      return "Too many attempts. Wait a moment and try again.";
     case "otp_request_failed":
       return "Something went wrong. Try again.";
     default:

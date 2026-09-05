@@ -86,5 +86,9 @@ export const AUTH_ERROR_CODES = {
   // Uniform password-login failure. Never says which field was wrong: naming
   // one would enumerate accounts.
   invalidCredentials: "invalid_credentials",
+  // Rate limited, which is not a verdict on the code the user typed. Kept
+  // separate so the copy does not tell someone to re-check a correct code and
+  // send more requests into the limiter that is already refusing them.
+  otpRateLimited: "otp_rate_limited",
 } as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];

@@ -56,7 +56,7 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
     // moment" when the service is unreachable sends them into a pointless
     // retry loop. Neither may imply anything about the address.
     const status = (error as { status?: number } | null)?.status;
-    return { error: status === 429 ? "otp_rate_limited" : "otp_request_failed" };
+    return { error: status === 429 ? "otp_requests_rate_limited" : "otp_request_failed" };
   }
 }
 

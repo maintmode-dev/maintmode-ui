@@ -14,6 +14,7 @@ import {
 } from "@/server/auth/backend-token-exchange";
 import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
 import { isRole } from "@/domain/auth/permissions";
+import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
 import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
 import {
   AUTH_ERROR_CODES,
@@ -81,9 +82,10 @@ providers.push(
 
       if (kind === "otp") {
         const code = typeof credentials?.code === "string" ? credentials.code.trim() : "";
-        // The backend requires exactly six digits; rejecting anything else here
-        // avoids spending one of the five attempts on a value that cannot win.
-        if (!/^\d{6}$/.test(code)) {
+        // Rejecting a malformed code here avoids spending one of the five
+        // backend attempts on a value that cannot win. Shared with the client
+        // form so the two cannot drift.
+        if (!isWellFormedOtpCode(code)) {
           return null;
         }
         return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "otp" as const, email, otpCode: code };

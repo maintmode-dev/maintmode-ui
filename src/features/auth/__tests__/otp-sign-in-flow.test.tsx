@@ -253,6 +253,34 @@ describe("a second submit while one is in flight is ignored", () => {
   });
 });
 
+describe("the double-submit guard is synchronous, not state-based", () => {
+  it("blocks a second submit fired in the SAME tick as the first", async () => {
+    // `pending` is React state, so it is not visible to a second event handler
+    // running before the re-render. Only a ref blocks that, and each stray
+    // submit spends one of five backend attempts. Firing both submits without
+    // awaiting between them is what distinguishes the ref from the state.
+    let resolveSubmit: (v: { error?: string }) => void = () => {};
+    const submitCode = vi.fn(() => new Promise<{ error?: string }>((resolve) => (resolveSubmit = resolve)));
+    setup({ submitCode });
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+
+    const form = screen.getByLabelText("Enter the 6-digit code").closest("form")!;
+    // No await between them: `pending` has not re-rendered yet.
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(submitCode).toHaveBeenCalledTimes(1);
+    resolveSubmit({});
+  });
+});
+
 describe("the OTP input stays usable by autofill", () => {
   it("is a numeric one-time-code field, not a masked password", async () => {
     await reachCodeStep();
@@ -269,7 +297,7 @@ describe("§6.9 — a failed request keeps the user on step one", () => {
   it("does not advance to the code screen when no code was sent", async () => {
     // Advancing anyway would show a countdown and a code input for a code that
     // was never mailed.
-    const requestCode = vi.fn(async () => ({ error: "otp_rate_limited" }));
+    const requestCode = vi.fn(async () => ({ error: "otp_requests_rate_limited" }));
     setup({ requestCode });
 
     fireEvent.change(screen.getByLabelText("Email code"), {

@@ -53,6 +53,16 @@ describe("otp-nonce-cookie — the binding never reaches browser JavaScript", ()
     expect(value).not.toContain("raw-nonce-value");
   });
 
+  it("normalizes the address before binding it", async () => {
+    // The backend normalizes server-side, so binding the raw input would make
+    // the two disagree about what "the same address" means.
+    await setOtpBinding({ nonce: "n-1", email: "  User@Example.TEST  " });
+
+    const [, value] = store.set.mock.calls[0];
+    const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    expect(decoded.email).toBe("user@example.test");
+  });
+
   it("round-trips the nonce and the email", async () => {
     store.get.mockReturnValue({ value: encode({ nonce: "n-9", email: "user@example.test" }) });
 

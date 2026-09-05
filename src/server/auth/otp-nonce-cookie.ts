@@ -56,8 +56,22 @@ function isBinding(value: unknown): value is OtpBinding {
   return typeof nonce === "string" && nonce.length > 0 && typeof email === "string" && email.length > 0;
 }
 
+/**
+ * Addresses are normalized before they are bound, and compared normalized, so
+ * the frontend's idea of "the same address" matches the backend's — it
+ * normalizes server-side. Without this, typing `User@x.test` at step one and
+ * letting a password manager fill `user@x.test` at step two would fail the
+ * binding check and destroy a perfectly valid code.
+ */
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
 export async function setOtpBinding(binding: OtpBinding): Promise<void> {
-  const encoded = Buffer.from(JSON.stringify(binding), "utf8").toString("base64url");
+  const encoded = Buffer.from(
+    JSON.stringify({ nonce: binding.nonce, email: normalizeEmail(binding.email) }),
+    "utf8",
+  ).toString("base64url");
   const store = await cookies();
   store.set(OTP_NONCE_COOKIE, encoded, {
     httpOnly: true,

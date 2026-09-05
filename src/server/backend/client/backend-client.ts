@@ -43,7 +43,13 @@ export async function backendRequest<TResponse>({
     try {
       response = await fetch(target, {
         ...init,
-        signal: controller.signal,
+        // Combined, not overwritten. Spreading `...init` and then assigning
+        // `signal` silently discarded any caller-supplied deadline, so a route
+        // asking for a tighter bound than the shared default got the default
+        // anyway — a fix that looked applied and did nothing.
+        signal: init.signal
+          ? AbortSignal.any([init.signal as AbortSignal, controller.signal])
+          : controller.signal,
         headers: {
           accept: "application/json",
           ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),

@@ -28,6 +28,9 @@ vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   readOtpBinding: () => readOtpBinding(),
   clearOtpBinding: () => clearOtpBinding(),
   setOtpBinding: vi.fn(),
+  // The real implementation: normalization is part of the behaviour under test,
+  // so stubbing it would hide the case-variant bug this file now covers.
+  normalizeEmail: (email: string) => email.trim().toLowerCase(),
   OTP_NONCE_COOKIE: "__Host-mm.otp_nonce",
 }));
 
@@ -74,6 +77,28 @@ describe("AC-4 — a lost binding must never be reported as a wrong code", () =>
     expect(code).toBe(AUTH_ERROR_CODES.otpSessionMismatch);
     // Never reaches the backend: there is nothing to verify against.
     expect(verifyOtpCode).not.toHaveBeenCalled();
+  });
+
+  it("accepts a case variant of the bound address instead of destroying the code", async () => {
+    // Password managers and autofill routinely normalize case, so someone who
+    // typed `User@…` at step one may well submit `user@…` at step two. Treating
+    // that as a different address would clear the cookie and throw away a
+    // perfectly valid code — the binding locking out the user it protects.
+    readOtpBinding.mockResolvedValue({ nonce: "n-1", email: "someone@example.test" });
+    verifyOtpCode.mockResolvedValue(TOKENS);
+    fetchBackendMe.mockResolvedValue(ME);
+
+    await expect(
+      callSignIn({ provider: "backend-login" }, { ...OTP_USER, email: "  SoMeOne@Example.TEST " }),
+    ).resolves.toBe(true);
+
+    // ...and the address sent to the backend is the BOUND one, so step two
+    // cannot be pointed at a different address by construction.
+    expect(verifyOtpCode).toHaveBeenCalledWith({
+      email: "someone@example.test",
+      code: "123456",
+      sessionNonce: "n-1",
+    });
   });
 
   it("reports a mismatch when the binding belongs to a different address", async () => {

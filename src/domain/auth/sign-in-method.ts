@@ -28,3 +28,15 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<SignInMethodType>(["password", 
 export function isKnownSignInMethodType(value: string): value is SignInMethodType {
   return KNOWN_TYPES.has(value);
 }
+
+/**
+ * The backend requires exactly six digits and allows only five attempts before
+ * burning the code for the rest of its TTL. Rejecting a malformed value before
+ * it reaches the wire means a typo cannot spend one of those attempts.
+ *
+ * Lives in `domain/` because both the client form and the server-side
+ * `authorize` must agree on it; two copies of this rule would drift.
+ */
+export function isWellFormedOtpCode(value: string): boolean {
+  return /^\d{6}$/.test(value.trim());
+}

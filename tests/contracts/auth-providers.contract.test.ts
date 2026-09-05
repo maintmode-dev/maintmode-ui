@@ -140,11 +140,22 @@ describe("auth providers — a parsed list is rendered as it stands", () => {
 describe("auth providers — the fallback must be reachable quickly", () => {
   it("bounds the call well under the shared 10s default", async () => {
     // This fetch blocks the cold-start route's first byte, and the break-glass
-    // fallback exists to be reached: a ten-second blank tab is indistinguishable
+    // fallback exists to be REACHED: a ten-second blank tab is indistinguishable
     // from a dead site for the administrator trying to sign in and fix things.
+    //
+    // Asserts the deadline actually fires, not merely that a signal object was
+    // passed. The earlier version checked `toBeInstanceOf(AbortSignal)`, which
+    // held just as happily with the bound set to ten minutes — and did hold
+    // while the shared client was silently discarding the signal altogether.
+    // (`backend-client-signal.test.ts` covers the client honouring it.)
     await resolveAuthProviders();
 
     const options = backendRequest.mock.calls[0]?.[0] as { signal?: AbortSignal };
     expect(options.signal).toBeInstanceOf(AbortSignal);
-  });
+    expect(options.signal?.aborted).toBe(false);
+
+    // Fires well inside the shared 10s default.
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    expect(options.signal?.aborted).toBe(true);
+  }, 10_000);
 });

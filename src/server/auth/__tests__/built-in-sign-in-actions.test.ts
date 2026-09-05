@@ -63,8 +63,18 @@ describe("requestOtpAction — the address must stay unknowable", () => {
     requestOtpCode.mockRejectedValue(Object.assign(new Error("429"), { status: 429 }));
 
     await expect(requestOtpAction("someone@example.test")).resolves.toEqual({
-      error: "otp_rate_limited",
+      error: "otp_requests_rate_limited",
     });
+  });
+
+  it("maps every non-429 failure to the one generic code", async () => {
+    // A status-specific branch here (a 404 becoming "unknown_account", say)
+    // would hand back exactly what the backend's uniform 202 exists to hide.
+    for (const status of [400, 403, 404, 500, 503]) {
+      requestOtpCode.mockRejectedValueOnce(Object.assign(new Error("x"), { status }));
+      const result = await requestOtpAction("someone@example.test");
+      expect(result).toEqual({ error: "otp_request_failed" });
+    }
   });
 
   it("refuses an empty address before calling the backend", async () => {

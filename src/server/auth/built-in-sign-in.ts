@@ -1,7 +1,7 @@
 import "server-only";
 
 import { fetchBackendMe, loginWithPassword, verifyOtpCode } from "@/server/auth/backend-token-exchange";
-import { clearOtpBinding, readOtpBinding } from "@/server/auth/otp-nonce-cookie";
+import { clearOtpBinding, normalizeEmail, readOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import {
   AUTH_ERROR_CODES,
   BackendAuthError,
@@ -24,7 +24,7 @@ export async function runBuiltInSignIn(
   account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
   user: { signInKind?: "otp" | "password"; email?: string | null; otpCode?: string; password?: string },
 ): Promise<true> {
-  const email = typeof user.email === "string" ? user.email : "";
+  const email = normalizeEmail(typeof user.email === "string" ? user.email : "");
   let tokens: BackendTokenPair;
 
   if (user.signInKind === "otp") {
@@ -41,7 +41,15 @@ export async function runBuiltInSignIn(
     }
 
     try {
-      tokens = await verifyOtpCode({ email, code: user.otpCode ?? "", sessionNonce: binding.nonce });
+      // The BOUND address, not the one just submitted. The two are equal by the
+      // check above, and sending the bound one makes "step two cannot be
+      // pointed at a different address" true by construction rather than by a
+      // comparison someone could later weaken.
+      tokens = await verifyOtpCode({
+        email: binding.email,
+        code: user.otpCode ?? "",
+        sessionNonce: binding.nonce,
+      });
     } catch (error) {
       // The backend checks the nonce before the code, so it can also report a
       // mismatch we could not detect locally (a nonce this browser holds but the
@@ -49,6 +57,12 @@ export async function runBuiltInSignIn(
       if (backendErrorCode(error) === "otp_session_mismatch") {
         await clearOtpBinding();
         throw new BuiltInSignInError(AUTH_ERROR_CODES.otpSessionMismatch);
+      }
+      // A 429 is not a verdict on the code. Telling someone to re-check a
+      // correct code drives more requests into the limiter already refusing
+      // them — the same misattributed-failure loop this ticket exists to end.
+      if ((error as { status?: number } | null)?.status === 429) {
+        throw new BuiltInSignInError(AUTH_ERROR_CODES.otpRateLimited);
       }
       // Wrong, expired, or attempts exhausted — one uniform answer, and the
       // binding survives so the remaining attempts stay usable.
