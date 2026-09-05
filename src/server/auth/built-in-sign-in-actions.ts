@@ -1,10 +1,10 @@
 "use server";
 
-import { AuthError } from "next-auth";
 import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
 import { clearOtpBinding, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
+import { safeNext } from "@/server/auth/safe-next";
 
 /**
  * Server actions behind the built-in sign-in methods (RUK-288).
@@ -51,11 +51,12 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
     // reach the user's browser.
     await setOtpBinding({ nonce, email: trimmed });
     return {};
-  } catch {
-    // Covers the rate limiter (429) and transport failure alike. Neither is
-    // distinguishable to the user in a way they could act on differently, and
-    // both must avoid implying anything about the address.
-    return { error: "otp_request_failed" };
+  } catch (error) {
+    // A 429 and a dead network need different copy: telling someone to "wait a
+    // moment" when the service is unreachable sends them into a pointless
+    // retry loop. Neither may imply anything about the address.
+    const status = (error as { status?: number } | null)?.status;
+    return { error: status === 429 ? "otp_rate_limited" : "otp_request_failed" };
   }
 }
 
@@ -77,7 +78,11 @@ export async function credentialsSignInAction(
     | { kind: "otp"; email: string; code: string; next?: string }
     | { kind: "password"; email: string; password: string; next?: string },
 ): Promise<SignInActionResult> {
-  const redirectTo = input.next && input.next.startsWith("/") ? input.next : "/";
+  // `safeNext`, not an ad-hoc `startsWith("/")`: this is an exported server
+  // action, so it is invocable by action id with an attacker-chosen `next`, and
+  // a bare slash check accepts protocol-relative `//evil.test`. Defense in depth
+  // on an auth boundary must not depend on every caller having sanitized first.
+  const redirectTo = input.next ? safeNext(input.next) : "/";
 
   try {
     await signIn("backend-login", {
@@ -97,7 +102,11 @@ export async function credentialsSignInAction(
       throw error;
     }
 
-    const code = error instanceof AuthError ? ((error as { code?: string }).code ?? "") : "";
+    // Read structurally rather than via `instanceof AuthError`: importing
+    // `next-auth` here would pull its runtime into every consumer of this
+    // module, and the only thing needed is the code the callback attached.
+    const code =
+      typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
 
     if (code === AUTH_ERROR_CODES.otpSessionMismatch) {
       await clearOtpBinding();

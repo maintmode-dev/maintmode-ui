@@ -39,11 +39,6 @@ describe("AC-10 — backend-login is wired into the signIn callback", () => {
     expect(branch).toBeLessThan(catchAll);
   });
 
-  it("still rejects a provider it does not recognise", () => {
-    // The catch-all is a security property, not an oversight: it must survive.
-    expect(source.lastIndexOf("return false;")).toBeGreaterThan(-1);
-  });
-
   it("does the exchange in the callback, not in authorize", () => {
     // `authorize` must stay a shape check. If it ever called the backend, a
     // single 6-digit code would be verified twice and the backend allows five

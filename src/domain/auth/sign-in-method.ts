@@ -28,8 +28,3 @@ const KNOWN_TYPES: ReadonlySet<string> = new Set<SignInMethodType>(["password", 
 export function isKnownSignInMethodType(value: string): value is SignInMethodType {
   return KNOWN_TYPES.has(value);
 }
-
-/** `true` when the list contains a method this build can actually render as usable. */
-export function hasUsableMethod(methods: readonly SignInMethod[]): boolean {
-  return methods.some((m) => m.type === "password" || m.type === "code");
-}

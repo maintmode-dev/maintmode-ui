@@ -30,8 +30,12 @@ describe("AC-1 — the method list comes from the backend, not from a literal", 
   it("renders every method the backend advertises", () => {
     render(<LoginPage methods={[PASSWORD, OTP]} {...actions} />);
 
-    expect(screen.getByText("Password")).toBeDefined();
-    expect(screen.getByText("Email code")).toBeDefined();
+    // Asserted by rendered component, not by label text: both forms render
+    // `display_name` as their label, so matching text alone would pass even if
+    // a `password` method rendered the OTP flow.
+    expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
+    expect(document.querySelector('[data-method-type="code"]')).not.toBeNull();
+    expect(document.querySelector('input[type="password"]')).not.toBeNull();
   });
 
   it("drops a method the backend stops advertising, with no frontend change", () => {
@@ -39,7 +43,8 @@ describe("AC-1 — the method list comes from the backend, not from a literal", 
     // remove it from this page without a release.
     render(<LoginPage methods={[PASSWORD]} {...actions} />);
 
-    expect(screen.getByText("Password")).toBeDefined();
+    expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
+    expect(document.querySelector('[data-method-type="code"]')).toBeNull();
     expect(screen.queryByText("Email code")).toBeNull();
   });
 

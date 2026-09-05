@@ -15,10 +15,10 @@ describe("password sign-in form", () => {
   it("submits the trimmed address with the password", async () => {
     const submit = setup();
 
-    fireEvent.change(screen.getByLabelText("Password"), {
+    fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "  admin@example.test  " },
     });
-    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "hunter2" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     await waitFor(() => expect(submit).toHaveBeenCalledWith("admin@example.test", "hunter2"));
@@ -30,12 +30,12 @@ describe("password sign-in form", () => {
 
     expect(button().hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(screen.getByLabelText("Password"), {
+    fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "admin@example.test" },
     });
     expect(button().hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "x" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "x" } });
     expect(button().hasAttribute("disabled")).toBe(false);
   });
 
@@ -44,10 +44,10 @@ describe("password sign-in form", () => {
     // uniform 401 exists to prevent.
     setup(vi.fn(async () => ({ error: "invalid_credentials" })));
 
-    fireEvent.change(screen.getByLabelText("Password"), {
+    fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "admin@example.test" },
     });
-    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "wrong" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     const alert = await screen.findByRole("alert");
@@ -58,9 +58,19 @@ describe("password sign-in form", () => {
     // Without these, a sign-in page pushes people toward weaker credentials.
     setup();
 
-    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe("username");
-    const password = screen.getByPlaceholderText("Password");
+    expect(screen.getByLabelText("Email").getAttribute("autocomplete")).toBe("username");
+    const password = screen.getByLabelText("Password");
     expect(password.getAttribute("autocomplete")).toBe("current-password");
     expect(password.getAttribute("type")).toBe("password");
+  });
+
+  it("gives each field its own label", () => {
+    // An earlier version labelled the EMAIL input "Password" and left the
+    // password input with only a placeholder, so a screen reader announced the
+    // wrong field and the real one not at all.
+    setup();
+
+    expect(screen.getByLabelText("Email").getAttribute("type")).toBe("email");
+    expect(screen.getByLabelText("Password").getAttribute("type")).toBe("password");
   });
 });

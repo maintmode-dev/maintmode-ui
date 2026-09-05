@@ -92,8 +92,6 @@ describe("step two — entering the code", () => {
 describe("AC-4 — a lost binding is not a wrong code", () => {
   it("tells the user to request a new code, never that the code is wrong", async () => {
     const submitCode = vi.fn(async () => ({ error: "otp_session_mismatch" }));
-    await reachCodeStep();
-    cleanup();
     setup({ submitCode });
 
     fireEvent.change(screen.getByLabelText("Email code"), {
@@ -111,6 +109,29 @@ describe("AC-4 — a lost binding is not a wrong code", () => {
     // The whole point of the ticket: a correct code in a reopened tab must not
     // be reported as incorrect.
     expect(alert.textContent).not.toContain("isn't valid");
+  });
+
+  it("returns to step one so the recovery it advises is actually reachable", async () => {
+    // The binding is gone, so step two is a dead end: "Sign in" would fire more
+    // doomed calls, and the residual cooldown greys out the very button the
+    // message tells the user to press.
+    const submitCode = vi.fn(async () => ({ error: "otp_session_mismatch" }));
+    setup({ submitCode });
+
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeDefined());
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    // And asking again is available immediately, not throttled.
+    expect(screen.getByRole("button", { name: "Email me a code" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("reports a wrong code distinctly, and keeps the user on step two", async () => {
@@ -241,6 +262,101 @@ describe("the OTP input stays usable by autofill", () => {
     expect(input.getAttribute("inputmode")).toBe("numeric");
     // Masking would defeat paste and platform one-time-code autofill.
     expect(input.getAttribute("type")).not.toBe("password");
+  });
+});
+
+describe("§6.9 — a failed request keeps the user on step one", () => {
+  it("does not advance to the code screen when no code was sent", async () => {
+    // Advancing anyway would show a countdown and a code input for a code that
+    // was never mailed.
+    const requestCode = vi.fn(async () => ({ error: "otp_rate_limited" }));
+    setup({ requestCode });
+
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Too many requests");
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    expect(screen.getByLabelText("Email code")).toBeDefined();
+  });
+
+  it("distinguishes an unreachable service from rate limiting", async () => {
+    // "Wait a moment and try again" sends someone into a pointless retry loop
+    // when the service is simply down.
+    setup({ requestCode: vi.fn(async () => ({ error: "otp_request_failed" })) });
+
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Something went wrong. Try again.");
+  });
+});
+
+describe("§6.9 — a successful resend restarts the flow", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  it("restarts the countdown and clears the stale code", async () => {
+    const { requestCode } = await reachCodeStep();
+
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "111111" },
+    });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(screen.getByRole("timer").textContent).toContain("4:00");
+
+    fireEvent.click(screen.getByRole("button", { name: /Request a new code/ }));
+
+    await waitFor(() => expect(screen.getByRole("timer").textContent).toContain("5:00"));
+    // The old code is dead; leaving it in the box invites submitting it.
+    expect((screen.getByLabelText("Enter the 6-digit code") as HTMLInputElement).value).toBe("");
+    expect(requestCode).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("§6.6 — the address from step one is the one verified", () => {
+  it("submits the code against the address the code was sent to", async () => {
+    const submitCode = vi.fn(async () => ({}));
+    setup({ submitCode });
+
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(submitCode).toHaveBeenCalledWith("someone@example.test", "123456"));
+  });
+
+  it("refuses a short code locally rather than spending a backend attempt", async () => {
+    // Only five attempts exist per code; a 3-digit submit must not burn one.
+    const submitCode = vi.fn(async () => ({}));
+    await reachCodeStep();
+    cleanup();
+    setup({ submitCode });
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123" },
+    });
+
+    fireEvent.submit(screen.getByLabelText("Enter the 6-digit code").closest("form")!);
+
+    expect(submitCode).not.toHaveBeenCalled();
   });
 });
 

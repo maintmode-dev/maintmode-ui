@@ -45,7 +45,7 @@ export function PasswordSignInForm({ label, submit }: PasswordSignInFormProps) {
 
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
-      <Label htmlFor="password-email">{label}</Label>
+      <Label htmlFor="password-email">Email</Label>
       <Input
         id="password-email"
         name="email"
@@ -58,6 +58,7 @@ export function PasswordSignInForm({ label, submit }: PasswordSignInFormProps) {
         onChange={(e) => setEmail(e.target.value)}
         aria-describedby={error ? "password-error" : undefined}
       />
+      <Label htmlFor="password-password">{label}</Label>
       <Input
         id="password-password"
         name="password"

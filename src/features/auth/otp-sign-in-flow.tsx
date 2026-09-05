@@ -99,7 +99,20 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     const result = await submitCode(email, code.trim());
     inFlight.current = false;
     setPending(false);
-    if (result.error) setError(result.error);
+    if (!result.error) return;
+
+    if (result.error === "otp_session_mismatch") {
+      // The binding is gone — the server has already cleared it — so step two
+      // is now a dead end: "Sign in" would fire further doomed calls, and the
+      // copy tells the user to request a new code while the residual cooldown
+      // greys that button out. Return to step one, where asking for a new code
+      // is the primary action and nothing is throttled.
+      setStep("email");
+      setCode("");
+      setRemaining(0);
+      setCooldown(0);
+    }
+    setError(result.error);
   }
 
   async function backToEmail() {
@@ -227,8 +240,10 @@ export function flowErrorMessage(code: string): string {
       return "Enter the 6-digit code.";
     case "invalid_email":
       return "Enter a valid email address.";
-    case "otp_request_failed":
+    case "otp_rate_limited":
       return "Too many requests. Wait a moment and try again.";
+    case "otp_request_failed":
+      return "Something went wrong. Try again.";
     default:
       return "Something went wrong. Try again.";
   }
