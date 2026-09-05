@@ -22,6 +22,9 @@ import { isKnownSignInMethodType, type SignInMethod } from "@/domain/auth/sign-i
  * empty list as failure would hand an administrator who deliberately disabled
  * password sign-in a synthesized form that answers 401 forever.
  */
+/** See the `signal` comment in the fetch below. */
+const PROVIDERS_TIMEOUT_MS = 2_000;
+
 export type ResolvedAuthProviders = { ok: true; methods: SignInMethod[] } | { ok: false };
 
 /** Wire envelope. Snake_case, mirrors `apiauthmodels.AuthMethodsResponse`. */
@@ -57,6 +60,13 @@ export async function resolveAuthProviders(): Promise<ResolvedAuthProviders> {
       // Public endpoint: never send credentials, and never let a cached
       // response serve one instance's method list to another.
       cache: "no-store",
+      // Tighter than the shared 10s default, because this call blocks the
+      // cold-start route's first byte. The break-glass fallback below exists to
+      // be REACHED: holding a blank tab for ten seconds before rendering it is
+      // indistinguishable from a dead site, and two seconds is generous for a
+      // static list read over the gateway. (This endpoint carries no
+      // anti-timing floor — that applies to the OTP and password paths.)
+      signal: AbortSignal.timeout(PROVIDERS_TIMEOUT_MS),
     });
   } catch (error) {
     // Deliberately swallows the status code. A 404 cannot distinguish a backend

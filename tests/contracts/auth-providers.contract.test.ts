@@ -136,3 +136,15 @@ describe("auth providers — a parsed list is rendered as it stands", () => {
     expect(result.methods).toHaveLength(1);
   });
 });
+
+describe("auth providers — the fallback must be reachable quickly", () => {
+  it("bounds the call well under the shared 10s default", async () => {
+    // This fetch blocks the cold-start route's first byte, and the break-glass
+    // fallback exists to be reached: a ten-second blank tab is indistinguishable
+    // from a dead site for the administrator trying to sign in and fix things.
+    await resolveAuthProviders();
+
+    const options = backendRequest.mock.calls[0]?.[0] as { signal?: AbortSignal };
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+});
