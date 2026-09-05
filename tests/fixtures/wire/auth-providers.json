@@ -1,0 +1,14 @@
+{
+  "methods": [
+    {
+      "id": "email_password",
+      "type": "password",
+      "display_name": "Password"
+    },
+    {
+      "id": "email_otp",
+      "type": "code",
+      "display_name": "Email code"
+    }
+  ]
+}

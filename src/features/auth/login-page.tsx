@@ -5,9 +5,16 @@ import { AlertTriangle, ChevronRight } from "lucide-react";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
 import { BrandIcon, MaintMark, type BrandProvider } from "@/shared/ui/icons/brand-icons";
+import type { SignInMethod } from "@/domain/auth/sign-in-method";
 
 export interface LoginPageProps {
   error?: string;
+  /**
+   * Sign-in methods the backend advertises, resolved server-side. `undefined`
+   * means the providers fetch failed at the transport level — the page then
+   * renders its break-glass fallback (see `BREAK_GLASS_METHODS`).
+   */
+  methods?: SignInMethod[];
   /**
    * Server action that starts an OAuth sign-in for the given provider id.
    * Supplied by the server page (`src/app/(public)/login/page.tsx`) so this
@@ -18,15 +25,39 @@ export interface LoginPageProps {
   signInAction: (providerId: string) => Promise<void>;
 }
 
-const PROVIDERS: { id: BrandProvider; label: string; enabled: boolean }[] = [
+/**
+ * Google is rendered unconditionally, never from `methods`.
+ *
+ * It is not in the backend's list at all — it lives entirely in NextAuth — so
+ * deriving the button list purely from `methods` would delete the Google button
+ * exactly when the auth service is unreachable, i.e. remove the one method that
+ * still works. (SPEC §4.2.)
+ */
+const OAUTH_PROVIDERS: { id: BrandProvider; label: string; enabled: boolean }[] = [
   { id: "google", label: "Continue with Google", enabled: true },
   { id: "github", label: "Continue with GitHub", enabled: false },
+];
+
+/** Provider ids owned by NextAuth above; a backend method repeating one is skipped. */
+const OAUTH_IDS: ReadonlySet<string> = new Set(OAUTH_PROVIDERS.map((p) => p.id));
+
+/**
+ * What `/login` offers when the providers fetch fails at the transport level.
+ * The backend guarantees its real list always contains a `password` element, so
+ * this matches what a healthy fetch would have produced — and it is the
+ * administrator's break-glass path when the auth service is degraded.
+ */
+const BREAK_GLASS_METHODS: SignInMethod[] = [
+  { id: "email_password", type: "password", display_name: "Password" },
 ];
 
 /** Disabled providers are gated until backend support ships. */
 const COMING_SOON_TOOLTIP = "Coming soon — additional providers are on the way";
 
-export function LoginPage({ error, signInAction }: LoginPageProps) {
+export function LoginPage({ error, methods, signInAction }: LoginPageProps) {
+  const resolvedFailed = methods === undefined;
+  const builtIn = (resolvedFailed ? BREAK_GLASS_METHODS : methods).filter((m) => !OAUTH_IDS.has(m.id));
+
   return (
     <TooltipProvider>
       <main className="min-h-screen grid place-items-center p-6 bg-bg">
@@ -48,18 +79,12 @@ export function LoginPage({ error, signInAction }: LoginPageProps) {
               className="flex items-start gap-2 px-3 py-2 rounded-sm bg-[var(--destructive-bg)] border border-[var(--destructive-border)] text-sm text-[var(--destructive-fg)]"
             >
               <AlertTriangle className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-              <span>
-                {error === "email_mismatch"
-                  ? "This account isn't the one this invitation was sent to. Sign in with the right account."
-                  : error === "signup_disabled" || error === "AccessDenied"
-                    ? "This account is not provisioned. Ask an admin for an invitation."
-                    : "Sign-in didn't complete. Try again."}
-              </span>
+              <span>{errorMessage(error)}</span>
             </div>
           ) : null}
 
           <div className="flex flex-col gap-2.5">
-            {PROVIDERS.map((p) =>
+            {OAUTH_PROVIDERS.map((p) =>
               p.enabled ? (
                 <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
                   <Button type="submit" className="w-full justify-start gap-2.5 px-3">
@@ -88,7 +113,17 @@ export function LoginPage({ error, signInAction }: LoginPageProps) {
                 </Tooltip>
               ),
             )}
+
+            {builtIn.map((method) => (
+              <BuiltInMethod key={method.id} method={method} />
+            ))}
           </div>
+
+          {resolvedFailed ? (
+            <p role="status" className="caption text-center text-fg-muted">
+              Some sign-in options may be unavailable right now.
+            </p>
+          ) : null}
 
           {/* "Internal tool" was true when this only ran in one company. It now
               ships as a self-hosted product, where the reader may well be the
@@ -99,6 +134,65 @@ export function LoginPage({ error, signInAction }: LoginPageProps) {
       </main>
     </TooltipProvider>
   );
+}
+
+/**
+ * Renders one backend-advertised method by `type`, never by `id` — `id` is a
+ * machine key the backend may extend, while `type` is the closed union this
+ * build knows how to draw. An unknown type reaches `redirect` and renders inert
+ * rather than crashing the page or pretending to be a working way in.
+ */
+function BuiltInMethod({ method }: { method: SignInMethod }) {
+  if (method.type === "password" || method.type === "code") {
+    // Forms land in T4; until then the method is visible and announced, so the
+    // list is already driven by the backend rather than by a literal.
+    return (
+      <Button
+        variant="outline"
+        className="w-full justify-start gap-2.5 px-3"
+        data-method-type={method.type}
+        disabled
+      >
+        {method.display_name}
+      </Button>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-block w-full" tabIndex={0}>
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2.5 px-3 pointer-events-none"
+            data-method-type={method.type}
+            disabled
+          >
+            {method.display_name}
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{COMING_SOON_TOOLTIP}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Server-delivered `?code=` values only. Client-side conditions (network
+ * failure, countdown expiry) are deliberately NOT mapped here — they never
+ * travel as `?code=`, and merging the two maps would make the sync comment in
+ * `contracts.ts` a lie. (SPEC §6.7.)
+ */
+function errorMessage(code: string): string {
+  switch (code) {
+    case "email_mismatch":
+      return "This account isn't the one this invitation was sent to. Sign in with the right account.";
+    case "signup_disabled":
+    case "AccessDenied":
+      return "This account is not provisioned. Ask an admin for an invitation.";
+    default:
+      return "Sign-in didn't complete. Try again.";
+  }
 }
 
 /** Fixed-size white brand tile — keeps the icon column aligned across buttons. */

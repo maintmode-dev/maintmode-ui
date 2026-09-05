@@ -1,4 +1,5 @@
 import { LoginPage } from "@/features/auth/login-page";
+import { resolveAuthProviders } from "@/server/backend/auth/resolve-auth-providers";
 import { signIn } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -28,5 +29,18 @@ export default async function Page({
     await signIn(providerId, { redirectTo });
   }
 
-  return <LoginPage error={errorCode} signInAction={signInAction} />;
+  // Resolved server-side: `/login` sits under `(public)`, which deliberately
+  // omits AppProviders (React Query, sonner) to keep the cold-start route thin,
+  // so a client-side fetch has no QueryClient to run under. The resolver never
+  // throws — a failure yields `undefined` methods and the page renders its
+  // break-glass fallback rather than a 500.
+  const providers = await resolveAuthProviders();
+
+  return (
+    <LoginPage
+      error={errorCode}
+      methods={providers.ok ? providers.methods : undefined}
+      signInAction={signInAction}
+    />
+  );
 }

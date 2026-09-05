@@ -73,7 +73,7 @@
       "method": "GET",
       "status": 200,
       "capturedAt": "2026-08-11T18:37:05.031Z",
-      "why": "RUK-156: built against an invented shape. Also the counterpart to the calendar gap — detail DOES carry `resources`, calendar does not.",
+      "why": "RUK-156: built against an invented shape. Also the counterpart to the calendar gap \u2014 detail DOES carry `resources`, calendar does not.",
       "handEdited": false
     },
     "approvals": {
@@ -101,7 +101,7 @@
       "method": "GET",
       "status": 200,
       "capturedAt": "2026-08-11T18:37:05.031Z",
-      "why": "RUK-171: `details` is a flat string, `actor` an email — FE renders degraded.",
+      "why": "RUK-171: `details` is a flat string, `actor` an email \u2014 FE renders degraded.",
       "handEdited": false,
       "sampledRows": {
         "logs": {
@@ -176,6 +176,26 @@
       "why": "RUK-274: the BFF discarded `total`/`limit`/`offset` entirely, so the catalog silently looked like the whole catalog.",
       "handEdited": false,
       "totalObserved": "500+ (threshold 200: EXCEEDED)"
+    },
+    "auth-providers": {
+      "url": "http://localhost:9000/auth/api/v1/auth/providers",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-09-05T06:05:32.507929Z",
+      "why": "RUK-288: /login renders from this list, so a shape change here is a login page nobody can use. Public + unauthenticated.",
+      "handEdited": false,
+      "valueDomains": {
+        "methods": {
+          "type": [
+            "password",
+            "code"
+          ],
+          "id": [
+            "email_password",
+            "email_otp"
+          ]
+        }
+      }
     }
   },
   "gateway": "http://localhost:9000"
