@@ -4,23 +4,27 @@ import { useQuery } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AcceptInvitePage } from "../accept-invite-page";
+import { LoginPage } from "../login-page";
 
 afterEach(() => cleanup());
 
 const noopAccept = vi.fn(async () => {});
 
 /**
- * T11↔T12 guard. T12 splits the root layout so public routes stop shipping the
- * authenticated provider stack, which means `/accept-invite` will render with
- * NO `QueryClientProvider` above it. If this page ever calls `useQuery` again,
- * every invited user gets a white screen ("No QueryClient set").
+ * T11↔T12 guard, extended to `/login` by RUK-288 (AC-8).
  *
- * These tests render the page WITHOUT any provider. Note that they are written
- * so they cannot pass vacuously: the first one asserts that the bare `useQuery`
- * control really does throw in this exact environment, which is what gives the
- * page's own successful render its meaning.
+ * T12 splits the root layout so public routes stop shipping the authenticated
+ * provider stack, which means both `/accept-invite` and `/login` render with NO
+ * `QueryClientProvider` above them. If either page ever calls `useQuery` again,
+ * its users get a white screen ("No QueryClient set") — and for `/login` that
+ * is every user of the product, on the cold-start route.
+ *
+ * These tests render the pages WITHOUT any provider. They are written so they
+ * cannot pass vacuously: the first one asserts that the bare `useQuery` control
+ * really does throw in this exact environment, which is what gives each page's
+ * successful render its meaning.
  */
-describe("/accept-invite renders without a QueryClientProvider", () => {
+describe("public pages render without a QueryClientProvider", () => {
   it("CONTROL: useQuery without a provider throws in this environment", () => {
     function Bare() {
       useQuery({ queryKey: ["control"], queryFn: async () => "x" });
@@ -54,7 +58,33 @@ describe("/accept-invite renders without a QueryClientProvider", () => {
     },
   );
 
-  it("reaches no @tanstack/react-query import anywhere in the page module graph", async () => {
+  it("renders /login with no provider in the tree", () => {
+    // Same hazard as accept-invite: `(public)` mounts ThemeProvider only, so a
+    // `useQuery` anywhere under the login page white-screens every sign-in.
+    const inert = {
+      signInAction: async () => {},
+      requestOtpAction: async () => ({}),
+      otpSignInAction: async () => ({}),
+      passwordSignInAction: async () => ({}),
+      changeEmailAction: async () => {},
+    };
+
+    expect(() =>
+      render(
+        <LoginPage
+          methods={[
+            { id: "email_password", type: "password", display_name: "Password" },
+            { id: "email_otp", type: "code", display_name: "Email code" },
+          ]}
+          {...inert}
+        />,
+      ),
+    ).not.toThrow();
+
+    expect(screen.getByRole("main")).toBeTruthy();
+  });
+
+  it("reaches no @tanstack/react-query import anywhere in either page module graph", async () => {
     // A render-time assertion only proves the hook wasn't hit on THIS path. This
     // walks the transitive import graph of the page module instead, so a query
     // reintroduced behind a branch — or inside a module the page merely imports
@@ -65,7 +95,13 @@ describe("/accept-invite renders without a QueryClientProvider", () => {
 
     const featureDir = dirname(fileURLToPath(import.meta.url));
     const srcRoot = resolve(featureDir, "../../..");
-    const entry = resolve(featureDir, "../accept-invite-page.tsx");
+    // `/login` is guarded alongside `/accept-invite`: it is the cold-start route
+    // for every session, and RUK-288 grew it two forms' worth of new modules —
+    // exactly the change that could drag React Query back in (RUK-288 AC-8).
+    const entries = [
+      resolve(featureDir, "../accept-invite-page.tsx"),
+      resolve(featureDir, "../login-page.tsx"),
+    ];
 
     const importPattern = /(?:import|export)[\s\S]*?from\s+["']([^"']+)["']/g;
     const seen = new Set<string>();
@@ -106,7 +142,9 @@ describe("/accept-invite renders without a QueryClientProvider", () => {
       }
     }
 
-    await walk(entry);
+    for (const entry of entries) {
+      await walk(entry);
+    }
 
     // Sanity: the walk actually traversed something beyond the entry file. Without
     // this the test would pass just as happily on a broken resolver.
