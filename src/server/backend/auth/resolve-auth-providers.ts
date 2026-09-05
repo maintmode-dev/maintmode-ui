@@ -3,25 +3,6 @@ import "server-only";
 import { backendRequest } from "@/server/backend/client/backend-client";
 import { isKnownSignInMethodType, type SignInMethod } from "@/domain/auth/sign-in-method";
 
-/**
- * Server-side resolution of the sign-in methods for `/login` (RUK-288).
- *
- * Called directly from the server page rather than through a BFF route: the
- * list has no browser consumer, and having the server fetch its own origin
- * would add a round-trip for nothing. See SPEC §4.0.
- *
- * **Never throws.** `/login` is a dynamic server component, so an uncaught
- * throw here is a 500 — turning a degraded auth service into a dead login page
- * for a self-hosted instance, including for the administrator who would fix it.
- * Every failure resolves to `{ ok: false }` and the page renders its
- * break-glass fallback instead (SPEC §6.1).
- *
- * The fallback is for **transport failure only** — no answer, or one that
- * cannot be parsed. A successfully parsed list is returned as it stands, even
- * when empty: once the method list becomes admin-toggleable (FU-2), treating an
- * empty list as failure would hand an administrator who deliberately disabled
- * password sign-in a synthesized form that answers 401 forever.
- */
 /** See the `signal` comment in the fetch below. */
 const PROVIDERS_TIMEOUT_MS = 2_000;
 
@@ -50,6 +31,25 @@ function toMethod(raw: unknown): SignInMethod | null {
   };
 }
 
+/**
+ * Server-side resolution of the sign-in methods for `/login` (RUK-288).
+ *
+ * Called directly from the server page rather than through a BFF route: the
+ * list has no browser consumer, and having the server fetch its own origin
+ * would add a round-trip for nothing. See SPEC §4.0.
+ *
+ * **Never throws.** `/login` is a dynamic server component, so an uncaught
+ * throw here is a 500 — turning a degraded auth service into a dead login page
+ * for a self-hosted instance, including for the administrator who would fix it.
+ * Every failure resolves to `{ ok: false }` and the page renders its
+ * break-glass fallback instead (SPEC §6.1).
+ *
+ * The fallback is for **transport failure only** — no answer, or one that
+ * cannot be parsed. A successfully parsed list is returned as it stands, even
+ * when empty: once the method list becomes admin-toggleable (FU-2), treating an
+ * empty list as failure would hand an administrator who deliberately disabled
+ * password sign-in a synthesized form that answers 401 forever.
+ */
 export async function resolveAuthProviders(): Promise<ResolvedAuthProviders> {
   let raw: unknown;
   try {

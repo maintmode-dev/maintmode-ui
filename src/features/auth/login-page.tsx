@@ -35,6 +35,15 @@ export interface LoginPageProps {
 }
 
 /**
+ * The actions a backend-advertised method needs, named once so `BuiltInMethod`
+ * cannot drift from the documented signatures above.
+ */
+type BuiltInMethodActions = Pick<
+  LoginPageProps,
+  "requestOtpAction" | "otpSignInAction" | "passwordSignInAction" | "changeEmailAction"
+>;
+
+/**
  * Google is rendered unconditionally, never from `methods`.
  *
  * It is not in the backend's list at all — it lives entirely in NextAuth — so
@@ -63,15 +72,7 @@ const BREAK_GLASS_METHODS: SignInMethod[] = [
 /** Disabled providers are gated until backend support ships. */
 const COMING_SOON_TOOLTIP = "Coming soon — additional providers are on the way";
 
-export function LoginPage({
-  error,
-  methods,
-  signInAction,
-  requestOtpAction,
-  otpSignInAction,
-  passwordSignInAction,
-  changeEmailAction,
-}: LoginPageProps) {
+export function LoginPage({ error, methods, signInAction, ...actions }: LoginPageProps) {
   const resolvedFailed = methods === undefined;
   const builtIn = (resolvedFailed ? BREAK_GLASS_METHODS : methods).filter((m) => !OAUTH_IDS.has(m.id));
 
@@ -111,35 +112,15 @@ export function LoginPage({
                   </Button>
                 </form>
               ) : (
-                <Tooltip key={p.id}>
-                  {/* Disabled buttons don't emit pointer events — wrap in a span
-                      so the "coming soon" tooltip still triggers on hover/focus. */}
-                  <TooltipTrigger asChild>
-                    <span className="inline-block w-full" tabIndex={0}>
-                      <Button
-                        variant="outline"
-                        className="w-full justify-start gap-2.5 px-3 pointer-events-none"
-                        disabled
-                      >
-                        <ProviderMark id={p.id} />
-                        {p.label}
-                      </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>{COMING_SOON_TOOLTIP}</TooltipContent>
-                </Tooltip>
+                <ComingSoonButton key={p.id}>
+                  <ProviderMark id={p.id} />
+                  {p.label}
+                </ComingSoonButton>
               ),
             )}
 
             {builtIn.map((method) => (
-              <BuiltInMethod
-                key={method.id}
-                method={method}
-                requestOtpAction={requestOtpAction}
-                otpSignInAction={otpSignInAction}
-                passwordSignInAction={passwordSignInAction}
-                changeEmailAction={changeEmailAction}
-              />
+              <BuiltInMethod key={method.id} method={method} {...actions} />
             ))}
           </div>
 
@@ -172,13 +153,7 @@ function BuiltInMethod({
   otpSignInAction,
   passwordSignInAction,
   changeEmailAction,
-}: {
-  method: SignInMethod;
-  requestOtpAction: (email: string) => Promise<{ error?: string }>;
-  otpSignInAction: (email: string, code: string) => Promise<{ error?: string }>;
-  passwordSignInAction: (email: string, password: string) => Promise<{ error?: string }>;
-  changeEmailAction: () => Promise<void>;
-}) {
+}: BuiltInMethodActions & { method: SignInMethod }) {
   if (method.type === "password") {
     return (
       <div data-method-type="password">
@@ -200,17 +175,30 @@ function BuiltInMethod({
     );
   }
 
+  return <ComingSoonButton data-method-type={method.type}>{method.display_name}</ComingSoonButton>;
+}
+
+/**
+ * A gated control: rendered, disabled, and explained by the "coming soon"
+ * tooltip. Used both for the OAuth providers NextAuth cannot serve yet and for
+ * a backend method whose `type` this build does not know how to draw.
+ */
+function ComingSoonButton({ children, ...buttonProps }: React.ComponentProps<typeof Button>) {
   return (
     <Tooltip>
+      {/* Disabled buttons don't emit pointer events — wrap in a span so the
+          tooltip still triggers on hover/focus. */}
       <TooltipTrigger asChild>
         <span className="inline-block w-full" tabIndex={0}>
+          {/* Spread first: `disabled` and the layout classes are the point of
+              this component and must not be overridable by a caller. */}
           <Button
+            {...buttonProps}
             variant="outline"
             className="w-full justify-start gap-2.5 px-3 pointer-events-none"
-            data-method-type={method.type}
             disabled
           >
-            {method.display_name}
+            {children}
           </Button>
         </span>
       </TooltipTrigger>

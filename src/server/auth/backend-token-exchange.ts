@@ -68,6 +68,21 @@ export async function exchangeGoogleIdToken(idToken: string, testRoles = ""): Pr
  * non-2xx this throws `BackendAuthError`, which the `signIn` callback maps to
  * a generic sign-in failure code — no invitation detail leaks to the UI.
  */
+export async function acceptInvitation(args: {
+  invitationToken: string;
+  provider: string;
+  idToken: string;
+}): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    ACCEPT_INVITATION_PATH,
+    {
+      invitation_token: args.invitationToken,
+      oauth_payload: { provider: args.provider, id_token: args.idToken },
+    },
+    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
+  );
+}
+
 /**
  * Step one of the email OTP flow: ask the backend to mail a code (RUK-288).
  *
@@ -131,21 +146,6 @@ export async function loginWithPassword(args: {
     PASSWORD_LOGIN_PATH,
     { email: args.email, password: args.password },
     (parsed) => Boolean(parsed?.access_token),
-  );
-}
-
-export async function acceptInvitation(args: {
-  invitationToken: string;
-  provider: string;
-  idToken: string;
-}): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(
-    ACCEPT_INVITATION_PATH,
-    {
-      invitation_token: args.invitationToken,
-      oauth_payload: { provider: args.provider, id_token: args.idToken },
-    },
-    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 
