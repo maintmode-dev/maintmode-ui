@@ -289,7 +289,18 @@ export async function changeBackendPassword(args: {
           return { ok: false, kind: args.currentPassword ? "wrong-current-password" : "session-stale" };
         }
         if (response.status === 400) {
-          return { ok: false, kind: "rejected", message: body };
+          // The `message` FIELD, not the raw envelope. `body` is the whole
+          // response text, so passing it straight through put
+          // `{"code":"invalid request","message":…}` verbatim into the
+          // operator's form — and would paste a proxy's HTML error page in
+          // whole. Read for DISPLAY only: §3.4 forbids branching on backend
+          // prose, and the only behavioural branch remains the card's flip flag.
+          const parsed = safeJsonParse<{ message?: string }>(body);
+          return {
+            ok: false,
+            kind: "rejected",
+            message: parsed?.message ?? "That password wasn't accepted.",
+          };
         }
         return { ok: false, kind: "unavailable" };
       },

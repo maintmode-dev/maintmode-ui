@@ -155,12 +155,18 @@ describe("me/password — a backend error stays an error", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "SESSION_STALE" });
   });
 
-  it("passes a 400 through with the backend's own message, unparsed", async () => {
-    backendAnswers(400, "validation error: password does not meet the length policy");
+  it("surfaces the backend's message field on a 400, not its envelope", async () => {
+    backendAnswers(
+      400,
+      '{"code":"invalid request","message":"validation error: password does not meet the length policy"}',
+    );
 
     const response = await POST(post({ new_password: "a-long-enough-password" }));
 
     expect(response.status).toBe(400);
+    // The message, not the whole body: echoing the envelope would put raw JSON
+    // in the operator's form, and would paste a proxy's HTML page in whole.
+    // Read for display only — nothing branches on it.
     await expect(response.json()).resolves.toMatchObject({
       error: "validation error: password does not meet the length policy",
     });

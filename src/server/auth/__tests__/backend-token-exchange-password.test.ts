@@ -80,10 +80,22 @@ describe("changeBackendPassword — the 401 classification", () => {
       changeBackendPassword({ accessToken: "a", newPassword: "a-long-enough-password" }),
     ).resolves.toEqual({ ok: true });
 
-    fetchMock.mockResolvedValueOnce(respond(400, "validation error: length policy"));
+    // A realistic envelope, not a hand-typed bare string. The previous fixture
+    // was satisfied identically by passing the WHOLE body through, which is how
+    // raw JSON reached the operator's form unnoticed.
+    fetchMock.mockResolvedValueOnce(
+      respond(
+        400,
+        '{"code":"invalid request","message":"validation error: password does not meet the length policy"}',
+      ),
+    );
     await expect(
       changeBackendPassword({ accessToken: "a", newPassword: "a-long-enough-password" }),
-    ).resolves.toEqual({ ok: false, kind: "rejected", message: "validation error: length policy" });
+    ).resolves.toEqual({
+      ok: false,
+      kind: "rejected",
+      message: "validation error: password does not meet the length policy",
+    });
 
     fetchMock.mockResolvedValueOnce(respond(503, "gateway down"));
     await expect(
@@ -94,6 +106,19 @@ describe("changeBackendPassword — the 401 classification", () => {
   // A 200 or 202 is not success here: the contract is 204 with an empty body,
   // and treating any 2xx as done would report a password change the backend
   // never made.
+  // A proxy's HTML error page must not be pasted into the form whole.
+  it("falls back to a sentence when a 400 is not the expected envelope", async () => {
+    fetchMock.mockResolvedValue(respond(400, "<html>502 Bad Gateway</html>"));
+
+    await expect(
+      changeBackendPassword({ accessToken: "a", newPassword: "a-long-enough-password" }),
+    ).resolves.toEqual({
+      ok: false,
+      kind: "rejected",
+      message: "That password wasn't accepted.",
+    });
+  });
+
   it("treats a 2xx that is not 204 as unavailable", async () => {
     fetchMock.mockResolvedValue(respond(200, "{}"));
 

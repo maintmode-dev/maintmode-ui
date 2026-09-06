@@ -218,6 +218,30 @@ describe("failures the user must be able to tell apart", () => {
   });
 });
 
+describe("leaving the flow", () => {
+  // Backing out and resetting a DIFFERENT address must not carry the previous
+  // password forward: the user would submit for that account a secret they
+  // never knowingly re-entered.
+  it("clears the typed password when returning to step one", async () => {
+    const props = setup({
+      confirm: vi.fn(async () => ({ error: "password_reset_session_mismatch" })),
+    });
+    await reachCodeStep(props);
+    await submitCode("123456", LONG_ENOUGH);
+
+    await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
+
+    // Back to step two for another address; the field must be empty.
+    fireEvent.change(screen.getByLabelText("Reset your password"), {
+      target: { value: "other@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await screen.findByLabelText("New password");
+
+    expect((screen.getByLabelText("New password") as HTMLInputElement).value).toBe("");
+  });
+});
+
 describe("what a screen reader is told", () => {
   // The alert fires once when the error appears. Returning focus to the field
   // afterwards must still explain why it was rejected, which is what the

@@ -171,7 +171,13 @@ export async function confirmPasswordResetAction(args: {
     await signOut({ redirect: false });
     await clearActiveSession();
   } catch (error) {
-    console.error("[password-reset] post-reset session teardown failed", error);
+    // Status only, like the two log lines above. Logging the error OBJECT here
+    // would render `BackendAuthError.responseBody` — the backend's raw response
+    // text — and the refresh path's body is a token pair, so a failed teardown
+    // would write a live refresh token into the application log.
+    console.error("[password-reset] post-reset session teardown failed", {
+      status: statusOf(error),
+    });
   }
 
   return { done: true };

@@ -265,6 +265,28 @@ describe("confirming a reset", () => {
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
+  // The teardown error can be a BackendAuthError whose `responseBody` is the
+  // raw refresh response — a token pair. Logging the object would serialize it.
+  it("never logs credential material when the teardown fails", async () => {
+    confirmPasswordReset.mockResolvedValue(undefined);
+    signOut.mockRejectedValueOnce(
+      Object.assign(new Error("refresh failed"), {
+        status: 401,
+        responseBody: '{"access_token":"at_SECRET","refresh_token":"rt_SECRET"}',
+      }),
+    );
+
+    await confirmPasswordResetAction({
+      email: "op@example.test",
+      code: "123456",
+      newPassword: "a-long-enough-password",
+    });
+
+    const logged = JSON.stringify((console.error as unknown as ReturnType<typeof vi.fn>).mock.calls);
+    expect(logged).not.toContain("rt_SECRET");
+    expect(logged).not.toContain("access_token");
+  });
+
   it("never logs the address or the code", async () => {
     confirmPasswordReset.mockRejectedValueOnce(backendError(401, "{}"));
 

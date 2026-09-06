@@ -107,6 +107,12 @@ export function PasswordResetFlow({
     timers.reset();
     setStep("email");
     setCode("");
+    // Cleared with the code, not left behind. Without this, someone who backs
+    // out and resets a DIFFERENT address finds the previous password already
+    // filled in, and submits for that account a secret they never knowingly
+    // re-entered — besides holding a plaintext password in state longer than
+    // the flow has any use for it.
+    setPassword("");
     setAttempts(0);
     setError(message);
   }
