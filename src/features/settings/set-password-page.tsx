@@ -51,9 +51,19 @@ export function SetPasswordPage() {
         </header>
 
         {meQuery.isPending || shouldLeave ? (
+          // Shaped like the form it stands in for, not a fixed block. The page
+          // is `grid place-items-center`, so a height change on swap
+          // re-centres the whole card and visibly moves the heading above it —
+          // a placeholder of the wrong height guarantees that on every load.
+          //
           // Also covers the moment between deciding to leave and the navigation
           // landing, so the form never flashes at someone on their way out.
-          <Skeleton className="h-40 w-full" />
+          <div className="flex flex-col gap-2.5" aria-hidden="true">
+            <Skeleton type="row" width={110} />
+            <Skeleton type="block" className="h-9" />
+            <Skeleton type="row" width="70%" />
+            <Skeleton type="block" className="h-9 w-36" />
+          </div>
         ) : meQuery.isError ? (
           // Distinct from the card's own "this deployment doesn't report
           // password state" copy. Both would otherwise render here — an errored

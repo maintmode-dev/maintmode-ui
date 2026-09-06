@@ -9,6 +9,12 @@ import { BrandIcon, MaintMark, type BrandProvider } from "@/shared/ui/icons/bran
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
 import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
+// Statically imported, deliberately. It looks like a candidate for `dynamic()`
+// — it is only reachable behind a click — but it can also be the FIRST thing
+// this page paints: `resetInProgressEmail` resumes the flow after the user
+// comes back from their email client, and a lazy chunk would turn that
+// re-entry into two sequential round-trips. Its own weight is a few KB; every
+// primitive it uses is already on this route.
 import { PasswordResetFlow } from "@/features/auth/password-reset-flow";
 
 export interface LoginPageProps {

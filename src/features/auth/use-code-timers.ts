@@ -58,7 +58,21 @@ export interface CodeTimers {
   guard: <T>(fn: () => Promise<T>) => Promise<T | undefined>;
 }
 
+/** Whole seconds from now until `deadline`, floored at zero. */
+function secondsUntil(deadline: number, now: number): number {
+  return Math.max(0, Math.ceil((deadline - now) / 1000));
+}
+
 export function useCodeTimers(active: boolean): CodeTimers {
+  // Deadlines, not counters. A decrementing counter drifts whenever the tab is
+  // throttled — a backgrounded tab, a laptop waking from sleep, a bfcache
+  // restore — and it drifts in the direction that OVER-reports the time left,
+  // so the user is shown "expires in 4:12" for a code the backend has already
+  // discarded. Deriving from a timestamp survives all three, and the displayed
+  // value stays optimistic only by the network delay it was always optimistic
+  // by.
+  const codeDeadline = useRef(0);
+  const cooldownDeadline = useRef(0);
   const [remaining, setRemaining] = useState(0);
   const [cooldown, setCooldown] = useState(0);
   const inFlight = useRef(false);
@@ -67,10 +81,15 @@ export function useCodeTimers(active: boolean): CodeTimers {
   // backgrounded tab cannot leave a timer running.
   useEffect(() => {
     if (!active) return;
-    const id = setInterval(() => {
-      setRemaining((r) => (r > 0 ? r - 1 : 0));
-      setCooldown((c) => (c > 0 ? c - 1 : 0));
-    }, 1000);
+    const tick = () => {
+      const now = Date.now();
+      setRemaining(secondsUntil(codeDeadline.current, now));
+      setCooldown(secondsUntil(cooldownDeadline.current, now));
+    };
+    const id = setInterval(tick, 1000);
+    // Once immediately, so a tab returning to the foreground corrects on the
+    // frame it wakes rather than a second later.
+    tick();
     return () => clearInterval(id);
   }, [active]);
 
@@ -78,11 +97,16 @@ export function useCodeTimers(active: boolean): CodeTimers {
     // Counted from response receipt, so the client is always slightly
     // optimistic relative to the server. That is the safe direction: the
     // backend, not this timer, decides whether a code is still valid.
+    const now = Date.now();
+    codeDeadline.current = now + CODE_TTL_SECONDS * 1000;
+    cooldownDeadline.current = now + RESEND_COOLDOWN_SECONDS * 1000;
     setRemaining(CODE_TTL_SECONDS);
     setCooldown(RESEND_COOLDOWN_SECONDS);
   }, []);
 
   const reset = useCallback(() => {
+    codeDeadline.current = 0;
+    cooldownDeadline.current = 0;
     setRemaining(0);
     setCooldown(0);
   }, []);
@@ -90,6 +114,7 @@ export function useCodeTimers(active: boolean): CodeTimers {
   const startCooldown = useCallback(() => {
     // A failed request starts a fresh cooldown rather than leaving the button
     // hot: a 429 answered by immediate retries is what caused it.
+    cooldownDeadline.current = Date.now() + RESEND_COOLDOWN_SECONDS * 1000;
     setCooldown(RESEND_COOLDOWN_SECONDS);
   }, []);
 
