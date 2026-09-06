@@ -29,11 +29,28 @@ import { cookies } from "next/headers";
  * (the backend answers 202 for any well-formed one), so `${nonce}:${email}`
  * would let an address containing the delimiter control the parsed nonce.
  *
- * One cookie, not one per flow: a second tab overwrites the first, and the
- * first tab's code then fails with `otp_session_mismatch`, which renders the
+ * ONE COOKIE PER FLOW, not one overall (revised in RUK-289). Within a single
+ * flow a second tab still overwrites the first, and that remains deliberate:
+ * the first tab then fails with `otp_session_mismatch`, which renders the
  * honest "request a new code" state that exists for exactly this situation.
+ *
+ * Across flows it was a defect. Sign-in and password-reset both bind a nonce,
+ * and with one cookie a reset request overwrote the sign-in binding while the
+ * email equality check still PASSED — same address — so a sign-in code was
+ * verified against the reset nonce and the user was told a correct code was
+ * wrong.
+ *
+ * Separating the names fixes the binding, and only the binding. The backend
+ * keeps one OTP record per user, so requesting a reset code still consumes any
+ * live sign-in code server-side (SPEC §1.5): the sign-in tab fails either way,
+ * and the point of the split is that it now fails as "request a new code"
+ * rather than as "that code is wrong".
+ *
+ * Both names are deployed artifacts. Renaming either one invalidates every
+ * binding users hold mid-flow at deploy time.
  */
 export const OTP_NONCE_COOKIE = "__Host-mm.otp_nonce";
+export const PWRESET_NONCE_COOKIE = "__Host-mm.pwreset_nonce";
 
 /**
  * Equal to the backend's `otp_ttl` (5 min), deliberately not longer. A margin
@@ -67,19 +84,27 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export async function setOtpBinding(binding: OtpBinding): Promise<void> {
+async function setBinding(name: string, binding: OtpBinding): Promise<void> {
   const encoded = Buffer.from(
     JSON.stringify({ nonce: binding.nonce, email: normalizeEmail(binding.email) }),
     "utf8",
   ).toString("base64url");
   const store = await cookies();
-  store.set(OTP_NONCE_COOKIE, encoded, {
+  store.set(name, encoded, {
     httpOnly: true,
     sameSite: "lax",
     secure: true,
     path: "/",
     maxAge: MAX_AGE_SECONDS,
   });
+}
+
+export function setOtpBinding(binding: OtpBinding): Promise<void> {
+  return setBinding(OTP_NONCE_COOKIE, binding);
+}
+
+export function setPasswordResetBinding(binding: OtpBinding): Promise<void> {
+  return setBinding(PWRESET_NONCE_COOKIE, binding);
 }
 
 /**
@@ -91,9 +116,9 @@ export async function setOtpBinding(binding: OtpBinding): Promise<void> {
  * state — so a corrupted cookie can never surface as "wrong code" to someone
  * holding a correct one, and can never crash the sign-in callback.
  */
-export async function readOtpBinding(): Promise<OtpBinding | undefined> {
+async function readBinding(name: string): Promise<OtpBinding | undefined> {
   const store = await cookies();
-  const raw = store.get(OTP_NONCE_COOKIE)?.value;
+  const raw = store.get(name)?.value;
   if (!raw) {
     return undefined;
   }
@@ -106,7 +131,23 @@ export async function readOtpBinding(): Promise<OtpBinding | undefined> {
   }
 }
 
-export async function clearOtpBinding(): Promise<void> {
+export function readOtpBinding(): Promise<OtpBinding | undefined> {
+  return readBinding(OTP_NONCE_COOKIE);
+}
+
+export function readPasswordResetBinding(): Promise<OtpBinding | undefined> {
+  return readBinding(PWRESET_NONCE_COOKIE);
+}
+
+async function clearBinding(name: string): Promise<void> {
   const store = await cookies();
-  store.delete(OTP_NONCE_COOKIE);
+  store.delete(name);
+}
+
+export function clearOtpBinding(): Promise<void> {
+  return clearBinding(OTP_NONCE_COOKIE);
+}
+
+export function clearPasswordResetBinding(): Promise<void> {
+  return clearBinding(PWRESET_NONCE_COOKIE);
 }
