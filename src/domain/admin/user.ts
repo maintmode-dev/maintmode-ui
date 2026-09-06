@@ -28,6 +28,25 @@ export interface User {
    */
   timezone?: string | null;
   /**
+   * Whether this account has a password credential (RUK-289, `GET`/`PATCH /me`).
+   *
+   * THREE values, not two, and the difference decides which form the profile
+   * card draws:
+   *
+   *  - `true`  — a password exists.
+   *  - `false` — no password, OR the backend's read of the credential failed
+   *              (it logs and answers `false` with a 200). So `false` is a
+   *              usable hint for choosing a form and is NOT a security
+   *              assertion; a wrong guess is answered by the endpoint with a
+   *              400, never accepted silently.
+   *  - absent  — the deployed backend predates the field.
+   *
+   * Optional for that last reason, and `undefined` must never be coerced to
+   * `false`: they mean different things and the UI treats them differently
+   * (SPEC §1.4, §2.4). Same shape as `timezone` above, for the same reason.
+   */
+  password_set?: boolean;
+  /**
    * Telegram handle used to name this person in notification text (RUK-217).
    * Stored **verbatim**, including any leading `@` — `@username` and `username` are
    * distinct values and are never normalized into each other.
