@@ -14,6 +14,7 @@ const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
 const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
 const PASSWORD_RESET_REQUEST_PATH = "/api/v1/password/reset/request";
 const PASSWORD_RESET_CONFIRM_PATH = "/api/v1/password/reset/confirm";
+const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
 
 /**
  * BFF-owned OAuth.
@@ -213,6 +214,95 @@ export async function confirmPasswordReset(args: {
     if (!response.ok) {
       throw new BackendAuthError(response.status, (await response.text()) || response.statusText);
     }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * The outcome of a change-password call, classified WITHOUT reading any prose.
+ *
+ * The backend's three 400s all carry `code: "invalid request"` and differ only
+ * in free text, so branching on the message would be a contract that breaks on
+ * a reword. What the caller knows instead is what it sent, which is enough.
+ */
+export type ChangePasswordOutcome =
+  | { ok: true }
+  /** Wrong `current_password` — the caller sent one and the backend refused. */
+  | { ok: false; kind: "wrong-current-password" }
+  /** The `refresh_token` was stale or foreign; NOTHING was changed. */
+  | { ok: false; kind: "session-stale" }
+  /** A 400: the wrong shape for this account's state, or a policy violation. */
+  | { ok: false; kind: "rejected"; message: string }
+  | { ok: false; kind: "unavailable" };
+
+/**
+ * Sets the caller's own password.
+ *
+ * Deliberately NOT routed through `authenticatedBackendRequest`, for two
+ * reasons that both end in "the user is signed out and their password is
+ * unchanged":
+ *
+ *  - it retries the mutation after refreshing on a 401, and this endpoint takes
+ *    a `refresh_token` in the BODY, so the retry would carry a token the
+ *    refresh just superseded;
+ *  - it collapses every 401 into one error type, losing the difference between
+ *    a wrong current password and a dead session — which is the difference
+ *    between a message in the form and a redirect to /login.
+ *
+ * `refreshToken` names the session to keep alive. Omitting it revokes every
+ * session including the caller's, which is the honest fallback when the BFF has
+ * no live refresh token to offer.
+ */
+export async function changeBackendPassword(args: {
+  accessToken: string;
+  currentPassword?: string;
+  newPassword: string;
+  refreshToken?: string;
+}): Promise<ChangePasswordOutcome> {
+  const config = readMaintmodeBackendConfig();
+  const target = resolveBackendUrl(config.authApiBaseUrl, CHANGE_PASSWORD_PATH);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+
+  try {
+    const response = await fetch(target, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization: `Bearer ${args.accessToken}`,
+      },
+      body: JSON.stringify({
+        // Sent only when there is one. The backend rejects the field outright
+        // for an account with no password, so an empty string is not the same
+        // as absent.
+        ...(args.currentPassword ? { current_password: args.currentPassword } : {}),
+        new_password: args.newPassword,
+        ...(args.refreshToken ? { refresh_token: args.refreshToken } : {}),
+      }),
+      signal: controller.signal,
+    });
+
+    if (response.status === 204) {
+      return { ok: true };
+    }
+
+    const body = await response.text();
+
+    if (response.status === 401) {
+      // The one classification, and it reads what the REQUEST carried rather
+      // than what the response says. A 401 when a current password was sent is
+      // that password being wrong; a 401 when none was sent is the
+      // `refresh_token` having been superseded, and nothing the user typed.
+      return { ok: false, kind: args.currentPassword ? "wrong-current-password" : "session-stale" };
+    }
+    if (response.status === 400) {
+      return { ok: false, kind: "rejected", message: body };
+    }
+    return { ok: false, kind: "unavailable" };
+  } catch {
+    return { ok: false, kind: "unavailable" };
   } finally {
     clearTimeout(timeout);
   }
