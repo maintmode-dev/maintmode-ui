@@ -194,13 +194,9 @@ export async function confirmPasswordReset(args: {
   sessionNonce: string;
   newPassword: string;
 }): Promise<void> {
-  const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.authApiBaseUrl, PASSWORD_RESET_CONFIRM_PATH);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
-  try {
-    const response = await fetch(target, {
+  return backendFetch(
+    PASSWORD_RESET_CONFIRM_PATH,
+    {
       method: "POST",
       headers: { accept: "application/json", "content-type": "application/json" },
       body: JSON.stringify({
@@ -209,14 +205,13 @@ export async function confirmPasswordReset(args: {
         session_nonce: args.sessionNonce,
         new_password: args.newPassword,
       }),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      throw new BackendAuthError(response.status, (await response.text()) || response.statusText);
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
+    },
+    async (response) => {
+      if (!response.ok) {
+        throw new BackendAuthError(response.status, (await response.text()) || response.statusText);
+      }
+    },
+  );
 }
 
 /**
@@ -260,51 +255,49 @@ export async function changeBackendPassword(args: {
   newPassword: string;
   refreshToken?: string;
 }): Promise<ChangePasswordOutcome> {
-  const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.authApiBaseUrl, CHANGE_PASSWORD_PATH);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
   try {
-    const response = await fetch(target, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-        authorization: `Bearer ${args.accessToken}`,
+    return await backendFetch(
+      CHANGE_PASSWORD_PATH,
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          "content-type": "application/json",
+          authorization: `Bearer ${args.accessToken}`,
+        },
+        body: JSON.stringify({
+          // Sent only when there is one. The backend rejects the field outright
+          // for an account with no password, so an empty string is not the same
+          // as absent.
+          ...(args.currentPassword ? { current_password: args.currentPassword } : {}),
+          new_password: args.newPassword,
+          ...(args.refreshToken ? { refresh_token: args.refreshToken } : {}),
+        }),
       },
-      body: JSON.stringify({
-        // Sent only when there is one. The backend rejects the field outright
-        // for an account with no password, so an empty string is not the same
-        // as absent.
-        ...(args.currentPassword ? { current_password: args.currentPassword } : {}),
-        new_password: args.newPassword,
-        ...(args.refreshToken ? { refresh_token: args.refreshToken } : {}),
-      }),
-      signal: controller.signal,
-    });
+      async (response): Promise<ChangePasswordOutcome> => {
+        if (response.status === 204) {
+          return { ok: true };
+        }
 
-    if (response.status === 204) {
-      return { ok: true };
-    }
+        const body = await response.text();
 
-    const body = await response.text();
-
-    if (response.status === 401) {
-      // The one classification, and it reads what the REQUEST carried rather
-      // than what the response says. A 401 when a current password was sent is
-      // that password being wrong; a 401 when none was sent is the
-      // `refresh_token` having been superseded, and nothing the user typed.
-      return { ok: false, kind: args.currentPassword ? "wrong-current-password" : "session-stale" };
-    }
-    if (response.status === 400) {
-      return { ok: false, kind: "rejected", message: body };
-    }
-    return { ok: false, kind: "unavailable" };
+        if (response.status === 401) {
+          // The one classification, and it reads what the REQUEST carried rather
+          // than what the response says. A 401 when a current password was sent is
+          // that password being wrong; a 401 when none was sent is the
+          // `refresh_token` having been superseded, and nothing the user typed.
+          return { ok: false, kind: args.currentPassword ? "wrong-current-password" : "session-stale" };
+        }
+        if (response.status === 400) {
+          return { ok: false, kind: "rejected", message: body };
+        }
+        return { ok: false, kind: "unavailable" };
+      },
+    );
   } catch {
+    // Network failure, a malformed URL, or the abort above. This function
+    // reports rather than throws, so every one of them is `unavailable`.
     return { ok: false, kind: "unavailable" };
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -323,13 +316,9 @@ export async function refreshBackendToken(refreshToken: string): Promise<Backend
  * token goes in `Authorization` and the refresh token in the JSON body.
  */
 export async function revokeBackendSession(accessToken: string, refreshToken: string): Promise<void> {
-  const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.authApiBaseUrl, LOGOUT_PATH);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
-  try {
-    const response = await fetch(target, {
+  return backendFetch(
+    LOGOUT_PATH,
+    {
       method: "POST",
       headers: {
         accept: "application/json",
@@ -337,15 +326,14 @@ export async function revokeBackendSession(accessToken: string, refreshToken: st
         authorization: `Bearer ${accessToken}`,
       },
       body: JSON.stringify({ refresh_token: refreshToken }),
-      signal: controller.signal,
-    });
-    if (!response.ok && response.status !== 204) {
-      const body = await response.text();
-      throw new BackendAuthError(response.status, body || response.statusText);
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
+    },
+    async (response) => {
+      if (!response.ok && response.status !== 204) {
+        const body = await response.text();
+        throw new BackendAuthError(response.status, body || response.statusText);
+      }
+    },
+  );
 }
 
 /**
@@ -354,56 +342,80 @@ export async function revokeBackendSession(accessToken: string, refreshToken: st
  * (`Authorization: Bearer`); there is no body.
  */
 export async function revokeAllBackendSessions(accessToken: string): Promise<void> {
-  const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.authApiBaseUrl, LOGOUT_ALL_PATH);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
-  try {
-    const response = await fetch(target, {
+  return backendFetch(
+    LOGOUT_ALL_PATH,
+    {
       method: "POST",
       headers: {
         accept: "application/json",
         authorization: `Bearer ${accessToken}`,
       },
-      signal: controller.signal,
-    });
-    if (!response.ok && response.status !== 204) {
-      const body = await response.text();
-      throw new BackendAuthError(response.status, body || response.statusText);
-    }
-  } finally {
-    clearTimeout(timeout);
-  }
+    },
+    async (response) => {
+      if (!response.ok && response.status !== 204) {
+        const body = await response.text();
+        throw new BackendAuthError(response.status, body || response.statusText);
+      }
+    },
+  );
 }
 
 /**
  * Loads the current user's profile via `GET /api/v1/me`.
  */
 export async function fetchBackendMe(accessToken: string): Promise<BackendMeResponse> {
-  const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.authApiBaseUrl, ME_PATH);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
-  try {
-    const response = await fetch(target, {
+  return backendFetch(
+    ME_PATH,
+    {
       method: "GET",
       headers: {
         accept: "application/json",
         authorization: `Bearer ${accessToken}`,
       },
-      signal: controller.signal,
-    });
-    const body = await response.text();
-    if (!response.ok) {
-      throw new BackendAuthError(response.status, body || response.statusText);
-    }
-    const parsed = safeJsonParse<BackendMeResponse>(body);
-    if (!parsed?.id || !parsed.email) {
-      throw new BackendAuthError(response.status, body, "Backend /me returned an unexpected payload");
-    }
-    return parsed;
+    },
+    async (response) => {
+      const body = await response.text();
+      if (!response.ok) {
+        throw new BackendAuthError(response.status, body || response.statusText);
+      }
+      const parsed = safeJsonParse<BackendMeResponse>(body);
+      if (!parsed?.id || !parsed.email) {
+        throw new BackendAuthError(response.status, body, "Backend /me returned an unexpected payload");
+      }
+      return parsed;
+    },
+  );
+}
+
+/**
+ * Resolves `path` against the auth base URL and runs one `fetch` under the
+ * configured timeout.
+ *
+ * Owns the request scaffold ONLY — the URL and the abort timer, which were
+ * identical at six call sites. It deliberately does not touch the response:
+ * these endpoints disagree about what a response even is (a shape-checked JSON
+ * body, a bare 204, a 401 classified by what the REQUEST carried), and some
+ * throw where others return a discriminated result. Folding that in would erase
+ * the distinctions their callers exist to act on.
+ *
+ * `handleResponse` receives the response, and the timeout is cleared only once
+ * it settles. That is why this takes a callback rather than returning the
+ * `Response`: the timer has to outlive the body read. `fetch` resolves on the
+ * response HEAD, so clearing it at that point would leave a stalled `.text()`
+ * hanging forever — exactly the case the timeout exists for.
+ */
+async function backendFetch<T>(
+  path: string,
+  init: Omit<RequestInit, "signal">,
+  handleResponse: (response: Response) => Promise<T>,
+): Promise<T> {
+  const config = readMaintmodeBackendConfig();
+  const target = resolveBackendUrl(config.authApiBaseUrl, path);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+
+  try {
+    return await handleResponse(await fetch(target, { ...init, signal: controller.signal }));
   } finally {
     clearTimeout(timeout);
   }
@@ -415,13 +427,9 @@ async function postBackendJson<TResponse>(
   isShapeValid: (parsed: TResponse | undefined) => boolean,
   extraHeaders?: Record<string, string>,
 ): Promise<TResponse> {
-  const config = readMaintmodeBackendConfig();
-  const target = resolveBackendUrl(config.authApiBaseUrl, path);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
-
-  try {
-    const response = await fetch(target, {
+  return backendFetch(
+    path,
+    {
       method: "POST",
       headers: {
         // Spread extra headers first so the fixed accept/content-type below
@@ -431,20 +439,19 @@ async function postBackendJson<TResponse>(
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new BackendAuthError(response.status, text || response.statusText);
-    }
-    const parsed = safeJsonParse<TResponse>(text);
-    if (!isShapeValid(parsed)) {
-      throw new BackendAuthError(response.status, text, `Backend ${path} returned an unexpected payload`);
-    }
-    return parsed as TResponse;
-  } finally {
-    clearTimeout(timeout);
-  }
+    },
+    async (response) => {
+      const text = await response.text();
+      if (!response.ok) {
+        throw new BackendAuthError(response.status, text || response.statusText);
+      }
+      const parsed = safeJsonParse<TResponse>(text);
+      if (!isShapeValid(parsed)) {
+        throw new BackendAuthError(response.status, text, `Backend ${path} returned an unexpected payload`);
+      }
+      return parsed as TResponse;
+    },
+  );
 }
 
 function safeJsonParse<T>(text: string): T | undefined {

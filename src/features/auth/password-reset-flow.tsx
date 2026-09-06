@@ -194,6 +194,9 @@ export function PasswordResetFlow({
   }
 
   const dead = timers.expired || budgetSpent;
+  // A dead code makes resend the only way forward, so the cooldown is waived
+  // rather than made to run out first.
+  const throttled = timers.cooldown > 0 && !dead;
 
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmitCode}>
@@ -252,10 +255,10 @@ export function PasswordResetFlow({
       <Button
         type="button"
         variant="outline"
-        disabled={pending || (timers.cooldown > 0 && !dead)}
+        disabled={pending || throttled}
         onClick={() => void send(email)}
       >
-        {timers.cooldown > 0 && !dead ? `Request a new code (${timers.cooldown}s)` : "Request a new code"}
+        {throttled ? `Request a new code (${timers.cooldown}s)` : "Request a new code"}
       </Button>
     </form>
   );
