@@ -240,6 +240,40 @@ describe("confirmPasswordReset", () => {
   });
 });
 
+describe("the request timeout covers the body read, not just the head", () => {
+  // `fetch` resolves on the response HEAD, so a helper that cleared its timeout
+  // on return would leave a stalled BODY hanging forever — which is the case
+  // the timeout exists for. A refactor that did exactly this passed all 1424
+  // tests, because nothing covered it.
+  //
+  // No fake timers needed: the config floor is 100ms, and the assertion that
+  // matters is that the signal ABORTED. Without that line the test passes
+  // against the broken version, because the rejection then comes from shape
+  // validation rather than from the abort.
+  it("aborts a response whose body never arrives", async () => {
+    process.env.MAINTMODE_API_TIMEOUT_MS = "100";
+    let aborted = false;
+
+    fetchMock.mockImplementation(async (_url: string, init: { signal: AbortSignal }) => ({
+      ok: true,
+      status: 202,
+      statusText: "Accepted",
+      text: () =>
+        new Promise<string>((_resolve, reject) => {
+          init.signal.addEventListener("abort", () => {
+            aborted = true;
+            reject(new Error("aborted"));
+          });
+        }),
+    }));
+
+    await expect(requestPasswordResetCode("op@example.test")).rejects.toThrow();
+    expect(aborted).toBe(true);
+
+    delete process.env.MAINTMODE_API_TIMEOUT_MS;
+  });
+});
+
 describe("requestPasswordResetCode", () => {
   it("returns the session nonce from a 202", async () => {
     fetchMock.mockResolvedValue(respond(202, '{"session_nonce":"nonce-1"}'));

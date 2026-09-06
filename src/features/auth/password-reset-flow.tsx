@@ -199,7 +199,12 @@ export function PasswordResetFlow({
     );
   }
 
-  const dead = timers.expired || budgetSpent;
+  // Only expiry can be true here. Spending the budget is always followed by
+  // `restart()` in the same React batch, so the flow leaves this step before a
+  // `budgetSpent` render can happen — the submit guard above still checks it,
+  // because a guard that is cheap and states the intent is worth keeping, but
+  // the rendering below would be dead code.
+  const dead = timers.expired;
   // A dead code makes resend the only way forward, so the cooldown is waived
   // rather than made to run out first.
   const throttled = timers.cooldown > 0 && !dead;
@@ -252,7 +257,7 @@ export function PasswordResetFlow({
         At least 12 characters. This signs you out of every device.
       </p>
       {dead ? (
-        <ResetError code={budgetSpent ? "password_reset_failed" : "expired"} />
+        <ResetError code="expired" />
       ) : error ? (
         <ResetError code={error} />
       ) : (

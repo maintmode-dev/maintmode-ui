@@ -252,6 +252,29 @@ describe("confirming a reset", () => {
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
+  // §3.4's rule, made executable. A substring implementation would match the
+  // code wherever it appears — including inside `message` — and would then
+  // clear a binding that still had attempts left, destroying a usable code.
+  // Every other fixture here has field and substring agreeing, so only this
+  // one separates the two implementations.
+  it("reads the code FIELD, not the message text", async () => {
+    confirmPasswordReset.mockRejectedValueOnce(
+      backendError(
+        401,
+        '{"code":"unauthorized","message":"authentication failed for otp_session_mismatch reasons"}',
+      ),
+    );
+
+    const result = await confirmPasswordResetAction({
+      email: "op@example.test",
+      code: "123456",
+      newPassword: "a-long-enough-password",
+    });
+
+    expect(result).toEqual({ error: "password_reset_failed" });
+    expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+  });
+
   it("keeps an outage apart from a wrong code, and keeps the binding", async () => {
     confirmPasswordReset.mockRejectedValueOnce(backendError(502));
 

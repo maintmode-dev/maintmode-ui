@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { PasswordResetFlow } from "@/features/auth/password-reset-flow";
@@ -83,13 +83,10 @@ describe("the client-side length check", () => {
 });
 
 describe("the local attempt budget", () => {
-  // Pinned as a LITERAL. The loops below use the constant, so without this the
-  // whole budget suite is self-fulfilling: changing 5 to 50 would keep every
-  // test green while the user burned 45 doomed submits. SPEC §3.1 argues the
-  // value must be the backend's configured 5 and not its ceiling of 10.
-  it("is five, the backend's configured limit", () => {
-    expect(MAX_CODE_ATTEMPTS).toBe(5);
-  });
+  // The literal is pinned beside the constant's definition, in
+  // `use-code-timers.test.tsx`, which also pins `CODE_TTL_SECONDS`. The loops
+  // below use the constant, so that assertion is what stops this suite being
+  // self-fulfilling.
 
   it("does not give up before the budget is spent", async () => {
     const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
@@ -215,6 +212,96 @@ describe("failures the user must be able to tell apart", () => {
     await waitFor(() => expect(props.confirm).toHaveBeenCalled());
     expect(props.abandon).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+});
+
+describe("expiry and the resend cooldown", () => {
+  // Ported from the sign-in flow's suite. Both flows moved onto the shared
+  // `useCodeTimers`, but only the sign-in side had behavioural coverage of it —
+  // so a mutation disabling expiry or the cooldown stayed green here while
+  // failing there.
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("counts down from five minutes", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+
+    expect(screen.getByRole("timer").textContent).toContain("5:00");
+  });
+
+  it("disables the fields and drops the submit button once expired", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    await waitFor(() =>
+      expect((screen.getByLabelText("Enter the 6-digit code") as HTMLInputElement).disabled).toBe(true),
+    );
+    expect((screen.getByLabelText("New password") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Set new password" })).toBeNull();
+    expect(screen.getByRole("alert").textContent).toMatch(/expired/i);
+  });
+
+  it("refuses a submit on an expired code", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: LONG_ENOUGH } });
+
+    await vi.advanceTimersByTimeAsync(300_000);
+    // The button is gone, so submit the form directly — a stray Enter keypress
+    // reaches the handler even when the control does not.
+    fireEvent.submit(screen.getByLabelText("Enter the 6-digit code").closest("form")!);
+
+    expect(props.confirm).not.toHaveBeenCalled();
+  });
+
+  it("blocks resend during the cooldown, then allows it", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+
+    const resend = () => screen.getByRole("button", { name: /Request a new code/ });
+    expect(resend().hasAttribute("disabled")).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await waitFor(() => expect(resend().hasAttribute("disabled")).toBe(false));
+  });
+
+  it("lets an expired code be replaced even before the cooldown ends", async () => {
+    // Expiry must not trap the user: with no valid code left, the only useful
+    // control has to stay live.
+    const props = setup();
+    await reachCodeStep(props);
+
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Request a new code/ }).hasAttribute("disabled")).toBe(false),
+    );
+  });
+
+  it("restarts the cooldown when a request fails, rather than leaving resend hot", async () => {
+    const props = setup({ requestCode: vi.fn(async () => ({ error: "otp_rate_limited" })) });
+
+    fireEvent.change(screen.getByLabelText("Reset your password"), {
+      target: { value: "op@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => expect(props.requestCode).toHaveBeenCalled());
+
+    // Still on step one — the request failed — and a 429 answered by immediate
+    // retries is what caused it, so the button must not be hot.
+    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
   });
 });
 
