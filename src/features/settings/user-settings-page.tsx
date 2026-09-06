@@ -22,6 +22,7 @@ import { BrandIcon, type BrandProvider } from "@/shared/ui/icons/brand-icons";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 import { MessengerTagsFields } from "./messenger-tags-card";
 import { TimezoneCard } from "./timezone-card";
+import { PasswordCard } from "./password-card";
 import type { Role } from "@/domain/auth/permissions";
 
 /** Role chips render admin-first, consistent with users-management. */
@@ -179,6 +180,10 @@ export function UserSettingsPage() {
               );
             })}
           </div>
+        </Card>
+
+        <Card title="Password">
+          <PasswordCard passwordSet={user.password_set} />
         </Card>
 
         <Card title="Session">
