@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
+import { useCodeTimers } from "@/features/auth/use-code-timers";
 
 /**
  * Two-step email one-time-code sign-in (RUK-288).
@@ -15,16 +16,6 @@ import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
  * route stays thin, and a new client dependency here is exactly what
  * `check-bundle-budget.mjs` guards against.
  */
-
-/** Backend `otp_ttl`. The real expiry lives server-side and is never returned. */
-const CODE_TTL_SECONDS = 300;
-/**
- * Advisory only. The backend has no resend cooldown, and its per-IP bucket is
- * shared with the password and OAuth endpoints — so an unthrottled resend
- * button would lock the user out of the *other* ways in. The server's 429 is
- * the real backstop.
- */
-const RESEND_COOLDOWN_SECONDS = 30;
 
 type Step = "email" | "code";
 
@@ -41,21 +32,12 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
-  const [remaining, setRemaining] = useState(0);
-  const [cooldown, setCooldown] = useState(0);
 
-  // One interval drives both counters. Started on entry to step two and torn
-  // down on leaving it, so a backgrounded tab cannot leave a timer running.
-  useEffect(() => {
-    if (step !== "code") return;
-    const id = setInterval(() => {
-      setRemaining((r) => (r > 0 ? r - 1 : 0));
-      setCooldown((c) => (c > 0 ? c - 1 : 0));
-    }, 1000);
-    return () => clearInterval(id);
-  }, [step]);
-
-  const expired = step === "code" && remaining === 0;
+  // Shared with the password-reset flow (RUK-289): the TTL and the attempt
+  // budget are contract facts about the same backend mechanism, and two copies
+  // would drift.
+  const timers = useCodeTimers(step === "code");
+  const { remaining, cooldown, expired } = timers;
 
   const send = useCallback(
     async (address: string) => {
@@ -66,41 +48,32 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
 
       if (result.error) {
         setError(result.error);
-        // A failed request starts a fresh cooldown rather than leaving the
-        // button hot: a 429 answered by immediate retries is what caused it.
-        setCooldown(RESEND_COOLDOWN_SECONDS);
+        timers.startCooldown();
         return;
       }
-      // Counted from response receipt, so the client is always slightly
-      // optimistic relative to the server. That is the safe direction: the
-      // backend, not this timer, decides whether a code is still valid.
-      setRemaining(CODE_TTL_SECONDS);
-      setCooldown(RESEND_COOLDOWN_SECONDS);
+      timers.start();
       setCode("");
       setStep("code");
     },
-    [requestCode],
+    [requestCode, timers],
   );
-
-  const inFlight = useRef(false);
 
   async function onSubmitCode(event: React.FormEvent) {
     event.preventDefault();
-    // Each stray submit spends one of five attempts, and the backend floors
-    // every response to ~300ms, so a double-click is a live risk.
-    if (inFlight.current || pending || expired) return;
+    if (pending || expired) return;
     if (!isWellFormedOtpCode(code)) {
       setError("invalid_code_format");
       return;
     }
 
-    inFlight.current = true;
-    setPending(true);
-    setError(undefined);
-    const result = await submitCode(email, code.trim());
-    inFlight.current = false;
-    setPending(false);
-    if (!result.error) return;
+    const result = await timers.guard(async () => {
+      setPending(true);
+      setError(undefined);
+      const outcome = await submitCode(email, code.trim());
+      setPending(false);
+      return outcome;
+    });
+    if (!result || !result.error) return;
 
     if (result.error === "otp_session_mismatch") {
       // The binding is gone — the server has already cleared it — so step two
@@ -110,8 +83,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
       // is the primary action and nothing is throttled.
       setStep("email");
       setCode("");
-      setRemaining(0);
-      setCooldown(0);
+      timers.reset();
     }
     setError(result.error);
   }
@@ -121,7 +93,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     setStep("email");
     setCode("");
     setError(undefined);
-    setRemaining(0);
+    timers.reset();
   }
 
   if (step === "email") {
