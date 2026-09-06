@@ -218,6 +218,40 @@ describe("failures the user must be able to tell apart", () => {
   });
 });
 
+describe("what a screen reader is told", () => {
+  // The alert fires once when the error appears. Returning focus to the field
+  // afterwards must still explain why it was rejected, which is what the
+  // description association is for — the sign-in flow does the same.
+  it("points the code field at the error, and at the countdown otherwise", async () => {
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+
+    expect(screen.getByLabelText("Enter the 6-digit code").getAttribute("aria-describedby")).toBe(
+      "reset-countdown",
+    );
+
+    await submitCode("000000", LONG_ENOUGH);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Enter the 6-digit code").getAttribute("aria-describedby")).toBe(
+        "reset-error",
+      );
+    });
+  });
+
+  it("points the password field at the error when the error is about the password", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+
+    // Keeps the hint too: the requirement is still what the user needs to hear.
+    await submitCode("123456", "short");
+
+    expect(screen.getByLabelText("New password").getAttribute("aria-describedby")).toBe(
+      "reset-error reset-password-hint",
+    );
+  });
+});
+
 describe("rehydration after a reload", () => {
   // The flow spans an email round-trip, so the user leaves the tab. The server
   // page reads the cookie and hands down the step; the nonce never crosses.

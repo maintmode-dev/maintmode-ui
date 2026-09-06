@@ -216,6 +216,11 @@ export function PasswordResetFlow({
         value={code}
         disabled={dead}
         onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+        // Points at whichever of the two actually renders below, matching the
+        // sign-in flow: the alert fires once, and a screen-reader user who
+        // returns focus here afterwards would otherwise hear nothing saying why
+        // the code was rejected.
+        aria-describedby={error || dead ? "reset-error" : "reset-countdown"}
       />
       <Label htmlFor="reset-password">New password</Label>
       <Input
@@ -226,7 +231,9 @@ export function PasswordResetFlow({
         value={password}
         disabled={dead}
         onChange={(e) => setPassword(e.target.value)}
-        aria-describedby="reset-password-hint"
+        aria-describedby={
+          error === "password_policy_violation" ? "reset-error reset-password-hint" : "reset-password-hint"
+        }
       />
       {/*
        * "Characters" rather than bytes: the policy is 12 BYTES, which is not a
@@ -243,7 +250,7 @@ export function PasswordResetFlow({
       ) : error ? (
         <ResetError code={error} />
       ) : (
-        <p className="caption" role="timer">
+        <p id="reset-countdown" className="caption" role="timer">
           Expires in {formatRemaining(timers.remaining)}
         </p>
       )}
