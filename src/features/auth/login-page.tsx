@@ -233,7 +233,11 @@ function BuiltInMethod({
   if (method.type === "password") {
     return (
       <div data-method-type="password">
-        <PasswordSignInForm label={method.display_name} submit={passwordSignInAction} />
+        <PasswordSignInForm
+          label={method.display_name}
+          submit={passwordSignInAction}
+          onForgotPassword={onForgotPassword}
+        />
       </div>
     );
   }

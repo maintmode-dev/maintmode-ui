@@ -31,7 +31,6 @@ vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   // The real implementation: normalization is part of the behaviour under test,
   // so stubbing it would hide the case-variant bug this file now covers.
   normalizeEmail: (email: string) => email.trim().toLowerCase(),
-  OTP_NONCE_COOKIE: "__Host-mm.otp_nonce",
 }));
 
 const { runBuiltInSignIn } = await import("@/server/auth/built-in-sign-in");

@@ -83,6 +83,29 @@ describe("the client-side length check", () => {
 });
 
 describe("the local attempt budget", () => {
+  // Pinned as a LITERAL. The loops below use the constant, so without this the
+  // whole budget suite is self-fulfilling: changing 5 to 50 would keep every
+  // test green while the user burned 45 doomed submits. SPEC §3.1 argues the
+  // value must be the backend's configured 5 and not its ceiling of 10.
+  it("is five, the backend's configured limit", () => {
+    expect(MAX_CODE_ATTEMPTS).toBe(5);
+  });
+
+  it("does not give up before the budget is spent", async () => {
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+
+    // Four failures, hard-coded rather than derived: an off-by-one that let the
+    // binding survive one submit too long would otherwise pass.
+    for (let i = 0; i < 4; i++) {
+      await submitCode("000000", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
+
+    expect(props.abandon).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
   // AC-13. The backend collapses "wrong code", "expired" and "attempts
   // exhausted" into one answer, so the client cannot learn from a response that
   // the budget is gone. Without a local count the binding survives its full TTL
@@ -112,6 +135,33 @@ describe("the local attempt budget", () => {
     expect(props.confirm).not.toHaveBeenCalled();
     expect(props.abandon).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+});
+
+describe("the double-submit guard", () => {
+  // Each stray submit spends one of five attempts and the backend floors every
+  // response to ~300 ms, so a double-click is a live risk, not a theoretical
+  // one.
+  it("sends one request when the button is clicked twice", async () => {
+    let release: (value: { done: true }) => void = () => {};
+    const confirm = vi.fn(
+      () =>
+        new Promise<{ done: true }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const props = setup({ confirm });
+    await reachCodeStep(props);
+
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: LONG_ENOUGH } });
+    const button = screen.getByRole("button", { name: "Set new password" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    release({ done: true });
+    await waitFor(() => expect(props.onDone).toHaveBeenCalled());
   });
 });
 

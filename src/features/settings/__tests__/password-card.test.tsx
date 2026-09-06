@@ -77,16 +77,9 @@ describe("the length check", () => {
     expect(screen.getByRole("alert").textContent).toMatch(/at least 12 characters/i);
   });
 
-  // 11 characters, 22 bytes — accepted by the backend, rejected by a naive
-  // `.length` implementation.
-  it("accepts an 11-character Cyrillic password", async () => {
-    bffFetch.mockResolvedValue(undefined);
-    renderCard(false);
-    fill("New password", "паролькудли");
-    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
-
-    await waitFor(() => expect(bffFetch).toHaveBeenCalled());
-  });
+  // The byte arithmetic itself is pinned once, in the domain policy test. What
+  // matters here is only that the guard runs before the request, which the
+  // short-password case above already proves.
 });
 
 describe("what is sent", () => {
@@ -188,8 +181,9 @@ describe("recovering from a wrong password_set — one flip, never a loop", () =
 
     await waitFor(() => expect(bffFetch).toHaveBeenCalledTimes(2));
     // Still the change form: the second 400 is a terminal error, not a flip
-    // back to where it started.
+    // back to where it started — and the error is SHOWN, not swallowed.
     expect(screen.getByLabelText("Current password")).toBeTruthy();
+    expect(screen.getByRole("alert")).toBeTruthy();
   });
 
   it("does not flip on a length failure, which never reaches the server", () => {

@@ -115,19 +115,6 @@ describe("confirming a reset", () => {
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
-  it("accepts an 11-character Cyrillic password, which is 22 bytes", async () => {
-    confirmPasswordReset.mockResolvedValue(undefined);
-
-    const result = await confirmPasswordResetAction({
-      email: "op@example.test",
-      code: "123456",
-      newPassword: "паролькудли",
-    });
-
-    expect(result).toEqual({ done: true });
-    expect(confirmPasswordReset).toHaveBeenCalled();
-  });
-
   // AC-4. Past the 204 the password IS changed and every session is dead.
   it("tears the local session down on success", async () => {
     confirmPasswordReset.mockResolvedValue(undefined);
@@ -233,6 +220,22 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "password_reset_session_mismatch" });
     expect(clearPasswordResetBinding).toHaveBeenCalled();
+  });
+
+  // §3.6 requires the rate limit to keep its own copy on BOTH endpoints. The
+  // request path already had this; the confirm path did not, and folding a 429
+  // into "unavailable" tells a throttled user the service is broken.
+  it("keeps a rate limit apart from an outage, and keeps the binding", async () => {
+    confirmPasswordReset.mockRejectedValueOnce(backendError(429));
+
+    const result = await confirmPasswordResetAction({
+      email: "op@example.test",
+      code: "123456",
+      newPassword: "a-long-enough-password",
+    });
+
+    expect(result).toEqual({ error: "otp_rate_limited" });
+    expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
   it("keeps an outage apart from a wrong code, and keeps the binding", async () => {

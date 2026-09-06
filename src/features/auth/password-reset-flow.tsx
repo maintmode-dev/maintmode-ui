@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -63,6 +63,18 @@ export function PasswordResetFlow({
 
   const timers = useCodeTimers(step === "code");
   const budgetSpent = attempts >= MAX_CODE_ATTEMPTS;
+
+  // Rehydrating straight into step two starts with the countdown at zero, which
+  // reads as "expired" and hides the submit button — so a user returning from
+  // their email finds a form they cannot send. The real expiry is server-side
+  // and never returned; this is the same optimistic local clock the flow uses
+  // after a fresh request, and the backend remains the authority.
+  useEffect(() => {
+    if (initialStep === "code") timers.start();
+    // Once, on mount: `start` is stable and re-running it would reset the
+    // countdown under a user who is mid-flow.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function send(address: string) {
     setPending(true);
