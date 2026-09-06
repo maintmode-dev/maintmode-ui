@@ -156,13 +156,18 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
         </p>
       ) : null}
 
-      <Button
-        type="submit"
-        className="self-start"
-        disabled={change.isPending || !next || (asChange && !current)}
-      >
-        {change.isPending ? "Saving…" : asChange ? "Change password" : "Set password"}
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={change.isPending || !next || (asChange && !current)}>
+          {change.isPending ? "Saving…" : asChange ? "Change password" : "Set password"}
+        </Button>
+        {!asChange ? (
+          // The page is the same form on its own, for someone who came here to
+          // do this one thing. It is this card's only entry point.
+          <a href="/set-password" className="caption underline">
+            Open on its own page
+          </a>
+        ) : null}
+      </div>
     </form>
   );
 }
