@@ -15,17 +15,19 @@ import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
  * `email_password`; the backend decides which internally, so this form does not
  * change when the second arrives.
  *
- * Only the sign-in form lives here. Forced change, set-password-by-invite,
- * forgot-password and change-in-profile are deliberately out of scope — those
- * endpoints do not exist yet and their screens ship with them.
+ * The "Forgot password?" affordance lives INSIDE this form (RUK-289), so it
+ * appears and disappears with the password method itself: an instance that is
+ * not advertising password sign-in must not offer to reset one.
  */
 
 export interface PasswordSignInFormProps {
   label: string;
   submit: (email: string, password: string) => Promise<{ error?: string }>;
+  /** Opens the reset flow. Absent when the deployment has no reset endpoint. */
+  onForgotPassword?: () => void;
 }
 
-export function PasswordSignInForm({ label, submit }: PasswordSignInFormProps) {
+export function PasswordSignInForm({ label, submit, onForgotPassword }: PasswordSignInFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
@@ -77,6 +79,11 @@ export function PasswordSignInForm({ label, submit }: PasswordSignInFormProps) {
       <Button type="submit" disabled={!email.trim() || !password || pending}>
         {pending ? "Signing in…" : "Sign in"}
       </Button>
+      {onForgotPassword ? (
+        <button type="button" className="caption underline self-start" onClick={onForgotPassword}>
+          Forgot password?
+        </button>
+      ) : null}
     </form>
   );
 }

@@ -40,3 +40,32 @@ export function isKnownSignInMethodType(value: string): value is SignInMethodTyp
 export function isWellFormedOtpCode(value: string): boolean {
   return /^\d{6}$/.test(value.trim());
 }
+
+/**
+ * The backend's password length policy, in BYTES (RUK-289).
+ *
+ * Bytes, not characters, and the distinction is not pedantic. The backend
+ * validates with ozzo's `Length` rather than `RuneLength`, which measures Go's
+ * `len()` — so "аброакадабра" is 12 characters but 24 bytes, and a 6-character
+ * Cyrillic password is 12 bytes and passes. Measuring `.length` here would
+ * diverge from the server for every non-ASCII password.
+ */
+export const PASSWORD_MIN_BYTES = 12;
+export const PASSWORD_MAX_BYTES = 256;
+
+/**
+ * Whether a password satisfies the backend's policy, measured the way the
+ * backend measures it.
+ *
+ * Duplicating a server-side rule on the client is usually a smell. Here it is
+ * required: on the reset path a policy violation is collapsed into the same
+ * 401 as a wrong code, so without this check a user with a short password is
+ * told the code they just read off their screen is wrong. The maximum matters
+ * for the same reason — an over-long password lands in that same collapse.
+ *
+ * This is a UX guard, never an authorization one. The backend re-checks.
+ */
+export function isPasswordWithinPolicy(password: string): boolean {
+  const bytes = new TextEncoder().encode(password).length;
+  return bytes >= PASSWORD_MIN_BYTES && bytes <= PASSWORD_MAX_BYTES;
+}

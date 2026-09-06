@@ -21,6 +21,9 @@ const actions = {
   otpSignInAction: async () => ({}),
   passwordSignInAction: async () => ({}),
   changeEmailAction: async () => {},
+  requestPasswordResetAction: async () => ({}),
+  confirmPasswordResetAction: async () => ({}),
+  abandonPasswordResetAction: async () => {},
 };
 
 const PASSWORD: SignInMethod = { id: "email_password", type: "password", display_name: "Password" };

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, ChevronRight } from "lucide-react";
+import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
@@ -8,6 +9,7 @@ import { BrandIcon, MaintMark, type BrandProvider } from "@/shared/ui/icons/bran
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
 import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
+import { PasswordResetFlow } from "@/features/auth/password-reset-flow";
 
 export interface LoginPageProps {
   error?: string;
@@ -32,6 +34,26 @@ export interface LoginPageProps {
   passwordSignInAction: (email: string, password: string) => Promise<{ error?: string }>;
   /** Abandons the current OTP flow so another address can be used. */
   changeEmailAction: () => Promise<void>;
+  /** Step one of the password reset (RUK-289): mails a code, binds this browser. */
+  requestPasswordResetAction: (email: string) => Promise<{ error?: string }>;
+  /** Step two: redeems the code, installs the password, ends every session. */
+  confirmPasswordResetAction: (args: {
+    email: string;
+    code: string;
+    newPassword: string;
+  }) => Promise<{ error?: string; done?: boolean }>;
+  /** Abandons the reset flow, discarding its binding. */
+  abandonPasswordResetAction: () => Promise<void>;
+  /**
+   * Rehydrated from the reset cookie by the server page. A reset spans an email
+   * round-trip, so the user WILL leave the tab and come back; without this the
+   * component remounts at step one while a live binding sits on the server.
+   *
+   * Only the address crosses, never the nonce: the cookie is httpOnly so that
+   * browser JavaScript cannot read the binding, and passing the whole thing
+   * down would undo exactly that.
+   */
+  resetInProgressEmail?: string;
 }
 
 /**
@@ -72,9 +94,27 @@ const BREAK_GLASS_METHODS: SignInMethod[] = [
 /** Disabled providers are gated until backend support ships. */
 const COMING_SOON_TOOLTIP = "Coming soon — additional providers are on the way";
 
-export function LoginPage({ error, methods, signInAction, ...actions }: LoginPageProps) {
+export function LoginPage({
+  error,
+  methods,
+  signInAction,
+  requestPasswordResetAction,
+  confirmPasswordResetAction,
+  abandonPasswordResetAction,
+  resetInProgressEmail,
+  ...actions
+}: LoginPageProps) {
   const resolvedFailed = methods === undefined;
   const builtIn = (resolvedFailed ? BREAK_GLASS_METHODS : methods).filter((m) => !OAUTH_IDS.has(m.id));
+
+  const offersPassword = builtIn.some((m) => m.type === "password");
+  // A live binding only rehydrates if this page is still drawing the form the
+  // affordance lives in. An operator who toggled password sign-in off between
+  // the code being sent and the tab being reloaded gets the normal page: the
+  // advertised method list is the authority on what is offered, and a cookie
+  // must not resurrect a withdrawn one.
+  const [resetting, setResetting] = useState(Boolean(resetInProgressEmail) && offersPassword);
+  const [resetDone, setResetDone] = useState(false);
 
   return (
     <TooltipProvider>
@@ -101,28 +141,63 @@ export function LoginPage({ error, methods, signInAction, ...actions }: LoginPag
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-2.5">
-            {OAUTH_PROVIDERS.map((p) =>
-              p.enabled ? (
-                <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
-                  <Button type="submit" className="w-full justify-start gap-2.5 px-3">
+          {resetDone ? (
+            <div
+              role="status"
+              className="flex items-start gap-2 px-3 py-2 rounded-sm bg-bg-elev-2 border border-border-subtle text-sm"
+            >
+              <span>Password updated. Sign in with your new password.</span>
+            </div>
+          ) : null}
+
+          {resetting ? (
+            <PasswordResetFlow
+              initialEmail={resetInProgressEmail}
+              initialStep={resetInProgressEmail ? "code" : "email"}
+              requestCode={requestPasswordResetAction}
+              confirm={confirmPasswordResetAction}
+              abandon={abandonPasswordResetAction}
+              onDone={() => {
+                // The backend has revoked every session and the action has torn
+                // down this browser's; there is nothing to sign the user into,
+                // so the flow ends where it began, with something to say.
+                setResetting(false);
+                setResetDone(true);
+              }}
+              onCancel={() => setResetting(false)}
+            />
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              {OAUTH_PROVIDERS.map((p) =>
+                p.enabled ? (
+                  <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
+                    <Button type="submit" className="w-full justify-start gap-2.5 px-3">
+                      <ProviderMark id={p.id} />
+                      {p.label}
+                      <ChevronRight className="size-4 ml-auto" aria-hidden="true" />
+                    </Button>
+                  </form>
+                ) : (
+                  <ComingSoonButton key={p.id}>
                     <ProviderMark id={p.id} />
                     {p.label}
-                    <ChevronRight className="size-4 ml-auto" aria-hidden="true" />
-                  </Button>
-                </form>
-              ) : (
-                <ComingSoonButton key={p.id}>
-                  <ProviderMark id={p.id} />
-                  {p.label}
-                </ComingSoonButton>
-              ),
-            )}
+                  </ComingSoonButton>
+                ),
+              )}
 
-            {builtIn.map((method) => (
-              <BuiltInMethod key={method.id} method={method} {...actions} />
-            ))}
-          </div>
+              {builtIn.map((method) => (
+                <BuiltInMethod
+                  key={method.id}
+                  method={method}
+                  onForgotPassword={() => {
+                    setResetDone(false);
+                    setResetting(true);
+                  }}
+                  {...actions}
+                />
+              ))}
+            </div>
+          )}
 
           {resolvedFailed ? (
             <p role="status" className="caption text-center text-fg-muted">
@@ -153,7 +228,8 @@ function BuiltInMethod({
   otpSignInAction,
   passwordSignInAction,
   changeEmailAction,
-}: BuiltInMethodActions & { method: SignInMethod }) {
+  onForgotPassword,
+}: BuiltInMethodActions & { method: SignInMethod; onForgotPassword: () => void }) {
   if (method.type === "password") {
     return (
       <div data-method-type="password">

@@ -90,5 +90,25 @@ export const AUTH_ERROR_CODES = {
   // separate so the copy does not tell someone to re-check a correct code and
   // send more requests into the limiter that is already refusing them.
   otpRateLimited: "otp_rate_limited",
+  // Password reset (RUK-289). The reset flow's OWN mismatch code, deliberately
+  // not a reuse of `otpSessionMismatch`: that one's copy sends the user back to
+  // sign-in, which is the wrong destination when they are mid-reset and have
+  // not chosen a new password yet. Leaks nothing, for the same reason its
+  // sign-in twin leaks nothing — it names a fact about this browser.
+  passwordResetSessionMismatch: "password_reset_session_mismatch",
+  // Every other confirm failure: wrong code, expired, attempts exhausted, and —
+  // because the backend deliberately hides it inside the same collapse — a
+  // password that breaks the length policy. The client checks length before
+  // sending precisely so a user never sees this code for that reason.
+  passwordResetFailed: "password_reset_failed",
+  // The new password failed the client-side policy check, so nothing was sent.
+  // Distinct from every server answer: no attempt was spent and the binding is
+  // still good, so the copy must not tell the user to request a new code.
+  passwordPolicyViolation: "password_policy_violation",
+  // The endpoint itself is unreachable or broken (404/5xx), which is a fact
+  // about the SERVICE and not about an account — so saying so plainly leaks
+  // nothing. Kept apart from the anti-enumeration collapse because folding it
+  // in tells every user their input was wrong during an outage.
+  passwordResetUnavailable: "password_reset_unavailable",
 } as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];

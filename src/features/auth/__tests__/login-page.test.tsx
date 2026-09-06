@@ -18,6 +18,9 @@ function renderLogin(error?: string) {
       requestOtpAction={async () => ({})}
       otpSignInAction={async () => ({})}
       passwordSignInAction={async () => ({})}
+      requestPasswordResetAction={async () => ({})}
+      confirmPasswordResetAction={async () => ({})}
+      abandonPasswordResetAction={async () => {}}
       changeEmailAction={async () => {}}
     />,
   );

@@ -12,6 +12,8 @@ const ME_PATH = "/api/v1/me";
 const OTP_REQUEST_PATH = "/api/v1/login/otp/request";
 const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
 const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
+const PASSWORD_RESET_REQUEST_PATH = "/api/v1/password/reset/request";
+const PASSWORD_RESET_CONFIRM_PATH = "/api/v1/password/reset/confirm";
 
 /**
  * BFF-owned OAuth.
@@ -147,6 +149,73 @@ export async function loginWithPassword(args: {
     { email: args.email, password: args.password },
     (parsed) => Boolean(parsed?.access_token),
   );
+}
+
+/**
+ * Password reset, step one: ask the backend to mail a code.
+ *
+ * Shaped exactly like `requestOtpCode` because it IS the same mechanism — the
+ * backend routes both through one OTP issuer. It answers 202 with a session
+ * nonce for every outcome, including an address with no account and a malformed
+ * body (a placeholder nonce), so nothing here may branch on the result.
+ *
+ * Note the consequence the caller must not paper over: because the two flows
+ * share one OTP record per user, asking for a reset code consumes any live
+ * sign-in code. Separate cookies keep the two BINDINGS apart; they cannot keep
+ * the codes apart.
+ */
+export async function requestPasswordResetCode(email: string): Promise<{ session_nonce: string }> {
+  return postBackendJson<{ session_nonce: string }>(
+    PASSWORD_RESET_REQUEST_PATH,
+    { email },
+    (value): value is { session_nonce: string } =>
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { session_nonce?: unknown }).session_nonce === "string",
+  );
+}
+
+/**
+ * Password reset, step two: redeem the code and install the new password.
+ *
+ * Answers **204 with an empty body** — no token pair — and revokes every
+ * session, so the caller signs in again afterwards. It cannot go through
+ * `postBackendJson`, which requires a JSON payload it can shape-check.
+ *
+ * Failures collapse into one 401 "authentication failed", with
+ * `otp_session_mismatch` as the sole distinguishable case. A password that
+ * breaks the length policy is INSIDE that collapse and is reported as a wrong
+ * code — which is why the client checks the length before calling this.
+ */
+export async function confirmPasswordReset(args: {
+  email: string;
+  code: string;
+  sessionNonce: string;
+  newPassword: string;
+}): Promise<void> {
+  const config = readMaintmodeBackendConfig();
+  const target = resolveBackendUrl(config.authApiBaseUrl, PASSWORD_RESET_CONFIRM_PATH);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
+
+  try {
+    const response = await fetch(target, {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({
+        email: args.email,
+        code: args.code,
+        session_nonce: args.sessionNonce,
+        new_password: args.newPassword,
+      }),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new BackendAuthError(response.status, (await response.text()) || response.statusText);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**
