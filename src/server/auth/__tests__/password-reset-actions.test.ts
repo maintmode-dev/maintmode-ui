@@ -92,6 +92,17 @@ describe("requesting a reset code cannot become an account-existence oracle", ()
       error: "password_reset_unavailable",
     });
   });
+
+  // A rejected input is not an outage. Today this endpoint answers only 202 and
+  // 429, but reporting a future 4xx as "the service is down" would send a user
+  // whose address was refused off to wait for a recovery that never comes.
+  it("does not report a rejected request as an outage", async () => {
+    requestPasswordResetCode.mockRejectedValueOnce(backendError(400));
+
+    await expect(requestPasswordResetAction("op@example.test")).resolves.toEqual({
+      error: "invalid_email",
+    });
+  });
 });
 
 describe("confirming a reset", () => {
@@ -208,8 +219,11 @@ describe("confirming a reset", () => {
   });
 
   it("clears the binding when the backend reports a session mismatch", async () => {
+    // Spaced exactly as a pretty-printing encoder would emit it: a substring
+    // match on `"code":"..."` would miss this and fail open into the generic
+    // collapse, showing sign-in recovery copy on a reset screen.
     confirmPasswordReset.mockRejectedValueOnce(
-      backendError(401, '{"code":"otp_session_mismatch","message":"authentication failed"}'),
+      backendError(401, '{ "code": "otp_session_mismatch", "message": "authentication failed" }'),
     );
 
     const result = await confirmPasswordResetAction({

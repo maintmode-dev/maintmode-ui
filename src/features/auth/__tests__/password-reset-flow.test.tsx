@@ -123,6 +123,22 @@ describe("the local attempt budget", () => {
     expect(screen.getByLabelText("Reset your password")).toBeTruthy();
   });
 
+  // The message has to survive the trip back to step one: `restart()` clears
+  // every other field, and an error set separately afterwards would be one
+  // edit away from being wiped by the obvious `setError(undefined)`.
+  it("explains why it returned to step one", async () => {
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("000000", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
+
+    await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
   it("does not spend the budget on a locally rejected password", async () => {
     const props = setup();
     await reachCodeStep(props);

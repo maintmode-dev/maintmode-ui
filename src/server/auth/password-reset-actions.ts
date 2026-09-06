@@ -34,10 +34,23 @@ function statusOf(error: unknown): number | undefined {
   return typeof status === "number" ? status : undefined;
 }
 
-/** Whether the backend's body named a specific code, without parsing prose. */
+/**
+ * Whether the backend's body named a specific code.
+ *
+ * Reads the `code` FIELD rather than substring-matching the raw text: a
+ * whitespace difference in the encoder (`"code": "..."`) would defeat a
+ * substring match, and it would fail open into the generic collapse — showing
+ * sign-in recovery copy on a reset screen. Never reads `message`, which is
+ * prose and is not a contract.
+ */
 function codeIs(error: unknown, code: string): boolean {
   const body = (error as { responseBody?: unknown } | null)?.responseBody;
-  return typeof body === "string" && body.includes(`"code":"${code}"`);
+  if (typeof body !== "string") return false;
+  try {
+    return (JSON.parse(body) as { code?: unknown }).code === code;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -76,7 +89,15 @@ export async function requestPasswordResetAction(email: string): Promise<Passwor
     // account, so saying so plainly leaks nothing — and folding it into the
     // anti-enumeration copy would tell every user their input was wrong during
     // an outage.
-    return { error: AUTH_ERROR_CODES.passwordResetUnavailable };
+    //
+    // Discriminated the same way the confirm path does it rather than treating
+    // every non-429 as an outage: today this endpoint answers 202 or 429 and
+    // nothing else, but a future 4xx would otherwise be reported as "the
+    // service is down" to a user whose input was simply rejected.
+    if (status === undefined || status >= 500 || status === 404) {
+      return { error: AUTH_ERROR_CODES.passwordResetUnavailable };
+    }
+    return { error: "invalid_email" };
   }
 }
 
@@ -117,10 +138,11 @@ export async function confirmPasswordResetAction(args: {
     });
   } catch (error) {
     const status = statusOf(error);
-    // `hadBinding` is a fact about this browser, not about the account, and it
-    // is the one thing separating "the user lost their tab" from "the user
-    // mistyped" — invisible in the response by design.
-    console.error("[password-reset] confirm failed", { status, hadBinding: true });
+    // Status only. A binding was necessarily present — the function returns
+    // early without one — so logging that fact would be a constant dressed as a
+    // variable. The address and the code are never logged: they are what the
+    // uniform 202 exists to protect.
+    console.error("[password-reset] confirm failed", { status });
 
     if (status === 429) {
       return { error: AUTH_ERROR_CODES.otpRateLimited };

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { changeBackendPassword } from "@/server/auth/backend-token-exchange";
 import { readActiveSession } from "@/server/auth/session-token";
+import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 import { readJsonBody } from "@/server/backend/http/read-json-body";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
 
@@ -47,7 +48,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sign-in is required", code: "AUTH_REQUIRED" }, { status: 401 });
   }
 
-  const body = await readJsonBody<ChangePasswordBody>(request);
+  // Caught rather than left to propagate: `readJsonBody` throws a
+  // `BffValidationError` on malformed JSON, and an uncaught throw out of a route
+  // handler is a Next 500 whose body is not the `{error, code}` envelope
+  // `bffFetch` parses — the card would print framework noise into the form. The
+  // catch is scoped to the parse alone, so the deliberate hand-rolled handling
+  // of the backend's own failures below still bypasses the generic mapper.
+  let body: ChangePasswordBody | undefined;
+  try {
+    body = await readJsonBody<ChangePasswordBody>(request);
+  } catch (error) {
+    return routeErrorResponse(error);
+  }
+
   const newPassword = body?.new_password;
   if (typeof newPassword !== "string" || !newPassword) {
     return NextResponse.json(

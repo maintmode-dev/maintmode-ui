@@ -54,6 +54,15 @@ export function SetPasswordPage() {
           // Also covers the moment between deciding to leave and the navigation
           // landing, so the form never flashes at someone on their way out.
           <Skeleton className="h-40 w-full" />
+        ) : meQuery.isError ? (
+          // Distinct from the card's own "this deployment doesn't report
+          // password state" copy. Both would otherwise render here — an errored
+          // query leaves `password_set` undefined — and blaming a version gap
+          // for a transient outage is the §3.6 conflation this change avoids
+          // everywhere else.
+          <p role="alert" className="caption text-fg-muted">
+            Couldn&apos;t load your account just now. Reload to try again.
+          </p>
         ) : (
           <PasswordCard passwordSet={passwordSet} />
         )}

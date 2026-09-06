@@ -93,13 +93,22 @@ export function PasswordResetFlow({
     setStep("code");
   }
 
-  /** Leaves step two for step one, discarding the binding server-side. */
-  async function restart() {
+  /**
+   * Leaves step two for step one, discarding the binding server-side.
+   *
+   * Takes the message to show rather than leaving the caller to set it
+   * afterwards: the caller's `setError` used to land in a later batch and
+   * survive only because nothing here touched `error`. Adding the obvious
+   * `setError(undefined)` to this function — it clears every other field —
+   * would have silently deleted the only explanation the user gets.
+   */
+  async function restart(message?: string) {
     await abandon();
     timers.reset();
     setStep("email");
     setCode("");
     setAttempts(0);
+    setError(message);
   }
 
   async function onSubmitCode(event: React.FormEvent) {
@@ -135,13 +144,13 @@ export function PasswordResetFlow({
       const spent = attempts + 1;
       setAttempts(spent);
 
-      if (result.error === "password_reset_session_mismatch") {
-        // The binding is already gone server-side, so step two is a dead end.
-        await restart();
-      } else if (spent >= MAX_CODE_ATTEMPTS) {
-        // Out of attempts: drop the binding rather than leave a live cookie
-        // pointing at a code that can no longer be redeemed.
-        await restart();
+      if (result.error === "password_reset_session_mismatch" || spent >= MAX_CODE_ATTEMPTS) {
+        // Either the binding is already gone server-side, or the attempts are
+        // spent — both make step two a dead end, and leaving a live cookie
+        // behind would rehydrate the user onto a code that can never be
+        // redeemed.
+        await restart(result.error);
+        return;
       }
       setError(result.error);
     });

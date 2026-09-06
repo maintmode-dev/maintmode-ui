@@ -59,6 +59,23 @@ describe("who this page is for", () => {
     expect(screen.queryByLabelText("New password")).toBeNull();
   });
 
+  // An errored query leaves `password_set` undefined, which the card renders as
+  // "this deployment doesn't report password state" — blaming a version gap for
+  // a transient outage. The two must not share copy.
+  it("says the account could not be loaded, not that the feature is missing", () => {
+    useMeQuery.mockReturnValue({
+      isPending: false,
+      isSuccess: false,
+      isError: true,
+      data: undefined,
+    });
+    renderPage();
+
+    expect(screen.getByRole("alert").textContent).toMatch(/couldn't load your account/i);
+    expect(screen.queryByText(/doesn't report password state/i)).toBeNull();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it("shows no form while the answer is still loading", () => {
     useMeQuery.mockReturnValue({ isPending: true, isSuccess: false, data: undefined });
     renderPage();

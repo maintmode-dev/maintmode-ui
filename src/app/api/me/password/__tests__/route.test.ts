@@ -149,6 +149,21 @@ describe("the guards every mutating route here carries", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "AUTH_REQUIRED" });
   });
 
+  it("answers a malformed body with a 400, not a 500", async () => {
+    const malformed = new Request("https://app.test/api/me/password", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{not json",
+    });
+
+    const response = await POST(malformed);
+
+    // An uncaught throw here would be a Next 500 whose body is not the envelope
+    // `bffFetch` parses, so the card would surface framework noise.
+    expect(response.status).toBe(400);
+    expect(changeBackendPassword).not.toHaveBeenCalled();
+  });
+
   it("rejects a request with no new password", async () => {
     const response = await POST(post({ current_password: "old-password" }));
 
