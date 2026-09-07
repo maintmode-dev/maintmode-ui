@@ -64,7 +64,12 @@ describe("verifyOtpCode", () => {
       jsonResponse(200, { access_token: "at-1", refresh_token: "rt-1", expires_in: 3600 }),
     );
 
-    await verifyOtpCode({ email: "a@example.test", code: "123456", sessionNonce: "nonce-1" });
+    await verifyOtpCode({
+      email: "a@example.test",
+      code: "123456",
+      sessionNonce: "nonce-1",
+      rememberMe: false,
+    });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe("http://backend.test/auth/api/v1/login/otp/verify");
@@ -72,6 +77,9 @@ describe("verifyOtpCode", () => {
       email: "a@example.test",
       code: "123456",
       session_nonce: "nonce-1",
+      // Present even when false (RUK-290): see remember-me.contract.test.ts for
+      // why absent and false must stay distinguishable on this endpoint.
+      remember_me: false,
     });
   });
 
@@ -81,7 +89,7 @@ describe("verifyOtpCode", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { access_token: "at-only", expires_in: 3600 }));
 
     await expect(
-      verifyOtpCode({ email: "a@example.test", code: "123456", sessionNonce: "n" }),
+      verifyOtpCode({ email: "a@example.test", code: "123456", sessionNonce: "n", rememberMe: false }),
     ).resolves.toMatchObject({ access_token: "at-only" });
   });
 
@@ -92,7 +100,12 @@ describe("verifyOtpCode", () => {
     );
 
     await expect(
-      verifyOtpCode({ email: "a@example.test", code: "123456", sessionNonce: "stale" }),
+      verifyOtpCode({
+        email: "a@example.test",
+        code: "123456",
+        sessionNonce: "stale",
+        rememberMe: false,
+      }),
     ).rejects.toBeInstanceOf(BackendAuthError);
 
     fetchMock.mockResolvedValueOnce(
@@ -103,6 +116,7 @@ describe("verifyOtpCode", () => {
       email: "a@example.test",
       code: "000000",
       sessionNonce: "good",
+      rememberMe: false,
     }).catch((e: unknown) => e);
 
     expect(wrongCode).toBeInstanceOf(BackendAuthError);
@@ -117,13 +131,14 @@ describe("loginWithPassword", () => {
       jsonResponse(200, { access_token: "at-2", refresh_token: "rt-2", expires_in: 3600 }),
     );
 
-    await loginWithPassword({ email: "admin@example.test", password: "hunter2" });
+    await loginWithPassword({ email: "admin@example.test", password: "hunter2", rememberMe: false });
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe("http://backend.test/auth/api/v1/login/password");
     expect(JSON.parse(String(init?.body))).toEqual({
       email: "admin@example.test",
       password: "hunter2",
+      remember_me: false,
     });
   });
 
@@ -137,6 +152,7 @@ describe("loginWithPassword", () => {
     const error = await loginWithPassword({
       email: "admin@example.test",
       password: "wrong",
+      rememberMe: false,
     }).catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(BackendAuthError);
