@@ -29,12 +29,19 @@ const LONG_ENOUGH = "a-long-enough-password";
 function renderCard(passwordSet: boolean | undefined) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(client, "invalidateQueries");
-  render(
+  const view = render(
     <QueryClientProvider client={client}>
       <PasswordCard passwordSet={passwordSet} />
     </QueryClientProvider>,
   );
-  return { invalidate };
+  /** Re-renders with a new prop WITHOUT remounting — the case a fresh mount hides. */
+  const setPasswordSet = (next: boolean | undefined) =>
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <PasswordCard passwordSet={next} />
+      </QueryClientProvider>,
+    );
+  return { invalidate, setPasswordSet };
 }
 
 function fill(label: string, value: string) {
@@ -146,6 +153,47 @@ describe("failures the user must be able to act on", () => {
     await waitFor(() => {
       expect(toastError).toHaveBeenCalledWith(expect.stringMatching(/session expired/i));
     });
+  });
+});
+
+describe("the form follows password_set when it changes under the card", () => {
+  // Found against a live backend, invisible to every test that mounts fresh.
+  // `password_set` flips to `true` the moment a password is set, and this card
+  // is not remounted — a `useState` seed would leave it offering "Set password"
+  // for an account that now HAS one, and the next submit would omit
+  // `current_password` and earn a 400 the user did nothing to deserve.
+  it("switches to the change form when the prop flips after a save", () => {
+    const { setPasswordSet } = renderCard(false);
+    expect(screen.queryByLabelText("Current password")).toBeNull();
+
+    setPasswordSet(true);
+
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Change password" })).toBeTruthy();
+  });
+
+  it("switches back if the account loses its password", () => {
+    const { setPasswordSet } = renderCard(true);
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
+
+    setPasswordSet(false);
+
+    expect(screen.queryByLabelText("Current password")).toBeNull();
+  });
+
+  // A flip earned from a 400 is a correction to what the prop claimed, so it
+  // must not be undone by the next render of that same stale prop.
+  it("keeps a flip that a 400 earned, even when the prop re-renders", async () => {
+    bffFetch.mockRejectedValue(new BffError(400, "validation error"));
+    const { setPasswordSet } = renderCard(false);
+
+    fill("New password", LONG_ENOUGH);
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+    await waitFor(() => expect(screen.getByLabelText("Current password")).toBeTruthy());
+
+    setPasswordSet(false);
+
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
   });
 });
 

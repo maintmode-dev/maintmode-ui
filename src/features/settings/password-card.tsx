@@ -35,22 +35,33 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
   const [error, setError] = useState<string | undefined>();
 
   /**
-   * Which shape the form is in. Seeded from `password_set` and allowed to flip
-   * ONCE — see `flipped`.
-   */
-  const [asChange, setAsChange] = useState(passwordSet === true);
-  /**
    * A `password_set` that disagrees with reality is possible: the backend
    * answers `false` when its own read of the credential fails. The wrong guess
-   * is answered with a 400, and this flips the form to the other shape so the
-   * user is not stuck.
+   * is answered with a 400, and the form flips to the other shape so the user
+   * is not stuck.
    *
    * Once, and only once. A 400 is NOT evidence about `password_set` — the same
    * status also carries a length-policy failure, and all three of the backend's
    * 400s share one code — so an unbounded rule would oscillate between the two
    * forms forever.
+   *
+   * `null` means "no flip has happened, follow the prop".
    */
-  const [flipped, setFlipped] = useState(false);
+  const [flipTo, setFlipTo] = useState<boolean | null>(null);
+
+  /**
+   * Which shape the form is in: the prop, unless a flip has overridden it.
+   *
+   * DERIVED, not seeded into state. A `useState(passwordSet === true)`
+   * initializer runs only on mount, and this card is never remounted — so
+   * setting a password left `password_set` flipping to `true` on the wire while
+   * the form still offered "Set password". The next submit then omitted
+   * `current_password` and earned a 400 the user had done nothing to deserve.
+   * Caught against a live backend; no test could see it, because every test
+   * mounts the component fresh.
+   */
+  const asChange = flipTo ?? passwordSet === true;
+  const flipped = flipTo !== null;
 
   if (passwordSet === undefined) {
     return (
@@ -99,8 +110,7 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
           if (mutationError.status === 400 && !flipped) {
             // The password passed the local length check, so this 400 is the
             // shape being wrong for this account's real state. Flip once.
-            setFlipped(true);
-            setAsChange((wasChange) => !wasChange);
+            setFlipTo(!asChange);
             setCurrent("");
             setError(
               asChange
