@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   OTP_NONCE_COOKIE,
+  PWRESET_NONCE_COOKIE,
   clearOtpBinding,
+  clearPasswordResetBinding,
   readOtpBinding,
+  readPasswordResetBinding,
   setOtpBinding,
+  setPasswordResetBinding,
 } from "@/server/auth/otp-nonce-cookie";
 
 const store = {
@@ -114,5 +118,69 @@ describe("otp-nonce-cookie — the encoding resists a hostile email address", ()
     const read = await readOtpBinding();
     expect(read?.nonce).toBe("real-nonce");
     expect(read?.email).toBe(hostile);
+  });
+});
+
+describe("two flows, two cookies (RUK-289)", () => {
+  beforeEach(() => {
+    store.set.mockReset();
+    store.get.mockReset();
+    store.delete.mockReset();
+  });
+
+  // Asserted as literal strings against the real exported constants, NOT
+  // re-derived from whatever produces them and NOT mocked. Both names are
+  // deployed artifacts: renaming the sign-in one invalidates every binding a
+  // user is holding mid-flow at deploy time, and a test that recomputes the
+  // name would pass through exactly that rename.
+  it("pins both cookie names as deployed artifacts", () => {
+    expect(OTP_NONCE_COOKIE).toBe("__Host-mm.otp_nonce");
+    expect(PWRESET_NONCE_COOKIE).toBe("__Host-mm.pwreset_nonce");
+  });
+
+  // The bug this split exists for: with ONE cookie, requesting a password-reset
+  // code overwrites the sign-in binding, and the email equality check PASSES
+  // because the address is the same. The sign-in code is then verified against
+  // the reset nonce and the user is told a correct code is wrong.
+  //
+  // Note what this does NOT claim: the sign-in CODE does not survive either,
+  // because the backend keeps one OTP record per user and issuing a reset code
+  // consumes the live one (SPEC §1.5). Only the local binding is separated.
+  it("writing a reset binding leaves the sign-in binding untouched", async () => {
+    await setOtpBinding({ nonce: "signin-nonce", email: "op@example.test" });
+    await setPasswordResetBinding({ nonce: "reset-nonce", email: "op@example.test" });
+
+    const written = store.set.mock.calls.map(([name]) => name);
+    expect(written).toEqual(["__Host-mm.otp_nonce", "__Host-mm.pwreset_nonce"]);
+  });
+
+  it("reads the reset binding from its own cookie", async () => {
+    store.get.mockImplementation((name: string) =>
+      name === "__Host-mm.pwreset_nonce"
+        ? { value: encode({ nonce: "reset-nonce", email: "op@example.test" }) }
+        : undefined,
+    );
+
+    await expect(readPasswordResetBinding()).resolves.toEqual({
+      nonce: "reset-nonce",
+      email: "op@example.test",
+    });
+    // The sign-in reader must not fall back to the reset cookie.
+    await expect(readOtpBinding()).resolves.toBeUndefined();
+  });
+
+  it("clearing one flow's binding does not clear the other's", async () => {
+    await clearPasswordResetBinding();
+
+    expect(store.delete).toHaveBeenCalledTimes(1);
+    expect(store.delete).toHaveBeenCalledWith("__Host-mm.pwreset_nonce");
+  });
+
+  it("keeps the reset cookie's flags and TTL identical to sign-in's", async () => {
+    await setPasswordResetBinding({ nonce: "n", email: "op@example.test" });
+
+    const [, , opts] = store.set.mock.calls[0];
+    expect(opts).toMatchObject({ httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+    expect(opts.maxAge).toBe(300);
   });
 });

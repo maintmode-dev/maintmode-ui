@@ -67,6 +67,9 @@ describe("public pages render without a QueryClientProvider", () => {
       otpSignInAction: async () => ({}),
       passwordSignInAction: async () => ({}),
       changeEmailAction: async () => {},
+      requestPasswordResetAction: async () => ({}),
+      confirmPasswordResetAction: async () => ({}),
+      abandonPasswordResetAction: async () => {},
     };
 
     expect(() =>

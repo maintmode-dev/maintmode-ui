@@ -114,3 +114,35 @@ export function useUpdateMyTags() {
     },
   });
 }
+
+/** What the change-password card sends. `current_password` is omitted, never
+ * empty, when the account has none — the backend rejects the field outright in
+ * that state, so "" and absent are different requests. */
+export type ChangePasswordArgs = {
+  current_password?: string;
+  new_password: string;
+};
+
+/**
+ * Set or change the caller's password (RUK-289) via `POST /api/me/password`.
+ *
+ * Unlike its siblings this cannot seed the cache from the response: the backend
+ * answers 204 with an empty body, so there is no user object to write. It
+ * INVALIDATES instead — `password_set` has just flipped, and `useMeQuery` holds
+ * its answer for `staleTime`, which would leave the card drawing the form for
+ * the state the user was in a minute ago.
+ */
+export function useChangePassword() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: ChangePasswordArgs): Promise<void> => {
+      await bffFetch<void>("/api/me/password", {
+        method: "POST",
+        body: JSON.stringify(args),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: meKey() });
+    },
+  });
+}

@@ -5,6 +5,12 @@ import {
   credentialsSignInAction,
   requestOtpAction,
 } from "@/server/auth/built-in-sign-in-actions";
+import {
+  abandonPasswordResetAction,
+  confirmPasswordResetAction,
+  requestPasswordResetAction,
+} from "@/server/auth/password-reset-actions";
+import { readPasswordResetBinding } from "@/server/auth/otp-nonce-cookie";
 import { signIn } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -41,6 +47,16 @@ export default async function Page({
   // break-glass fallback rather than a 500.
   const providers = await resolveAuthProviders();
 
+  // A password reset spans an email round-trip, so the user leaves this tab and
+  // comes back — reload is the flow's primary re-entry, not an edge case. The
+  // cookie is httpOnly and readable only here, so the step has to be resolved
+  // server-side and handed down.
+  //
+  // ONLY the address crosses. The nonce stays in the cookie: it is httpOnly
+  // precisely so browser JavaScript cannot read the binding, and passing the
+  // whole binding to a client component would give that away for nothing.
+  const resetBinding = await readPasswordResetBinding();
+
   /**
    * The built-in methods post through server actions rather than a client
    * `fetch`: NextAuth attaches its CSRF token only when `signIn` runs on the
@@ -66,6 +82,10 @@ export default async function Page({
       otpSignInAction={otpSignInAction}
       passwordSignInAction={passwordSignInAction}
       changeEmailAction={changeEmailAction}
+      requestPasswordResetAction={requestPasswordResetAction}
+      confirmPasswordResetAction={confirmPasswordResetAction}
+      abandonPasswordResetAction={abandonPasswordResetAction}
+      resetInProgressEmail={resetBinding?.email}
     />
   );
 }
