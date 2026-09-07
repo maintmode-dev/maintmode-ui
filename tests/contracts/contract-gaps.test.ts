@@ -353,23 +353,6 @@ describe("registry — refuted claims stay refuted", () => {
     // `null` is a VALUE — "not set". Absence would be the gap, and it is not.
     expect("timezone" in fixture("me.json")).toBe(true);
   });
-
-  it("`password_set` is NOT yet a key on /me (RUK-289 gap, still open)", () => {
-    // The mirror of the assertion above, and the only executable check the
-    // `password_set` registry row has.
-    //
-    // It is green today because the backend that serves this field is on an
-    // unmerged branch, so the recorded fixture predates it. It goes RED on the
-    // day someone re-records `me.json` against a backend that sends the field —
-    // which is exactly the day the gap closes, the registry row is owed
-    // deletion, and this assertion is owed deletion with it.
-    //
-    // Written this way round deliberately. The pass-through assertion in
-    // `me.contract.test.ts` cannot do this job: it compares the route's echo
-    // against the same fixture that fed the mock, so it is a tautology on key
-    // sets and stays green whatever the fixture contains.
-    expect("password_set" in fixture("me.json")).toBe(false);
-  });
 });
 
 describe("the registry file itself", () => {

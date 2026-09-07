@@ -103,35 +103,38 @@ case") is exactly the defect RUK-258 removed.
 
 ---
 
-### `password_set` on /me — read by the frontend, not yet on the wire
+### `password_set` on /me — CLOSED 2026-09-08 (RUK-289)
 
-| Field          | Where it is needed                                  | What is on the wire                     | Ticket  | Stub             |
-| -------------- | --------------------------------------------------- | --------------------------------------- | ------- | ---------------- |
-| `password_set` | profile password card, `/set-password` (RUK-289 UI) | the key is absent from the recorded 200 | RUK-289 | none — see below |
+| Field          | Where it is needed                                  | What was on the wire                     | Ticket  | Status                        |
+| -------------- | --------------------------------------------------- | ---------------------------------------- | ------- | ----------------------------- |
+| `password_set` | profile password card, `/set-password` (RUK-289 UI) | the key was absent from the recorded 200 | RUK-289 | closed — backend now sends it |
 
-The backend that serves this field is written but sits on an unmerged branch, so
-the recorded fixture predates it and the field arrives as `undefined` until that
-branch ships. The frontend types it optional and treats `undefined` as "unknown"
-rather than as `false`: the two mean different things, and collapsing them would
-draw a set-password form for every operator, whose every save is then a 400.
+The backend that serves this field was written on a branch while the frontend
+was built, so the recorded fixture predated it and the field arrived as
+`undefined`. That branch is merged, `me.json` is re-recorded, and the key is on
+the wire as a real boolean.
 
-**There is no mapper stub, because there is no mapper.** `/api/me` is an
-unnarrowed pass-through (`NextResponse.json(data)`), so nothing substitutes a
-placeholder value the way `notify-channel-mapper.ts` does for `updated_at` — the
-key is simply not there. The Stub column has nothing to point at.
+**The row is kept rather than deleted, per this file's convention for a closed
+gap** — a reader who finds `password_set?: boolean` optional in
+`src/domain/admin/user.ts` should be able to learn why. The optionality stays
+deliberately: `undefined` still means "the deployed backend predates the field",
+which is a real state for any instance not yet on this version, and the UI keeps
+treating it as "unknown" rather than as `false`. Collapsing the two would draw a
+set-password form for every operator on such an instance, whose every save is
+then a 400.
 
-**This row is prose, in the sense the `updated_at` row above means it** — the
-Class-B stub-scanner is pinned to `maintenance-mapper.ts` and cannot cover it.
-Unlike that row, however, this one is not unprotected: `contract-gaps.test.ts`
-asserts that `password_set` is **absent** from `me.json`, which is green today
-and goes red on the day the fixture is re-recorded against a backend that sends
-it. That is the day this row is owed deletion, along with the assertion itself.
+**How it was detected, and why that mattered.** The mechanism was a mirror
+assertion — `contract-gaps.test.ts` asserted the key was ABSENT from `me.json`,
+so it was green while the gap was open and went red the moment the fixture was
+re-recorded. It fired exactly as designed, which is how this row came to be
+closed rather than quietly forgotten. Both the assertion and the gap are gone.
 
-The pass-through assertion in `me.contract.test.ts` deliberately does NOT serve
-this purpose: it compares the route's echo against the same fixture that fed its
-mock, so it is a tautology on key sets and stays green whatever the fixture
-holds. It proves the route narrows nothing; it says nothing about which fields
-exist.
+The first version of this row claimed a different detector — the key-set
+comparison in `me.contract.test.ts` — and that claim was wrong. That assertion
+compares the route's echo against the same fixture that fed its mock: a tautology
+on key sets, green whatever the fixture holds. It proves the route narrows
+nothing and says nothing about which fields exist. Recorded here because a
+detector that cannot fire is worse than an acknowledged absence of one.
 
 ## Class B′ — the backend sends it, the frontend does not read it
 

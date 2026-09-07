@@ -12,5 +12,6 @@
   ],
   "timezone": null,
   "telegram_tag": null,
-  "slack_tag": null
+  "slack_tag": null,
+  "password_set": false
 }

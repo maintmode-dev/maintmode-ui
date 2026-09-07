@@ -298,6 +298,24 @@ const SENSITIVE_KEY_RE =
   /(^|_)(ip|ips|user_agent|useragent|token|secret|password|passwd|authorization|auth|api_key|apikey|key|session|session_id|cookie|phone|telegram_tag|slack_tag|refresh_token|access_token)($|_)/i;
 
 /**
+ * Keys that LOOK sensitive to the rule above but are not, and whose masking
+ * would destroy the very thing the fixture exists to pin.
+ *
+ * `password_set` is a boolean saying whether an account HAS a password. It is
+ * not a credential, and it is not derived from one — but it matches
+ * `(^|_)password($|_)` on its prefix, so it was masked into the string
+ * `"<redacted-password_set>"`, which changes its TYPE. A contract test that
+ * checks the field is a boolean then fails, and the fixture stops describing
+ * the wire.
+ *
+ * Kept as a narrow allowlist rather than a loosened pattern: the asymmetry
+ * argued above is right, and the fix for a false positive is to name it, not
+ * to make the rule leakier. Anything added here needs the same justification —
+ * that masking it would break a test and that the value carries no secret.
+ */
+const NOT_SENSITIVE_KEYS = new Set(["password_set"]);
+
+/**
  * Numeric fields that are identifiers or clocks rather than data.
  *
  * `revision` arrives as a microsecond timestamp (1786457955907222) and moves on
@@ -366,7 +384,12 @@ function normalize(value, seen = new Map(), key = "", counters = new Map()) {
 
   // Key-based masking runs FIRST and ignores value shape entirely — that is the
   // whole point of having it (see SENSITIVE_KEY_RE).
-  if (SENSITIVE_KEY_RE.test(key) && value !== null && value !== "") {
+  if (
+    SENSITIVE_KEY_RE.test(key) &&
+    !NOT_SENSITIVE_KEYS.has(key.toLowerCase()) &&
+    value !== null &&
+    value !== ""
+  ) {
     return `<redacted-${key.toLowerCase()}>`;
   }
   if (VOLATILE_NUMERIC_KEY_RE.test(key) && typeof value === "number") {
