@@ -406,6 +406,100 @@ describe("§6.6 — the address from step one is the one verified", () => {
     expect(screen.queryByLabelText("Keep me signed in")).toBeNull();
   });
 
+  it("survives a wrong code, so the remaining attempts stay usable", async () => {
+    // The binding is deliberately kept alive after a wrong code (RUK-288), and
+    // the box must be kept with it — otherwise five attempts means re-ticking
+    // it five times. Correct today only because nothing resets it in the error
+    // branch; this test is what stops someone "fixing" that.
+    const submitCode = vi.fn(async () => ({ error: "otp_verification_failed" }));
+    setup({ submitCode });
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+
+    fireEvent.click(screen.getByLabelText("Keep me signed in"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "000000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+    await waitFor(() => expect(submitCode).toHaveBeenCalled());
+
+    // Still on the code step, still ticked — one render throughout, so this
+    // asserts the component's real state rather than a fresh mount's default.
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeDefined();
+    expect(screen.getByLabelText("Keep me signed in").getAttribute("data-state")).toBe("checked");
+  });
+
+  it("forgets the remember-me choice when the user changes address", async () => {
+    // `backToEmail()` resets the step IN PLACE — the component is not
+    // unmounted — so nothing clears this for us. Without the explicit reset the
+    // next person to sign in from this browser inherits a long-session choice
+    // they never made.
+    //
+    // Stays in ONE render on purpose: tearing down and re-rendering would
+    // destroy the state under test and the assertion would pass no matter what
+    // `backToEmail` does.
+    const { submitCode } = await reachCodeStep();
+    fireEvent.click(screen.getByLabelText("Keep me signed in"));
+    expect(screen.getByLabelText("Keep me signed in").getAttribute("data-state")).toBe("checked");
+
+    fireEvent.click(screen.getByRole("button", { name: "Change email" }));
+    await waitFor(() => expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull());
+
+    // Same component instance, second address.
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "another@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    // Asserted on what the submit handler receives, not on the checkbox's own
+    // state: the value reaching the backend is the thing that matters.
+    await waitFor(() => expect(submitCode).toHaveBeenCalledWith("another@example.test", "123456", false));
+  });
+
+  it("forgets the choice when a lost binding sends the flow back to step one", async () => {
+    // The second in-place return to the address step. Same hazard, different
+    // branch — and a branch nothing else in this file exercises with the box.
+    // First submit loses the binding, second succeeds — hence the explicit
+    // return type, so `{}` on the happy path is not narrowed away.
+    const submitCode =
+      vi.fn<(email: string, code: string, remember: boolean) => Promise<{ error?: string }>>();
+    submitCode.mockResolvedValueOnce({ error: "otp_session_mismatch" }).mockResolvedValue({});
+    setup({ submitCode });
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.click(screen.getByLabelText("Keep me signed in"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    // The lost binding drops the flow back to the address step.
+    await waitFor(() => expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull());
+
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "654321" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(submitCode).toHaveBeenLastCalledWith("someone@example.test", "654321", false));
+  });
+
   it("refuses a short code locally rather than spending a backend attempt", async () => {
     // Only five attempts exist per code; a 3-digit submit must not burn one.
     const submitCode = vi.fn(async () => ({}));

@@ -25,11 +25,11 @@ import { join } from "node:path";
 // ---------------------------------------------------------------------------
 
 /**
- * Read as source text rather than by booting NextAuth: importing `auth-config`
- * evaluates the real provider list at module load (it reads env), so a
- * behavioural test here would assert more about the harness than the wiring.
- * This mirrors `backend-login-provider.test.ts`, which guards the same file the
- * same way and for the same reason.
+ * Two sites here can only be read as source text: `auth-config.ts` cannot be
+ * imported outside the Next runtime (NextAuth resolves `next/server` at module
+ * load), which is why `backend-login-provider.test.ts` guards the same file the
+ * same way. The *decision* is not among them — `parseRememberMe` lives in its
+ * own NextAuth-free module precisely so it can be called.
  */
 const authConfigSource = readFileSync(join(process.cwd(), "src/server/auth/auth-config.ts"), "utf8");
 
@@ -37,16 +37,16 @@ describe("AC 15 — the flag is declared, and parsed fail-closed", () => {
   it("declares rememberMe among the provider's credentials", () => {
     // Site 5. NextAuth forwards only declared keys, so without this line the
     // value never reaches `authorize` and every other test here still passes.
-    expect(authConfigSource).toMatch(/credentials:\s*\{[^\n]*\brememberMe:\s*\{\}/);
+    // Source text is the only option; `[\s\S]` rather than `[^\n]` so that
+    // reformatting the object across lines is not a failure.
+    expect(authConfigSource).toMatch(/credentials:\s*\{[\s\S]{0,200}?\brememberMe:\s*\{\}/);
   });
 
-  it('treats only the exact string "true" as a yes', () => {
-    // Site 6. `Boolean("false") === true`, so the obvious coercion would hand a
-    // long session to someone who deliberately unticked the box. Asserting the
-    // comparison is strict equality against "true" is the point.
-    expect(authConfigSource).toContain('credentials?.rememberMe === "true"');
-    expect(authConfigSource).not.toMatch(/Boolean\(\s*credentials\??\.\s*rememberMe/);
-    expect(authConfigSource).not.toMatch(/!!\s*credentials\??\.\s*rememberMe/);
+  it("calls the shared parser rather than re-deriving the comparison inline", () => {
+    // Keeps the behavioural test below meaningful: an inline re-implementation
+    // in `authorize` would sit outside everything `parse-remember-me.test.ts`
+    // checks.
+    expect(authConfigSource).toContain("parseRememberMe(credentials?.rememberMe)");
   });
 
   it("puts the parsed flag on both returned users, not just one", () => {

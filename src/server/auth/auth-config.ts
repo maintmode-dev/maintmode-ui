@@ -15,6 +15,7 @@ import {
 import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
 import { isRole } from "@/domain/auth/permissions";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
+import { parseRememberMe } from "@/server/auth/parse-remember-me";
 import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
 import {
   AUTH_ERROR_CODES,
@@ -84,11 +85,8 @@ providers.push(
         return null;
       }
 
-      // Fail closed: ONLY the exact string "true" is a yes. Anything else —
-      // "false", undefined, junk — is a no. Note `Boolean("false") === true`,
-      // so the obvious coercion would hand out long sessions to users who
-      // deliberately unticked the box.
-      const rememberMe = credentials?.rememberMe === "true";
+      // Fail closed — see `parseRememberMe`.
+      const rememberMe = parseRememberMe(credentials?.rememberMe);
 
       if (kind === "otp") {
         const code = typeof credentials?.code === "string" ? credentials.code.trim() : "";
