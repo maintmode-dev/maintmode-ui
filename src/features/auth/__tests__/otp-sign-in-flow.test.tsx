@@ -4,6 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
 
+// jsdom implements no ResizeObserver, and Radix's Checkbox measures itself via
+// `useSize`. Without this every test in the file dies on render rather than on
+// an assertion. Inline rather than a shared helper: `src/features/**` may not
+// import `@/shared/testing/**` (eslint no-restricted-imports), and that
+// boundary is worth more than deduplicating six lines. Same stub as
+// `src/features/settings/__tests__/timezone-card.test.tsx`.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 /**
  * RUK-288 AC-4 / AC-5 / AC-6 — the two-step code flow and its state table.
  */
@@ -364,7 +376,34 @@ describe("§6.6 — the address from step one is the one verified", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => expect(submitCode).toHaveBeenCalledWith("someone@example.test", "123456"));
+    await waitFor(() => expect(submitCode).toHaveBeenCalledWith("someone@example.test", "123456", false));
+  });
+
+  it("sends the remember-me choice with the code", async () => {
+    // RUK-290. The box lives on the CODE step because that is the request that
+    // mints the session; the address step issues no token.
+    const submitCode = vi.fn(async () => ({}));
+    setup({ submitCode });
+
+    fireEvent.change(screen.getByLabelText("Email code"), {
+      target: { value: "someone@example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => screen.getByLabelText("Enter the 6-digit code"));
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), {
+      target: { value: "123456" },
+    });
+    fireEvent.click(screen.getByLabelText("Keep me signed in"));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(submitCode).toHaveBeenCalledWith("someone@example.test", "123456", true));
+  });
+
+  it("does not offer the remember-me box on the address step", () => {
+    // It would attach the choice to a request that issues no token.
+    setup({});
+
+    expect(screen.queryByLabelText("Keep me signed in")).toBeNull();
   });
 
   it("refuses a short code locally rather than spending a backend attempt", async () => {

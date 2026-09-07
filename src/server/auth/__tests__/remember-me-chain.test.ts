@@ -40,7 +40,7 @@ describe("AC 15 — the flag is declared, and parsed fail-closed", () => {
     expect(authConfigSource).toMatch(/credentials:\s*\{[^\n]*\brememberMe:\s*\{\}/);
   });
 
-  it("treats only the exact string \"true\" as a yes", () => {
+  it('treats only the exact string "true" as a yes', () => {
     // Site 6. `Boolean("false") === true`, so the obvious coercion would hand a
     // long session to someone who deliberately unticked the box. Asserting the
     // comparison is strict equality against "true" is the point.
@@ -116,7 +116,12 @@ beforeEach(() => {
 
 describe("AC 16 — the ticked box reaches the exchange", () => {
   it("passes rememberMe: true through the password branch", async () => {
-    await callSignIn({ signInKind: "password", email: "admin@example.test", password: "pw", rememberMe: true });
+    await callSignIn({
+      signInKind: "password",
+      email: "admin@example.test",
+      password: "pw",
+      rememberMe: true,
+    });
 
     expect(loginWithPassword).toHaveBeenCalledWith(expect.objectContaining({ rememberMe: true }));
   });

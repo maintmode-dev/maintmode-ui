@@ -34,9 +34,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * SPEC §8.1 describes.
  */
 
-const { OTP_VERIFY_PATH, PASSWORD_LOGIN_PATH, loginWithPassword, verifyOtpCode } = await import(
-  "@/server/auth/backend-token-exchange"
-);
+const { OTP_VERIFY_PATH, PASSWORD_LOGIN_PATH, loginWithPassword, verifyOtpCode } =
+  await import("@/server/auth/backend-token-exchange");
 
 const fetchMock = vi.fn();
 
