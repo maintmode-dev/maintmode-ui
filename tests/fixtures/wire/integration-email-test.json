@@ -1,0 +1,41 @@
+{
+  "_recorded": "2026-09-08, POST /api/v1/integrations/email/test on a locally built backend (main @ a814a01). Captured from the wire, not written by hand: scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, and every interesting shape here is a POST error envelope.",
+  "_why": "The frontend renders whatever this endpoint answers. Four shapes matter, and three of them are failures — the success case is the least informative one, because a probe that works tells the operator nothing they need.",
+  "success": {
+    "_note": "204, empty body. The SMTP server accepted the message; delivery is not claimed.",
+    "status": 204,
+    "body": ""
+  },
+  "probe_failed": {
+    "_note": "502. `code` is always the literal `probe_failed`; the far end's own text is in `message`. There is NO machine-readable category — an earlier revision emitted one as a prefix and it was withdrawn, because classifying by substring made a host named `smtp.auth-relay.example` report a connection refusal as an auth failure.",
+    "status": 502,
+    "body": {
+      "code": "probe_failed",
+      "message": "integration probe failed: email send: dial failed: dial tcp: lookup nonexistent.invalid on 127.0.0.11:53: no such host"
+    }
+  },
+  "validation_missing_host": {
+    "_note": "400. Kind validation, not a probe: nothing was dialled.",
+    "status": 400,
+    "body": {
+      "code": "invalid request",
+      "message": "validation failed: host: cannot be blank."
+    }
+  },
+  "validation_tls_none_with_username": {
+    "_note": "400. Plaintext plus a username would offer credentials over an unencrypted connection; CRAM-MD5 hands a hostile server a hash that brute-forces offline. Plaintext WITHOUT a username stays legal — that is an internal relay.",
+    "status": 400,
+    "body": {
+      "code": "invalid request",
+      "message": "validation failed: tls_policy: tls_policy must not be \"none\" when a username is set: credentials would be offered over an unencrypted connection."
+    }
+  },
+  "validation_bad_recipient": {
+    "_note": "400. `to` is required and validated; the server never infers a recipient from the caller's token.",
+    "status": 400,
+    "body": {
+      "code": "invalid request",
+      "message": "validation failed: To: must be a valid email address."
+    }
+  }
+}

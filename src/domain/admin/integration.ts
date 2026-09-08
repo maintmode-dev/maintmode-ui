@@ -50,3 +50,22 @@ export interface UpdateIntegrationInput {
   config?: Record<string, unknown>;
   secrets?: Record<string, string | null>;
 }
+
+/**
+ * POST body for the live probe — `POST /api/v1/integrations/email/test`.
+ *
+ * `secrets` is a FLAT map here, not the three-state intent map
+ * `UpdateIntegrationInput` uses. There is no stored row to merge with: a key
+ * present means "use this value", a key absent means "there is no such secret".
+ * The backend deliberately never substitutes a stored password — pairing one
+ * with a caller-named host would hand the credential to whatever server the
+ * request pointed at.
+ *
+ * `to` is required. The backend does not infer a recipient from the caller's
+ * token: mailing an address nobody named is a side effect nobody asked for.
+ */
+export interface TestIntegrationInput {
+  config: Record<string, unknown>;
+  secrets: Record<string, string>;
+  to: string;
+}
