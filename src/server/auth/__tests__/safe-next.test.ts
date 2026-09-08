@@ -50,4 +50,28 @@ describe("safeNext", () => {
     // injected backslash still trips the CR/LF/NUL/backslash filter.
     expect(safeNext("/foo\\")).toBe("/");
   });
+  /**
+   * TAB is stripped by URL parsers exactly like CR, LF and NUL, so `/<TAB>//host`
+   * is parsed as `//host` — protocol-relative — while a `startsWith("//")` check
+   * never sees it. The character list this function used to carry named the
+   * other three and missed this one, which is why the check is now a range plus
+   * a resolution test rather than an enumeration.
+   *
+   * Reached from `/login?next=/%09//evil.test`, it produced an off-origin
+   * redirect immediately after a successful sign-in.
+   */
+  it.each([
+    ["tab between the slashes", "/\t//evil.test"],
+    ["tab before the slashes", "\t//evil.test"],
+    ["form feed", "/\f//evil.test"],
+    ["vertical tab", "/\v//evil.test"],
+    ["leading space", "/ //evil.test"],
+    ["del", "/\u007f//evil.test"],
+  ])("rejects %s", (_case, value) => {
+    expect(safeNext(value)).toBe("/");
+  });
+
+  it("still returns ordinary destinations untouched", () => {
+    expect(safeNext("/calendar?view=week#today")).toBe("/calendar?view=week#today");
+  });
 });
