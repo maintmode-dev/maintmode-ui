@@ -35,15 +35,9 @@ export interface LoginPageProps {
   signInAction: (providerId: string) => Promise<void>;
   /** Step one of the OTP flow: mails a code and binds it to this browser. */
   requestOtpAction: (email: string) => Promise<{ error?: string }>;
-  /**
-   * Step two, and the password form: establishes the session.
-   *
-   * `rememberMe` is required rather than optional (RUK-290). Optional would let
-   * a caller omit it and feed `undefined` into a chain typed `boolean`, with no
-   * compiler error anywhere along the way.
-   */
-  otpSignInAction: (email: string, code: string, rememberMe: boolean) => Promise<{ error?: string }>;
-  passwordSignInAction: (email: string, password: string, rememberMe: boolean) => Promise<{ error?: string }>;
+  /** Step two, and the password form: establishes the session. */
+  otpSignInAction: (email: string, code: string) => Promise<{ error?: string }>;
+  passwordSignInAction: (email: string, password: string) => Promise<{ error?: string }>;
   /** Abandons the current OTP flow so another address can be used. */
   changeEmailAction: () => Promise<void>;
   /** Step one of the password reset (RUK-289): mails a code, binds this browser. */

@@ -75,8 +75,8 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
  */
 export async function credentialsSignInAction(
   input:
-    | { kind: "otp"; email: string; code: string; rememberMe: boolean; next?: string }
-    | { kind: "password"; email: string; password: string; rememberMe: boolean; next?: string },
+    | { kind: "otp"; email: string; code: string; next?: string }
+    | { kind: "password"; email: string; password: string; next?: string },
 ): Promise<SignInActionResult> {
   // `safeNext`, not an ad-hoc `startsWith("/")`: this is an exported server
   // action, so it is invocable by action id with an attacker-chosen `next`, and
@@ -90,13 +90,6 @@ export async function credentialsSignInAction(
       email: input.email,
       code: input.kind === "otp" ? input.code : "",
       password: input.kind === "password" ? input.password : "",
-      // Credentials cross this boundary as strings, so the boolean is
-      // stringified here and parsed back — strictly against "true" — in
-      // `authorize`. Widening the input union above without adding the field to
-      // THIS literal compiles cleanly and sends nothing: the flag would be
-      // dropped here and every test that does not follow it to the wire would
-      // still pass.
-      rememberMe: String(input.rememberMe),
       redirectTo,
     });
     return {};

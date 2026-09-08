@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
-import { Checkbox } from "@/shared/ui/shadcn/checkbox";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 
@@ -23,12 +22,7 @@ import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
 
 export interface PasswordSignInFormProps {
   label: string;
-  /**
-   * `rememberMe` is a required third argument, not an optional one: optional
-   * would let a caller omit it and pass `undefined` into a chain typed
-   * `boolean`, which no compiler error would catch (RUK-290).
-   */
-  submit: (email: string, password: string, rememberMe: boolean) => Promise<{ error?: string }>;
+  submit: (email: string, password: string) => Promise<{ error?: string }>;
   /** Opens the reset flow. Absent when the deployment has no reset endpoint. */
   onForgotPassword?: () => void;
 }
@@ -36,7 +30,6 @@ export interface PasswordSignInFormProps {
 export function PasswordSignInForm({ label, submit, onForgotPassword }: PasswordSignInFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
 
@@ -47,7 +40,7 @@ export function PasswordSignInForm({ label, submit, onForgotPassword }: Password
 
     setPending(true);
     setError(undefined);
-    const result = await submit(trimmed, password, rememberMe);
+    const result = await submit(trimmed, password);
     setPending(false);
     if (result.error) setError(result.error);
   }
@@ -78,19 +71,6 @@ export function PasswordSignInForm({ label, submit, onForgotPassword }: Password
         onChange={(e) => setPassword(e.target.value)}
         aria-describedby={error ? "password-error" : undefined}
       />
-      <div className="flex items-center gap-2 py-0.5">
-        <Checkbox
-          id="password-remember-me"
-          checked={rememberMe}
-          disabled={pending}
-          onCheckedChange={(checked) => setRememberMe(checked === true)}
-        />
-        {/* Names no duration on purpose: the token pair carries no refresh TTL,
-            so any "stay signed in for N days" would be invented. */}
-        <Label htmlFor="password-remember-me" className="text-xs font-normal text-fg-muted">
-          Keep me signed in
-        </Label>
-      </div>
       {error ? (
         <p id="password-error" role="alert" className="text-xs text-[var(--destructive-fg)]">
           {flowErrorMessage(error)}

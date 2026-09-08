@@ -22,21 +22,9 @@ import {
  */
 export async function runBuiltInSignIn(
   account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
-  user: {
-    signInKind?: "otp" | "password";
-    email?: string | null;
-    otpCode?: string;
-    password?: string;
-    rememberMe?: boolean;
-  },
+  user: { signInKind?: "otp" | "password"; email?: string | null; otpCode?: string; password?: string },
 ): Promise<true> {
   const email = normalizeEmail(typeof user.email === "string" ? user.email : "");
-  // Normalised exactly once, here. `interface User` must keep the field
-  // optional (Google and dev-bypass share that type and return no such field),
-  // but everything downstream takes a plain `boolean` — so the one `??` in the
-  // chain lives at this boundary. Putting it in the exchange functions instead
-  // would make their contract test pass whether or not the value ever arrived.
-  const rememberMe = user.rememberMe ?? false;
   let tokens: BackendTokenPair;
 
   if (user.signInKind === "otp") {
@@ -61,7 +49,6 @@ export async function runBuiltInSignIn(
         email: binding.email,
         code: user.otpCode ?? "",
         sessionNonce: binding.nonce,
-        rememberMe,
       });
     } catch (error) {
       // The backend checks the nonce before the code, so it can also report a
@@ -86,7 +73,7 @@ export async function runBuiltInSignIn(
     await clearOtpBinding();
   } else {
     try {
-      tokens = await loginWithPassword({ email, password: user.password ?? "", rememberMe });
+      tokens = await loginWithPassword({ email, password: user.password ?? "" });
     } catch {
       // The backend answers every password failure with one uniform 401 —
       // wrong password, blocked, signup refused, seats exhausted — precisely so

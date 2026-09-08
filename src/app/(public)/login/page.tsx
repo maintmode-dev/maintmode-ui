@@ -63,14 +63,14 @@ export default async function Page({
    * server, and the sanitized `redirectTo` is closed over here so a client can
    * never supply a destination of its own and route around `safeNext`.
    */
-  async function otpSignInAction(email: string, code: string, rememberMe: boolean) {
+  async function otpSignInAction(email: string, code: string) {
     "use server";
-    return credentialsSignInAction({ kind: "otp", email, code, rememberMe, next: redirectTo });
+    return credentialsSignInAction({ kind: "otp", email, code, next: redirectTo });
   }
 
-  async function passwordSignInAction(email: string, password: string, rememberMe: boolean) {
+  async function passwordSignInAction(email: string, password: string) {
     "use server";
-    return credentialsSignInAction({ kind: "password", email, password, rememberMe, next: redirectTo });
+    return credentialsSignInAction({ kind: "password", email, password, next: redirectTo });
   }
 
   return (

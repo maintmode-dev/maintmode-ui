@@ -15,7 +15,6 @@ import {
 import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
 import { isRole } from "@/domain/auth/permissions";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
-import { parseRememberMe } from "@/server/auth/parse-remember-me";
 import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
 import {
   AUTH_ERROR_CODES,
@@ -66,11 +65,7 @@ providers.push(
   Credentials({
     id: BACKEND_LOGIN_PROVIDER_ID,
     name: "Email sign-in",
-    // `rememberMe` MUST be declared here: NextAuth forwards only the keys a
-    // provider lists, so an undeclared field never reaches `authorize` at all —
-    // and the failure is silent (no type error, no runtime error, the checkbox
-    // simply never works). Values cross as strings, hence the parse below.
-    credentials: { kind: {}, email: {}, code: {}, password: {}, rememberMe: {} },
+    credentials: { kind: {}, email: {}, code: {}, password: {} },
     /**
      * Shape validation ONLY — deliberately no network call. The exchange lives
      * in the `signIn` callback so the backend call and its error mapping stay in
@@ -85,9 +80,6 @@ providers.push(
         return null;
       }
 
-      // Fail closed — see `parseRememberMe`.
-      const rememberMe = parseRememberMe(credentials?.rememberMe);
-
       if (kind === "otp") {
         const code = typeof credentials?.code === "string" ? credentials.code.trim() : "";
         // Rejecting a malformed code here avoids spending one of the five
@@ -96,13 +88,7 @@ providers.push(
         if (!isWellFormedOtpCode(code)) {
           return null;
         }
-        return {
-          id: BACKEND_LOGIN_PROVIDER_ID,
-          signInKind: "otp" as const,
-          email,
-          otpCode: code,
-          rememberMe,
-        };
+        return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "otp" as const, email, otpCode: code };
       }
 
       if (kind === "password") {
@@ -110,13 +96,7 @@ providers.push(
         if (!password) {
           return null;
         }
-        return {
-          id: BACKEND_LOGIN_PROVIDER_ID,
-          signInKind: "password" as const,
-          email,
-          password,
-          rememberMe,
-        };
+        return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "password" as const, email, password };
       }
 
       return null;

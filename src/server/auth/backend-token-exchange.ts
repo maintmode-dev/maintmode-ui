@@ -10,13 +10,8 @@ const LOGOUT_PATH = "/api/v1/logout";
 const LOGOUT_ALL_PATH = "/api/v1/logout/all";
 const ME_PATH = "/api/v1/me";
 const OTP_REQUEST_PATH = "/api/v1/login/otp/request";
-/**
- * Exported so the contract test can assert against the constant instead of
- * retyping the string: a hardcoded copy in the test would assert only itself
- * and stay green if the real path ever changed (SPEC §8.1).
- */
-export const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
-export const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
+const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
+const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
 const PASSWORD_RESET_REQUEST_PATH = "/api/v1/password/reset/request";
 const PASSWORD_RESET_CONFIRM_PATH = "/api/v1/password/reset/confirm";
 const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
@@ -127,20 +122,10 @@ export async function verifyOtpCode(args: {
   email: string;
   code: string;
   sessionNonce: string;
-  /**
-   * Session-length request, not a command: the backend decides what it grants.
-   * Non-optional on purpose — see the note on `loginWithPassword`.
-   */
-  rememberMe: boolean;
 }): Promise<BackendTokenPair> {
   return postBackendJson<BackendTokenPair>(
     OTP_VERIFY_PATH,
-    {
-      email: args.email,
-      code: args.code,
-      session_nonce: args.sessionNonce,
-      remember_me: args.rememberMe,
-    },
+    { email: args.email, code: args.code, session_nonce: args.sessionNonce },
     // `refresh_token` carries `omitempty` and may legitimately be absent, so —
     // unlike the Google path — it is not required here.
     (parsed) => Boolean(parsed?.access_token),
@@ -159,24 +144,10 @@ export async function verifyOtpCode(args: {
 export async function loginWithPassword(args: {
   email: string;
   password: string;
-  /**
-   * Session-length request (RUK-290). Two deliberate choices here:
-   *
-   * - **Non-optional**, so an unticked box cannot arrive as `undefined` and be
-   *   silently dropped by `JSON.stringify`. Normalisation happens once, in
-   *   `runBuiltInSignIn`; a `?? false` here instead would make the contract test
-   *   pass whether or not the value ever reached this function.
-   * - Written into the body **unconditionally**, never as
-   *   `...(rememberMe ? { remember_me: true } : {})`. That idiom appears a few
-   *   functions below in `changeBackendPassword`, where absent genuinely differs
-   *   from empty — copying it here would drop the key on `false`, which is the
-   *   one case worth proving.
-   */
-  rememberMe: boolean;
 }): Promise<BackendTokenPair> {
   return postBackendJson<BackendTokenPair>(
     PASSWORD_LOGIN_PATH,
-    { email: args.email, password: args.password, remember_me: args.rememberMe },
+    { email: args.email, password: args.password },
     (parsed) => Boolean(parsed?.access_token),
   );
 }

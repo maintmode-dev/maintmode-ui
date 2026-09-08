@@ -56,13 +56,6 @@ declare module "next-auth" {
     email?: string | null;
     otpCode?: string;
     password?: string;
-    /**
-     * Session-length request (RUK-290). Optional here and only here: this
-     * interface is shared with the Google and dev-bypass providers, which
-     * return no such field. `runBuiltInSignIn` normalises it to a plain
-     * `boolean` once, and every layer below takes it non-optional.
-     */
-    rememberMe?: boolean;
   }
 }
 
