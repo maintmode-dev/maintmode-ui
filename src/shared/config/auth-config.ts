@@ -1,8 +1,14 @@
 export type MaintmodeAuthConfig = {
   authSecret: string;
   appBaseUrl: string;
-  googleClientId: string;
-  googleClientSecret: string;
+  /**
+   * Public origin of the auth backend, INCLUDING any gateway path prefix
+   * (`http://localhost:9000/auth`). RUK-292: the provider button sends the
+   * BROWSER here, so this cannot be `MAINTMODE_AUTH_API_BASE_URL` — that one is
+   * server-to-server and resolves to a container name (`http://caddy:3000/auth`)
+   * that no browser can reach.
+   */
+  authPublicBaseUrl: string;
   /**
    * When `true` AND `NODE_ENV !== "production"`, the login page exposes a
    * dev-only "Login as {role}" block (a role selector + button) that runs the
@@ -19,8 +25,7 @@ export type AuthConfigIssue = {
   field:
     | "MAINTMODE_AUTH_SECRET"
     | "MAINTMODE_APP_BASE_URL"
-    | "MAINTMODE_GOOGLE_OAUTH_CLIENT_ID"
-    | "MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET";
+    | "MAINTMODE_AUTH_PUBLIC_BASE_URL";
   message: string;
 };
 
@@ -42,9 +47,9 @@ export function parseMaintmodeAuthConfig(env: Record<string, string | undefined>
   const issues: AuthConfigIssue[] = [];
   const rawSecret = env.MAINTMODE_AUTH_SECRET;
   const rawBaseUrl = env.MAINTMODE_APP_BASE_URL;
-  const rawGoogleClientId = env.MAINTMODE_GOOGLE_OAUTH_CLIENT_ID;
-  const rawGoogleClientSecret = env.MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET;
+  const rawAuthPublicBaseUrl = env.MAINTMODE_AUTH_PUBLIC_BASE_URL;
   let appBaseUrl = "";
+  let authPublicBaseUrl = "";
 
   if (!rawSecret) {
     issues.push({ field: "MAINTMODE_AUTH_SECRET", message: "is required" });
@@ -70,11 +75,23 @@ export function parseMaintmodeAuthConfig(env: Record<string, string | undefined>
     }
   }
 
-  if (!rawGoogleClientId) {
-    issues.push({ field: "MAINTMODE_GOOGLE_OAUTH_CLIENT_ID", message: "is required" });
-  }
-  if (!rawGoogleClientSecret) {
-    issues.push({ field: "MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET", message: "is required" });
+  // Required rather than optional-with-a-fallback: falling back to
+  // `MAINTMODE_AUTH_API_BASE_URL` would "work" in the one deployment where the
+  // two happen to coincide and ship a dead sign-in button everywhere else,
+  // discovered only when a user clicks it. A missing value fails at startup.
+  if (!rawAuthPublicBaseUrl) {
+    issues.push({ field: "MAINTMODE_AUTH_PUBLIC_BASE_URL", message: "is required" });
+  } else {
+    try {
+      const parsed = new URL(rawAuthPublicBaseUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        issues.push({ field: "MAINTMODE_AUTH_PUBLIC_BASE_URL", message: "must use http or https" });
+      } else {
+        authPublicBaseUrl = parsed.toString().replace(/\/$/, "");
+      }
+    } catch {
+      issues.push({ field: "MAINTMODE_AUTH_PUBLIC_BASE_URL", message: "must be a valid URL" });
+    }
   }
 
   if (issues.length > 0) {
@@ -89,8 +106,7 @@ export function parseMaintmodeAuthConfig(env: Record<string, string | undefined>
   return {
     authSecret: rawSecret ?? "",
     appBaseUrl,
-    googleClientId: rawGoogleClientId ?? "",
-    googleClientSecret: rawGoogleClientSecret ?? "",
+    authPublicBaseUrl,
     devAuthBypassEnabled,
   };
 }

@@ -19,12 +19,6 @@ export interface AcceptInvitePageProps {
    * `QueryClientProvider` (see `accept-invite-no-query-provider.test.tsx`).
    */
   preview: InvitationPreviewResult;
-  /**
-   * Server action that stashes the invitation token and starts the OAuth
-   * sign-in via NextAuth `signIn` (so CSRF is attached). Bound with the token
-   * at the call site, mirroring the `/login` `signInAction` pattern.
-   */
-  acceptAction: (token: string) => Promise<void>;
 }
 
 export interface InvitationPreviewResult {
@@ -37,7 +31,7 @@ export interface InvitationPreviewResult {
  * only `status` and (when valid) `suggested_provider`; everything else is a
  * single recovery-first explanation.
  */
-export function AcceptInvitePage({ token, preview, acceptAction }: AcceptInvitePageProps) {
+export function AcceptInvitePage({ token, preview }: AcceptInvitePageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
@@ -45,7 +39,6 @@ export function AcceptInvitePage({ token, preview, acceptAction }: AcceptInviteP
           <ValidInvite
             token={token}
             suggestedProvider={asSuggestedProvider(preview.suggested_provider)}
-            acceptAction={acceptAction}
           />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
@@ -68,17 +61,14 @@ function asSuggestedProvider(value: string | undefined): SuggestedProvider | und
 function ValidInvite({
   token,
   suggestedProvider,
-  acceptAction,
 }: {
   token?: string;
   suggestedProvider?: SuggestedProvider;
-  acceptAction: (token: string) => Promise<void>;
 }) {
   // MVP wires Google only; other providers ship later. The backend currently
   // always returns null for suggested_provider, so this defaults to Google.
   const provider = suggestedProvider ?? "google";
   const label = provider === "github" ? "Continue with GitHub" : "Continue with Google";
-  const googleOnly = provider !== "google";
 
   // Centered composition — consistent with the error/terminal states' stack.
   return (
@@ -94,19 +84,24 @@ function ValidInvite({
       </header>
       <p className="body-sm">Sign in with the email this invitation was sent to.</p>
       {/*
-        Submit to the `acceptAction` server action (not a plain POST to NextAuth):
-        it stashes the invitation token in an httpOnly cookie, then starts the
-        OAuth round-trip via NextAuth `signIn` so the CSRF token is attached.
-        The `signIn` callback consumes the cookie and exchanges via the backend
-        accept endpoint — the token never appears in a URL and backend tokens
-        never reach the browser.
+        RUK-292: the button is inert, and deliberately still shown.
+
+        Accepting through a provider required that provider's `id_token`, which
+        the backend-driven dance never hands the frontend (SPEC section 3). The
+        previous predicate here was `googleOnly = provider !== "google"` — it
+        disabled the button for everything EXCEPT Google, which is the inverse of
+        what is true now: no provider can complete an accept.
+
+        Rendering it disabled rather than hiding it keeps the page explaining
+        itself. The invitation is not consumed, so the link stays valid.
       */}
-      <form action={acceptAction.bind(null, token ?? "")} className="w-full">
-        <Button type="submit" className="w-full" disabled={googleOnly}>
-          {label}
-        </Button>
-      </form>
-      {googleOnly ? <p className="caption">Other providers are coming soon. Use Google for now.</p> : null}
+      <Button type="button" className="w-full" disabled>
+        {label}
+      </Button>
+      <p className="caption">
+        Accepting an invitation with a provider is temporarily unavailable. Your invitation is still
+        valid — ask whoever invited you how to finish signing up.
+      </p>
     </div>
   );
 }

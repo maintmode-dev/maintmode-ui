@@ -2,17 +2,14 @@ import "server-only";
 
 import NextAuth, { type NextAuthConfig, CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import Google from "next-auth/providers/google";
 import type { JWT } from "next-auth/jwt";
 
 import { parseMaintmodeAuthConfig, type MaintmodeAuthConfig } from "@/shared/config/auth-config";
 import {
-  acceptInvitation,
   exchangeGoogleIdToken,
   fetchBackendMe,
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
-import { clearInvitationToken, readInvitationToken } from "@/server/auth/invitation-cookie";
 import { isRole } from "@/domain/auth/permissions";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
 import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
@@ -53,13 +50,11 @@ const BACKEND_LOGIN_PROVIDER_ID = "backend-login";
 // already encodes the prod-safety decision (see parseMaintmodeAuthConfig:
 // it returns false when NODE_ENV === "production"). No further runtime
 // checks below — if the provider is registered, the bypass is on.
-const providers: NextAuthConfig["providers"] = [
-  Google({
-    clientId: authConfig.googleClientId,
-    clientSecret: authConfig.googleClientSecret,
-    authorization: { params: { prompt: "select_account", access_type: "offline" } },
-  }),
-];
+//
+// RUK-292: there is no OAuth provider here any more. The dance runs on the
+// backend, which owns the client secret; this app only redirects the browser to
+// it and redeems the one-time code it comes back with (`oauth-dance`, below).
+const providers: NextAuthConfig["providers"] = [];
 
 providers.push(
   Credentials({
@@ -158,22 +153,6 @@ export const config = {
     async signIn({ account, user }) {
       if (!account) {
         return false;
-      }
-      if (account.provider === "google") {
-        const idToken = typeof account.id_token === "string" ? account.id_token : undefined;
-        if (!idToken) {
-          throw new BackendExchangeError(AUTH_ERROR_CODES.invalidIdToken);
-        }
-        // Public accept-invite flow: when an invitation token is
-        // pending in the httpOnly cookie, this sign-in is claiming an invite,
-        // not a normal login. Consume the cookie (single-use) and exchange via
-        // the backend accept endpoint instead of the plain login exchange.
-        const invitationToken = await readInvitationToken();
-        if (invitationToken) {
-          await clearInvitationToken();
-          return runInvitationAccept(account, invitationToken, idToken);
-        }
-        return runBackendExchange(account, idToken);
       }
       if (account.provider === DEV_BYPASS_PROVIDER_ID) {
         // Provider is only registered in non-prod (see providers list above),
@@ -322,57 +301,6 @@ async function runBackendExchange(
     return true;
   } catch {
     // Exchange succeeded but loading the profile did not: the one genuine
-    // identity-lookup failure.
-    throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
-  }
-}
-
-/**
- * Accept-invite counterpart of `runBackendExchange`. Trades the
- * invitation token + provider `id_token` for a backend token pair via the
- * public accept endpoint, then loads the freshly-created user's profile. The
- * resulting tokens are attached to the NextAuth account exactly like a normal
- * login, so the rest of the session machinery is unchanged — and the tokens
- * stay server-side.
- *
- * Every failure (invalid/expired/revoked invitation, email mismatch, OAuth
- * verify failure) collapses to a single sign-in error code; the backend
- * already strips detail, so nothing about the invitation leaks to `/login`.
- */
-async function runInvitationAccept(
-  account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
-  invitationToken: string,
-  idToken: string,
-): Promise<true> {
-  // Same stage-split as `runBackendExchange`: the accept exchange and the
-  // profile load are caught separately so an accept-stage failure is never
-  // mislabeled as an identity-lookup failure.
-  let tokens: BackendTokenPair;
-  try {
-    tokens = await acceptInvitation({ invitationToken, provider: "google", idToken });
-  } catch (error) {
-    // `email_mismatch` is the one accept failure surfaced distinctly: the
-    // signed-in account isn't the invited one (a fact about the user's own
-    // account, not the invitation). Every other accept failure stays generic
-    // so nothing about the invitation leaks (anti-enumeration).
-    if (backendErrorCode(error) === "email_mismatch") {
-      throw new BackendExchangeError(AUTH_ERROR_CODES.emailMismatch);
-    }
-    throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
-  }
-
-  try {
-    const me = await fetchBackendMe(tokens.access_token);
-    account.maintmodeTokens = tokens;
-    account.maintmodeUser = {
-      id: me.id,
-      email: me.email,
-      displayName: me.display_name,
-      roles: me.roles,
-    };
-    return true;
-  } catch {
-    // Accept succeeded but loading the profile did not: the one genuine
     // identity-lookup failure.
     throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
   }

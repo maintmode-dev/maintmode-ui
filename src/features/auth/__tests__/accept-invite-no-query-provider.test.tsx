@@ -48,7 +48,6 @@ describe("public pages render without a QueryClientProvider", () => {
           <AcceptInvitePage
             token={status === "missing" ? undefined : "tok-1"}
             preview={{ status }}
-            acceptAction={noopAccept}
           />,
         ),
       ).not.toThrow();

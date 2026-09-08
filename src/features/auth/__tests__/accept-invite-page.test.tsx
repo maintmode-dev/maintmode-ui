@@ -11,7 +11,7 @@ afterEach(() => cleanup());
 const noopAccept = vi.fn(async () => {});
 
 function renderPage(preview: InvitationPreviewResult, token?: string) {
-  render(<AcceptInvitePage token={token} preview={preview} acceptAction={noopAccept} />);
+  render(<AcceptInvitePage token={token} preview={preview} />);
 }
 
 describe("AcceptInvitePage token states", () => {
@@ -81,15 +81,32 @@ describe("AcceptInvitePage token states", () => {
   it("treats an unrecognized suggested_provider as the Google default", () => {
     renderPage({ status: "valid", suggested_provider: "saml-corp" }, "tok-1");
 
-    const button = screen.getByRole("button", { name: /Continue with Google/ });
-    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
   });
 
-  it("disables the button and explains when the backend suggests GitHub", () => {
-    renderPage({ status: "valid", suggested_provider: "github" }, "tok-1");
+  /**
+   * RUK-292. The accept button is inert for EVERY provider, not just the ones
+   * that were "coming soon": accepting needed the provider's `id_token`, and the
+   * backend-driven dance never gives the frontend one (SPEC section 3).
+   *
+   * Asserted per provider because the predicate this replaced was
+   * `provider !== "google"` — it disabled everything EXCEPT Google. A test that
+   * only checked GitHub would have passed against that inverted predicate.
+   */
+  it.each([
+    ["google" as const, /Continue with Google/],
+    ["github" as const, /Continue with GitHub/],
+  ])("disables the accept button for %s", (provider, label) => {
+    renderPage({ status: "valid", suggested_provider: provider }, "tok-1");
 
-    const button = screen.getByRole("button", { name: /Continue with GitHub/ });
-    expect(button.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText(/Other providers are coming soon/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: label }).hasAttribute("disabled")).toBe(true);
+  });
+
+  it("says the invitation is still valid rather than that providers are coming", () => {
+    renderPage({ status: "valid" }, "tok-1");
+
+    expect(screen.getByText(/temporarily unavailable/)).toBeTruthy();
+    expect(screen.getByText(/still\s+valid/)).toBeTruthy();
+    expect(screen.queryByText(/Other providers are coming soon/)).toBeNull();
   });
 });

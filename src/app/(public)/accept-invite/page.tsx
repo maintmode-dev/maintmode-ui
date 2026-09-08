@@ -1,6 +1,4 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
-import { signIn } from "@/server/auth/auth-config";
-import { setInvitationToken } from "@/server/auth/invitation-cookie";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
@@ -15,20 +13,19 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const preview = await resolveInvitationPreview(sp.token);
 
   /**
-   * Start the invitation-accept sign-in via the NextAuth v5 `signIn` server
-   * action — the same path `/login` uses, so NextAuth attaches the CSRF token
-   * itself. (A plain form POST / redirect to `/api/auth/signin/<id>` omits CSRF
-   * and fails with `Configuration`.) Before handing off, stash the raw
-   * invitation token in a short-lived httpOnly cookie so the `signIn` callback
-   * can bind this OAuth round-trip to the invite and exchange it via the backend
-   * accept endpoint — the token never appears in a URL and backend tokens never
-   * reach the browser.
+   * RUK-292: there is no accept action any more.
+   *
+   * Accepting through a provider needed the provider's `id_token` — the backend's
+   * accept endpoint takes one (`OAuthPayload.IDToken`) — and the backend-driven
+   * dance never hands the frontend an `id_token`, only an opaque one-time code
+   * redeemable for a token pair. Routing accept through the dance does not work
+   * either: the dance signs in with an empty `UserCreationPolicy`, so an invited
+   * user who does not exist yet is refused with `signup_disabled` before the
+   * invitation is ever read.
+   *
+   * The preview still resolves and the invitation is NOT consumed, so the link
+   * stays valid for whenever the backend gains a dance-based accept path.
+   * (SPEC section 3.)
    */
-  async function acceptInviteAction(token: string) {
-    "use server";
-    if (token) await setInvitationToken(token);
-    await signIn("google", { redirectTo: "/" });
-  }
-
-  return <AcceptInvitePage token={sp.token} preview={preview} acceptAction={acceptInviteAction} />;
+  return <AcceptInvitePage token={sp.token} preview={preview} />;
 }
