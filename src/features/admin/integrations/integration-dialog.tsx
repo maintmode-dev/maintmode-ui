@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
 import type { Integration, IntegrationKind } from "@/domain/admin/integration";
@@ -158,6 +158,19 @@ function IntegrationDialogBody({
     testRunRef.current += 1;
     setTestResult(null);
   };
+
+  // Closing the dialog unmounts this body while a probe may still be in flight.
+  // Retiring the run here makes the late `setTestResult` unreachable by this
+  // component's own rule rather than by the runtime's tolerance: without it the
+  // call still happens and is merely a silent no-op, since React 18 dropped the
+  // unmounted-setState warning.
+  //
+  // Deliberately untested: because that no-op is silent, no assertion can tell
+  // the two implementations apart — removing this line changes nothing
+  // observable. A test claiming to cover it would pass either way, which is
+  // worse than no test. It stays because "unreachable by our logic" survives a
+  // React upgrade that "no-op by the runtime" does not.
+  useEffect(() => () => void (testRunRef.current += 1), []);
 
   const setSecret = (key: string, next: Partial<SecretFieldState>) => {
     setSecrets((cur) => ({ ...cur, [key]: { ...cur[key], ...next } }));
