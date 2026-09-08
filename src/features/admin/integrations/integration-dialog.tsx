@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, Check, Lock } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
 import type { Integration, IntegrationKind } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
@@ -22,7 +22,12 @@ import {
 } from "./integration-kinds";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
 import { buildConfig, hasMissingRequired } from "./dialog-form";
-import { useCreateIntegration, useUpdateIntegration } from "./queries/use-integrations-queries";
+import { buildTestSendBody, shouldWarnAboutMissingSecret } from "./test-send-body";
+import {
+  useCreateIntegration,
+  useTestIntegration,
+  useUpdateIntegration,
+} from "./queries/use-integrations-queries";
 
 /**
  * Create ↔ edit dialog for one integration kind (Grafana-OAuth-style form,
@@ -115,10 +120,53 @@ function IntegrationDialogBody({
   });
   const [error, setError] = useState<string | null>(null);
 
-  const setSecret = (key: string, next: Partial<SecretFieldState>) =>
+  // Live-probe state (RUK-290 §4). `testResult` lives here rather than in the
+  // mutation because it must be CLEARED when the form changes: a green "sent"
+  // plate under a host the operator has since edited is a lie about what they
+  // are looking at.
+  const testMutation = useTestIntegration();
+  const [testTo, setTestTo] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; detail?: string } | null>(null);
+  // Only the newest run may write state. A response arriving after the operator
+  // edited a field — or closed the dialog — describes a request that no longer
+  // matches the screen.
+  const testRunRef = useRef(0);
+
+  const setSecret = (key: string, next: Partial<SecretFieldState>) => {
     setSecrets((cur) => ({ ...cur, [key]: { ...cur[key], ...next } }));
+    // A mode change (Replace / Clear / Undo) alters what would be sent without
+    // touching any field's text, so it invalidates the result just as an edit
+    // does. `enabled` is the one deliberate exception: it is not part of what
+    // is tested. Do not "fix" that away.
+    setTestResult(null);
+  };
 
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
+
+  // A live probe exists for SMTP only; the other kinds have no equivalent.
+  const canTest = kind === "email";
+  const warnMissingSecret = canTest && shouldWarnAboutMissingSecret(secrets);
+
+  const runTest = async () => {
+    const run = ++testRunRef.current;
+    setTestResult(null);
+    try {
+      await testMutation.mutateAsync({
+        kind,
+        body: buildTestSendBody(meta, config, secrets, testTo, integration?.config ?? {}),
+      });
+      if (testRunRef.current === run) setTestResult({ ok: true });
+    } catch (err) {
+      if (testRunRef.current !== run) return;
+      // The backend's own text, and nothing inferred from it. An earlier
+      // contract shipped a category prefix and withdrew it: classifying by
+      // substring made a host named `smtp.auth-relay.example` report a
+      // connection refusal as an auth failure, and a confident wrong label
+      // sends the operator to fix the wrong thing.
+      const detail = err instanceof BffError ? err.message.slice(0, 300) : undefined;
+      setTestResult({ ok: false, detail });
+    }
+  };
 
   const save = async () => {
     setError(null);
@@ -204,15 +252,93 @@ function IntegrationDialogBody({
             field={field}
             value={config[field.name]}
             disabled={submitting}
-            onChange={(value) => setConfig((cur) => ({ ...cur, [field.name]: value }))}
+            onChange={(value) => {
+              setConfig((cur) => ({ ...cur, [field.name]: value }));
+              setTestResult(null);
+            }}
           />
         ))}
+        {canTest ? (
+          <>
+            <Separator />
+            <div className="space-y-1.5">
+              <Label htmlFor="integration-test-to" className="text-xs uppercase tracking-wide text-fg-muted">
+                Send test message to
+              </Label>
+              <Input
+                id="integration-test-to"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={testTo}
+                disabled={testMutation.isPending}
+                onChange={(e) => {
+                  setTestTo(e.target.value);
+                  setTestResult(null);
+                }}
+              />
+              <p className="text-xs text-fg-dim">
+                Sends one message with the settings above. Nothing is saved.
+              </p>
+              {warnMissingSecret ? (
+                <p className="text-xs text-fg-dim">
+                  A saved password isn&apos;t included in the test — type it above to test with it.
+                </p>
+              ) : null}
+              {testResult ? (
+                <div
+                  role="status"
+                  className={
+                    testResult.ok
+                      ? "flex items-start gap-2 rounded-sm border border-[var(--status-completed-border,var(--border))] bg-[var(--status-completed-bg,transparent)] px-3 py-2 text-sm text-[var(--status-completed-fg)]"
+                      : "flex items-start gap-2 rounded-sm border border-[var(--destructive-border)] bg-[var(--destructive-bg)] px-3 py-2 text-sm text-[var(--destructive-fg)]"
+                  }
+                >
+                  {testResult.ok ? (
+                    <MailCheck className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 break-words">
+                    {testResult.ok ? (
+                      `Test message sent to ${testTo}.`
+                    ) : (
+                      <>
+                        {"The test message wasn't sent."}
+                        {/* The far end's own words, rendered as text and never as
+                            markup: this string comes from somebody else's SMTP
+                            server. It is also the only thing here that tells the
+                            operator what to fix. */}
+                        {testResult.detail ? (
+                          <span className="block text-xs">{testResult.detail}</span>
+                        ) : null}
+                      </>
+                    )}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
       </CreateDialogBody>
 
       <CreateDialogFooter hint="Secrets are encrypted before they're stored.">
         <Button variant="outline" disabled={submitting} onClick={onClose}>
           Cancel
         </Button>
+        {canTest ? (
+          // Deliberately NOT gated on `missingRequired`: a half-filled config is
+          // exactly what an operator wants to probe, and the backend's
+          // validation error is a useful answer. The recipient is the one
+          // exception — without it the request cannot succeed at all.
+          <Button
+            variant="outline"
+            disabled={testMutation.isPending || testTo.trim() === ""}
+            onClick={() => void runTest()}
+          >
+            {testMutation.isPending ? "Sending…" : "Test config"}
+          </Button>
+        ) : null}
         <Button disabled={submitting || missingRequired} onClick={save}>
           {submitting ? "Saving…" : isEdit ? "Save changes" : "Connect"}
         </Button>

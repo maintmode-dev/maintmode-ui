@@ -8,6 +8,7 @@ import type {
   CreateIntegrationInput,
   Integration,
   IntegrationKind,
+  TestIntegrationInput,
   UpdateIntegrationInput,
 } from "@/domain/admin/integration";
 
@@ -154,4 +155,27 @@ export function usePendingToggleKinds(): Set<IntegrationKind> {
     select: (mutation) => (mutation.state.variables as { kind: IntegrationKind }).kind,
   });
   return new Set(pending);
+}
+
+/**
+ * Live SMTP probe (RUK-290 §4). Sends a real message with the settings in the
+ * body and reports whether the server took it.
+ *
+ * **Invalidates nothing, and shows no toast.** The probe saves nothing, so
+ * refreshing the integrations cache afterwards would suggest something changed
+ * when nothing did. The result belongs inside the dialog next to the fields it
+ * describes — a toast outlives the form and would still be claiming "sent" over
+ * a host the operator has since edited.
+ *
+ * Errors are deliberately not swallowed here: the dialog renders the backend's
+ * own text, which for this endpoint is the entire point.
+ */
+export function useTestIntegration() {
+  return useMutation({
+    mutationFn: ({ kind, body }: { kind: IntegrationKind; body: TestIntegrationInput }): Promise<void> =>
+      bffFetch<void>(`/api/admin/integrations/${kind}/test`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+  });
 }

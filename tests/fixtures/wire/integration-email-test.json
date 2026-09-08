@@ -1,4 +1,5 @@
 {
+  "_masked": "The resolver address in `probe_failed.message` is replaced with <IP>. Only that substitution — the wording, structure and length of the envelope are the backend's own. `no-pii.test.ts` refuses committed fixtures carrying a raw IPv4, and it is right to: this file would otherwise pin one machine's Docker DNS into the repo.",
   "_recorded": "2026-09-08, POST /api/v1/integrations/email/test on a locally built backend (main @ a814a01). Captured from the wire, not written by hand: scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, and every interesting shape here is a POST error envelope.",
   "_why": "The frontend renders whatever this endpoint answers. Four shapes matter, and three of them are failures — the success case is the least informative one, because a probe that works tells the operator nothing they need.",
   "success": {
@@ -11,7 +12,7 @@
     "status": 502,
     "body": {
       "code": "probe_failed",
-      "message": "integration probe failed: email send: dial failed: dial tcp: lookup nonexistent.invalid on 127.0.0.11:53: no such host"
+      "message": "integration probe failed: email send: dial failed: dial tcp: lookup nonexistent.invalid on <IP>:53: no such host"
     }
   },
   "validation_missing_host": {
