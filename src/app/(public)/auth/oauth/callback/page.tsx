@@ -29,7 +29,19 @@ export default async function Page({
 
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
-      <form action={completeOAuthDanceAction} className="w-full max-w-[360px]">
+      {/*
+        `role="status"` on the region, matching `/login`'s own progress
+        affordances: the spinner is `aria-hidden` decoration, so without this a
+        screen reader user is handed a page whose whole content is "Signing you
+        in…" with no indication that anything is in progress or that the page is
+        about to navigate on its own.
+      */}
+      <form
+        action={completeOAuthDanceAction}
+        role="status"
+        aria-live="polite"
+        className="w-full max-w-[360px]"
+      >
         {/*
           The code travels in a hidden field rather than being read from the URL
           by the action: a server action receives its own FormData, not the

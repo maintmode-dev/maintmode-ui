@@ -20,20 +20,21 @@ const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
 /**
  * BFF-owned OAuth.
  *
- * The frontend runs the standard NextAuth Google provider. After Google's
- * `code` ↔ token exchange, NextAuth holds the Google `id_token`. We forward
- * that JWT to the maintmode backend, which verifies it against Google JWKS
- * and returns its own short-lived `TokenPairResponse`. The backend tokens
- * are persisted server-side in the NextAuth jwt cookie; the browser never
- * sees them.
+ * NOT a live sign-in path since RUK-292. The frontend stopped being an OAuth
+ * client, so nothing here ever holds a real provider `id_token` any more; the
+ * live path is `redeemOAuthDanceCode`. The ONLY remaining caller is the dev-only
+ * bypass provider, which passes the literal string "dev-bypass" and relies on
+ * the backend accepting it in non-production.
+ *
+ * Kept rather than deleted for exactly that reason. Deleting the backend route
+ * without moving the dev stub with it breaks the project's role-switching tool.
  *
  * Real route mounted at `/api/v1/login/oauth/exchange/google` (the swagger
  * `summary` lists `/api/v1/auth/exchange/google` — that is a doc bug; the
  * canonical mount lives under `loginOAuthGr` in the backend router).
  *
- * The backend currently gates this endpoint with the `NotAllowedInProd`
- * middleware, so it is reachable only in dev/staging. Production rollout
- * is a separate backend follow-up.
+ * The backend gates this endpoint with the `NotAllowedInProd` middleware, so it
+ * is reachable only in dev/staging — which is all the dev bypass needs.
  *
  * `testRoles` (dev-only) seeds the `X-Test-Roles` header so a freshly created
  * dev user gets the given roles (comma-separated, e.g. `admin,editor`). The

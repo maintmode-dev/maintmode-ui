@@ -9,8 +9,6 @@ import { OAuthCallbackForm } from "../oauth-callback-form";
 
 afterEach(() => cleanup());
 
-const noopAccept = vi.fn(async () => {});
-
 /**
  * T11↔T12 guard, extended to `/login` by RUK-288 (AC-8).
  *

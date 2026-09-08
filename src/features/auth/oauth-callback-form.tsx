@@ -40,6 +40,10 @@ export function OAuthCallbackForm({ label }: { label: string }) {
       return;
     }
     button.disabled = true;
+    // Announced, not just visually disabled: a screen reader user who lands
+    // here otherwise hears a "Continue" button and no reason it stopped
+    // responding.
+    button.setAttribute("aria-disabled", "true");
     // `requestSubmit`, not `form.submit()`: the latter bypasses React's submit
     // handling, which is what dispatches the server action.
     button.form?.requestSubmit();

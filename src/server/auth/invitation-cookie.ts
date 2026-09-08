@@ -3,8 +3,15 @@ import "server-only";
 import { cookies } from "next/headers";
 
 /**
- * Short-lived, httpOnly cookie that carries the raw invitation token across the
+ * Short-lived, httpOnly cookie that carried the raw invitation token across the
  * OAuth round-trip on the public `/accept-invite` flow.
+ *
+ * NO PRODUCTION CALLER SINCE RUK-292, and parked rather than deleted. Accepting
+ * an invitation through a provider needed that provider's `id_token`, which the
+ * backend-driven dance never hands the frontend; the flow is disabled until the
+ * backend grows an accept path that takes a dance code (SPEC section 3 and 7).
+ * The description below is what this module DID, kept because it is what a
+ * restored flow would need to do again.
  *
  * Why a cookie: the accept endpoint needs BOTH the invitation token AND a fresh
  * provider `id_token`. The `id_token` only materializes after NextAuth finishes
