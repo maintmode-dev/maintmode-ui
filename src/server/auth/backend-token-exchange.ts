@@ -4,6 +4,7 @@ import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/
 import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from "@/server/auth/contracts";
 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
+const DANCE_CODE_EXCHANGE_PATH = "/api/v1/login/oauth/code/exchange";
 const ACCEPT_INVITATION_PATH = "/api/v1/users/invitations/accept";
 const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
@@ -148,6 +149,30 @@ export async function loginWithPassword(args: {
   return postBackendJson<BackendTokenPair>(
     PASSWORD_LOGIN_PATH,
     { email: args.email, password: args.password },
+    (parsed) => Boolean(parsed?.access_token),
+  );
+}
+
+/**
+ * Redeems the one-time code the backend's OAuth callback put in the redirect
+ * (RUK-292).
+ *
+ * The code is a bearer credential with a 60-second life and one use. Every
+ * redemption failure — unknown, expired, already redeemed, malformed — answers
+ * the same 401 by design, so a caller cannot learn which of its guesses was
+ * closer; this function does not try to tell them apart either.
+ *
+ * 401 is not the only non-2xx. The route sits behind a rate limiter whose bucket
+ * is keyed on client IP with no route component, so it is shared with password
+ * sign-in, OTP, password reset and invitations alike: a burst on any of those
+ * can answer a redemption with 429 and burn a live code. `BackendAuthError`
+ * carries the status either way, which is what lets the caller log the two apart
+ * while telling the user the same thing.
+ */
+export async function redeemOAuthDanceCode(code: string): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    DANCE_CODE_EXCHANGE_PATH,
+    { code },
     (parsed) => Boolean(parsed?.access_token),
   );
 }

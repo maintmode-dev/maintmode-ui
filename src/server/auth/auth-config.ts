@@ -8,6 +8,7 @@ import { parseMaintmodeAuthConfig, type MaintmodeAuthConfig } from "@/shared/con
 import {
   exchangeGoogleIdToken,
   fetchBackendMe,
+  redeemOAuthDanceCode,
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
 import { isRole } from "@/domain/auth/permissions";
@@ -45,6 +46,16 @@ const DEV_BYPASS_PROVIDER_ID = "dev-bypass";
  * route boundary, so "the browser never sees a token" holds by construction.
  */
 const BACKEND_LOGIN_PROVIDER_ID = "backend-login";
+
+/**
+ * The backend-driven OAuth dance (RUK-292).
+ *
+ * A Credentials provider for the same reason `backend-login` is one: the session
+ * has to be established through NextAuth's own jwt cookie, and no route in this
+ * app forwards a backend `Set-Cookie`. Redeeming here means the token pair is
+ * born inside NextAuth and never crosses a route boundary.
+ */
+const OAUTH_DANCE_PROVIDER_ID = "oauth-dance";
 
 // Auth providers are resolved ONCE at module load. `devAuthBypassEnabled`
 // already encodes the prod-safety decision (see parseMaintmodeAuthConfig:
@@ -95,6 +106,26 @@ providers.push(
       }
 
       return null;
+    },
+  }),
+);
+
+providers.push(
+  Credentials({
+    id: OAUTH_DANCE_PROVIDER_ID,
+    name: "OAuth dance",
+    credentials: { code: {} },
+    /**
+     * Shape validation ONLY — no network call, deliberately. The code is
+     * single-use with a 60-second life, and redeeming here as well as in the
+     * `signIn` callback would spend it twice for one sign-in.
+     */
+    async authorize(credentials) {
+      const code = typeof credentials?.code === "string" ? credentials.code.trim() : "";
+      if (!code) {
+        return null;
+      }
+      return { id: OAUTH_DANCE_PROVIDER_ID, danceCode: code };
     },
   }),
 );
@@ -163,6 +194,13 @@ export const config = {
         // with it.
         const role = typeof user?.role === "string" ? user.role : "";
         return runBackendExchange(account, "dev-bypass", role);
+      }
+      if (account.provider === OAUTH_DANCE_PROVIDER_ID) {
+        const code = typeof user?.danceCode === "string" ? user.danceCode : "";
+        if (!code) {
+          throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
+        }
+        return runDanceRedemption(account, code);
       }
       if (account.provider === BACKEND_LOGIN_PROVIDER_ID) {
         try {
@@ -302,6 +340,54 @@ async function runBackendExchange(
   } catch {
     // Exchange succeeded but loading the profile did not: the one genuine
     // identity-lookup failure.
+    throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
+  }
+}
+
+/**
+ * Trades the one-time dance code for a session (RUK-292).
+ *
+ * Split into two stages caught separately, exactly like `runBackendExchange`:
+ * collapsing them mislabels every redemption failure as an identity-lookup
+ * failure, which is the defect that split them there in the first place.
+ *
+ * The redemption stage cannot distinguish its failures — the backend answers a
+ * uniform 401 for unknown, expired, spent and malformed codes on purpose, and a
+ * 429 from a bucket shared with password sign-in, OTP and invitations. All of
+ * them are one thing to the user: the handoff did not complete, try again. The
+ * STATUS is logged so an operator can still tell a rate limit from a dead code;
+ * the user-facing message stays collapsed.
+ */
+async function runDanceRedemption(
+  account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
+  code: string,
+): Promise<true> {
+  let tokens: BackendTokenPair;
+  try {
+    tokens = await redeemOAuthDanceCode(code);
+  } catch (error) {
+    // Logged, not surfaced. The two failures most worth telling apart here —
+    // a spent code and a shared-bucket rate limit — are indistinguishable to the
+    // user and must stay that way, but an operator debugging "sign-in is broken"
+    // has nothing else to go on: a /start failure never reaches this process at
+    // all, because that step is a browser navigation.
+    console.error("oauth dance code redemption failed", {
+      status: error instanceof BackendAuthError ? error.status : undefined,
+    });
+    throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
+  }
+
+  try {
+    const me = await fetchBackendMe(tokens.access_token);
+    account.maintmodeTokens = tokens;
+    account.maintmodeUser = {
+      id: me.id,
+      email: me.email,
+      displayName: me.display_name,
+      roles: me.roles,
+    };
+    return true;
+  } catch {
     throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
   }
 }
