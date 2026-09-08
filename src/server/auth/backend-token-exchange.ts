@@ -171,7 +171,12 @@ export async function loginWithPassword(args: {
  */
 export async function redeemOAuthDanceCode(code: string): Promise<BackendTokenPair> {
   return postBackendJson<BackendTokenPair>(DANCE_CODE_EXCHANGE_PATH, { code }, (parsed) =>
-    Boolean(parsed?.access_token),
+    // BOTH tokens, matching every other call that mints a session. Accepting a
+    // pair with no refresh token signs the user in and then kills the session at
+    // the first rotation — the `jwt` callback has nothing to rotate with and
+    // marks it `RefreshAccessTokenError`. That lands minutes later, mid-work,
+    // and points nowhere near this function.
+    Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 

@@ -102,6 +102,24 @@ describe("completeOAuthDanceAction", () => {
   });
 
   /**
+   * `signIn` usually leaves by throwing, but it has a path that returns: NextAuth
+   * builds its redirect from a `Location` header its own source calls
+   * possibly-unset. Falling off the end there strands the browser on the receiver
+   * forever — "Signing you in…" under a disabled button — with the code already
+   * spent, so a reload cannot recover.
+   *
+   * Asserted as a landing, not as a call: the two tests above mock this exact
+   * shape and check only what `signIn` was called with, which is what let the
+   * dead end hide.
+   */
+  it("still leaves the receiver when signIn returns instead of redirecting", async () => {
+    readOAuthNext.mockResolvedValue("/calendar");
+    signIn.mockResolvedValue(undefined);
+
+    expect(await landsOn(form({ code: "one-time" }))).toBe("/calendar");
+  });
+
+  /**
    * Cleared before any branch can return, so no exit path can leave it behind to
    * steer an unrelated later sign-in.
    */
@@ -151,4 +169,21 @@ describe("completeOAuthDanceAction", () => {
 
     expect(await landsOn(form({ code: "c" }))).toBe("/login?code=oauth_handoff_failed");
   });
+
+  /**
+   * A `.code` this app did not define is not ours to forward. A dead backend
+   * throws `ECONNREFUSED`; putting that in the address bar tells the user
+   * nothing, renders the same generic message either way, and leaks a fact about
+   * our infrastructure into their bug report and the access log.
+   */
+  it.each(["ECONNREFUSED", "ABORT_ERR", "javascript:alert(1)"])(
+    "does not forward the foreign error code %s",
+    async (code) => {
+      const failure = new Error("boom") as Error & { code: string };
+      failure.code = code;
+      signIn.mockRejectedValue(failure);
+
+      expect(await landsOn(form({ code: "c" }))).toBe("/login?code=oauth_handoff_failed");
+    },
+  );
 });

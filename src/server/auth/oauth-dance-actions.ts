@@ -118,10 +118,36 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
     if (isNextRedirect(error)) {
       throw error;
     }
-    const failure =
-      typeof (error as { code?: unknown } | null)?.code === "string"
-        ? (error as { code: string }).code
-        : AUTH_ERROR_CODES.oauthHandoffFailed;
-    redirect(`/login?code=${encodeURIComponent(failure)}`);
+    redirect(`/login?code=${encodeURIComponent(failureCode(error))}`);
   }
+
+  // `signIn` normally leaves by throwing — a redirect on success, a
+  // `CredentialsSignin` on failure — but it has a path that simply returns:
+  // NextAuth builds its redirect from a `Location` header its own source calls
+  // possibly-unset ("if for some unexpected reason the responseUrl is not set").
+  //
+  // Falling off the end there would leave the browser on this document forever,
+  // showing "Signing you in…" under a disabled button, with the one-time code
+  // already spent so a reload cannot recover. Never end without leaving: the
+  // destination is already sanitized, and if no session was established the auth
+  // gate sends the user to /login rather than nowhere.
+  redirect(destination);
+}
+
+/**
+ * The failure code to show, taken from the thrown error only when it is one this
+ * app defines.
+ *
+ * An unknown error's `.code` is not ours to forward: a dead backend throws
+ * `ECONNREFUSED`, an aborted fetch throws `ABORT_ERR`, and either would land in
+ * the user's address bar, in their bug report and in the access log while
+ * rendering the same generic message as the honest code. `built-in-sign-in-actions`
+ * matches against known constants for the same reason.
+ */
+function failureCode(error: unknown): AuthErrorCode {
+  const raw =
+    typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
+  return (Object.values(AUTH_ERROR_CODES) as string[]).includes(raw)
+    ? (raw as AuthErrorCode)
+    : AUTH_ERROR_CODES.oauthHandoffFailed;
 }
