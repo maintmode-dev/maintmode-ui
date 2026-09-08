@@ -196,6 +196,15 @@
           ]
         }
       }
+    },
+    "integration-email-test": {
+      "url": "http://maintmode-maintmode-1:8000/api/v1/integrations/email/test",
+      "method": "POST",
+      "status": "204 / 502 / 400 (five shapes, see the file)",
+      "capturedAt": "2026-09-08",
+      "why": "RUK-290 §4. Three of this endpoint's four interesting shapes are failures, and an invented failure envelope records the author's belief about the backend rather than the backend.",
+      "handEdited": true,
+      "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, so it cannot capture a POST whose success is an empty 204 and whose useful shapes are error envelopes. Taken off the wire by hand against a locally built backend (main @ a814a01) and recorded verbatim, except the resolver IP inside probe_failed.message, masked as <IP> because no-pii.test.ts refuses a committed fixture carrying a raw IPv4 — the file documents that substitution in its own _masked field."
     }
   },
   "gateway": "http://localhost:9000"

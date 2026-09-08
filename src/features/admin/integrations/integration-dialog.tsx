@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { AlertCircle, Check, Lock } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
 import type { Integration, IntegrationKind } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
@@ -22,7 +22,12 @@ import {
 } from "./integration-kinds";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
 import { buildConfig, hasMissingRequired } from "./dialog-form";
-import { useCreateIntegration, useUpdateIntegration } from "./queries/use-integrations-queries";
+import { buildTestSendBody, shouldWarnAboutMissingSecret } from "./test-send-body";
+import {
+  useCreateIntegration,
+  useTestIntegration,
+  useUpdateIntegration,
+} from "./queries/use-integrations-queries";
 
 /**
  * Create ↔ edit dialog for one integration kind (Grafana-OAuth-style form,
@@ -77,6 +82,16 @@ export function IntegrationDialog({
   );
 }
 
+/**
+ * The two looks of the probe-result plate. Lifted out so the JSX branches on
+ * success once, next to the icon and the copy, instead of three times over.
+ */
+const TEST_PLATE = {
+  ok: "flex items-start gap-2 rounded-sm border border-[var(--status-completed-border,var(--border))] bg-[var(--status-completed-bg,transparent)] px-3 py-2 text-sm text-[var(--status-completed-fg)]",
+  failed:
+    "flex items-start gap-2 rounded-sm border border-[var(--destructive-border)] bg-[var(--destructive-bg)] px-3 py-2 text-sm text-[var(--destructive-fg)]",
+} as const;
+
 function IntegrationDialogBody({
   kind,
   integration,
@@ -115,10 +130,99 @@ function IntegrationDialogBody({
   });
   const [error, setError] = useState<string | null>(null);
 
-  const setSecret = (key: string, next: Partial<SecretFieldState>) =>
+  // Live-probe state (RUK-290 §4). `testResult` lives here rather than in the
+  // mutation because it must be CLEARED when the form changes: a green "sent"
+  // plate under a host the operator has since edited is a lie about what they
+  // are looking at.
+  const testMutation = useTestIntegration();
+  const [testTo, setTestTo] = useState("");
+  const [testResult, setTestResult] = useState<{ ok: boolean; to?: string; detail?: string } | null>(null);
+  // Only the newest run may write state. A response arriving after the operator
+  // edited a field — or closed the dialog — describes a request that no longer
+  // matches the screen, so editing must RETIRE the run in flight, not just clear
+  // the plate. Bumping the counter is what does that; `setTestResult(null)`
+  // alone would let the late response paint itself back on.
+  const testRunRef = useRef(0);
+  // Synchronous latch. `isPending` from react-query only lands on a re-render,
+  // so it cannot stop a second click in the same tick — and each click here is
+  // a real message, doubled again by the one 401 replay in
+  // `authenticatedBackendRequest`.
+  const testInFlightRef = useRef(false);
+
+  /**
+   * Retires any probe in flight and clears its result.
+   *
+   * Called from every edit that changes what would be sent — a config field, a
+   * secret's value, a secret's MODE (Replace / Clear / Undo alter the request
+   * without touching any field's text), and the recipient. NOT from `enabled`,
+   * the one deliberate exception: it is not part of what is tested.
+   *
+   * Deliberately unconditional. A tempting narrowing is to fire only when a
+   * value actually changed — but `onModeChange` passes `{ mode, value: "" }`, so
+   * `cleared → locked` moves between two states whose draft is `""` on both
+   * sides while changing what the request would carry. No DOM-level test can
+   * separate the two rules (both fire on every transition the UI can produce),
+   * which is exactly why the narrowing is dangerous: it would look covered.
+   */
+  const invalidateTest = () => {
+    testRunRef.current += 1;
+    setTestResult(null);
+  };
+
+  // Closing the dialog unmounts this body while a probe may still be in flight.
+  // Retiring the run here makes the late `setTestResult` unreachable by this
+  // component's own rule rather than by the runtime's tolerance: without it the
+  // call still happens and is merely a silent no-op, since React 18 dropped the
+  // unmounted-setState warning.
+  //
+  // Deliberately untested: because that no-op is silent, no assertion can tell
+  // the two implementations apart — removing this line changes nothing
+  // observable. A test claiming to cover it would pass either way, which is
+  // worse than no test. It stays because "unreachable by our logic" survives a
+  // React upgrade that "no-op by the runtime" does not.
+  useEffect(() => () => void (testRunRef.current += 1), []);
+
+  const setSecret = (key: string, next: Partial<SecretFieldState>) => {
     setSecrets((cur) => ({ ...cur, [key]: { ...cur[key], ...next } }));
+    invalidateTest();
+  };
 
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
+
+  // A live probe exists for SMTP only; the other kinds have no equivalent.
+  const canTest = kind === "email";
+  const warnMissingSecret = canTest && shouldWarnAboutMissingSecret(secrets);
+
+  const runTest = async () => {
+    if (testInFlightRef.current) return;
+    testInFlightRef.current = true;
+    const run = ++testRunRef.current;
+    // The address as it was WHEN SENT. Today this cannot differ from `testTo` at
+    // render time, because editing the recipient retires the run — so no test
+    // distinguishes the two, and none pretends to. It is pinned anyway: the copy
+    // is then correct by construction instead of by depending on that
+    // invalidation rule staying exactly as it is.
+    const sentTo = testTo.trim();
+    setTestResult(null);
+    try {
+      await testMutation.mutateAsync({
+        kind,
+        body: buildTestSendBody(meta, config, secrets, sentTo, integration?.config ?? {}),
+      });
+      if (testRunRef.current === run) setTestResult({ ok: true, to: sentTo });
+    } catch (err) {
+      if (testRunRef.current !== run) return;
+      // The backend's own text, and nothing inferred from it. An earlier
+      // contract shipped a category prefix and withdrew it: classifying by
+      // substring made a host named `smtp.auth-relay.example` report a
+      // connection refusal as an auth failure, and a confident wrong label
+      // sends the operator to fix the wrong thing.
+      const detail = err instanceof BffError ? err.message.slice(0, 300) : undefined;
+      setTestResult({ ok: false, detail });
+    } finally {
+      testInFlightRef.current = false;
+    }
+  };
 
   const save = async () => {
     setError(null);
@@ -204,15 +308,86 @@ function IntegrationDialogBody({
             field={field}
             value={config[field.name]}
             disabled={submitting}
-            onChange={(value) => setConfig((cur) => ({ ...cur, [field.name]: value }))}
+            onChange={(value) => {
+              setConfig((cur) => ({ ...cur, [field.name]: value }));
+              invalidateTest();
+            }}
           />
         ))}
+        {canTest ? (
+          <>
+            <Separator />
+            <div className="space-y-1.5">
+              <Label htmlFor="integration-test-to" className="text-xs uppercase tracking-wide text-fg-muted">
+                Send test message to
+              </Label>
+              <Input
+                id="integration-test-to"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={testTo}
+                disabled={testMutation.isPending}
+                onChange={(e) => {
+                  setTestTo(e.target.value);
+                  invalidateTest();
+                }}
+              />
+              <p className="text-xs text-fg-dim">
+                Sends one message with the settings above. Nothing is saved.
+              </p>
+              {warnMissingSecret ? (
+                <p className="text-xs text-fg-dim">
+                  A saved password isn&apos;t included in the test — type it above to test with it.
+                </p>
+              ) : null}
+              {testResult ? (
+                <div role="status" className={TEST_PLATE[testResult.ok ? "ok" : "failed"]}>
+                  {testResult.ok ? (
+                    <MailCheck className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  ) : (
+                    <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  )}
+                  <span className="min-w-0 break-words">
+                    {testResult.ok ? (
+                      `Test message sent to ${testResult.to}.`
+                    ) : (
+                      <>
+                        {"The test message wasn't sent."}
+                        {/* The far end's own words, rendered as text and never as
+                            markup: this string comes from somebody else's SMTP
+                            server. It is also the only thing here that tells the
+                            operator what to fix. */}
+                        {testResult.detail ? (
+                          <span className="block text-xs">{testResult.detail}</span>
+                        ) : null}
+                      </>
+                    )}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
       </CreateDialogBody>
 
       <CreateDialogFooter hint="Secrets are encrypted before they're stored.">
         <Button variant="outline" disabled={submitting} onClick={onClose}>
           Cancel
         </Button>
+        {canTest ? (
+          // Deliberately NOT gated on `missingRequired`: a half-filled config is
+          // exactly what an operator wants to probe, and the backend's
+          // validation error is a useful answer. The recipient is the one
+          // exception — without it the request cannot succeed at all.
+          <Button
+            variant="outline"
+            disabled={testMutation.isPending || testTo.trim() === ""}
+            onClick={() => void runTest()}
+          >
+            {testMutation.isPending ? "Sending…" : "Test config"}
+          </Button>
+        ) : null}
         <Button disabled={submitting || missingRequired} onClick={save}>
           {submitting ? "Saving…" : isEdit ? "Save changes" : "Connect"}
         </Button>
