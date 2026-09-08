@@ -237,20 +237,88 @@ describe("IntegrationDialog — SMTP test config", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  it("clears a stale result when a secret's MODE changes, not just its text", async () => {
-    // Replace / Clear / Undo alter what would be sent without touching any
-    // field's text, so a result-clearing rule keyed on values alone would miss
-    // them and leave the plate standing.
+  it("clears a stale result when a secret's MODE changes and its text does not", async () => {
+    // The mode transition that a value-keyed rule cannot see: `cleared` → Undo
+    // → `locked` moves between two modes whose draft value is `""` both before
+    // and after. An implementation watching only values leaves the plate
+    // standing over a request that would now carry something different.
     bffFetchMock.mockResolvedValue(undefined);
     renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
 
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
     fireEvent.click(testButton()!);
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    // `cleared` → `locked` via Undo: no field's text changes, only the mode.
+    //
+    // Honest limit of this case: `onModeChange` passes `{ mode, value: "" }`, so
+    // a rule keyed on `next.value !== undefined` fires here too and this test
+    // cannot tell the two apart. It guards that mode transitions clear at all —
+    // the reason the unconditional rule must stay is documented at
+    // `invalidateTest`, not proven here.
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("discards a response that lands after the operator edited a field", async () => {
+    // A run in flight describes the form as it WAS. Clearing the plate on edit
+    // is not enough — the late response would paint itself back on, claiming a
+    // result for a server that was never probed.
+    let release!: () => void;
+    bffFetchMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        release = () => resolve();
+      }),
+    );
+    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+
+    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
+    fireEvent.click(testButton()!);
+    fireEvent.change(document.getElementById("integration-config-host")!, {
+      target: { value: "moved.example.test" },
+    });
+
+    release();
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
 
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("names the address the message was sent to", async () => {
+    // Asserts the copy, not the pinning. `testResult.to` and `testTo` cannot
+    // diverge while `invalidateTest` retires the run on every recipient edit, so
+    // no test can distinguish reading one from the other — and one that claimed
+    // to would be theatre. The pinning stays because it makes the copy correct
+    // by construction rather than by depending on that invariant holding.
+    bffFetchMock.mockResolvedValue(undefined);
+    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+
+    fireEvent.change(testTo(), { target: { value: "first@example.test" } });
+    fireEvent.click(testButton()!);
+
+    await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
+    expect(screen.getByRole("status").textContent).toContain("first@example.test");
+    expect(JSON.parse(bffFetchMock.mock.calls[0][1].body).to).toBe("first@example.test");
+  });
+
+  it("sends one message per press, not one per click", async () => {
+    // `isPending` only lands on a re-render, so it cannot stop a second click in
+    // the same tick — and every click here is a real message, doubled again by
+    // the single 401 replay in `authenticatedBackendRequest`.
+    bffFetchMock.mockReturnValue(new Promise<void>(() => {}));
+    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+
+    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
+    const button = testButton()!;
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    // The three clicks land in one tick; the request is dispatched a microtask
+    // later, so wait for the first before counting.
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    expect(bffFetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("warns that a stored password is not part of the test", () => {

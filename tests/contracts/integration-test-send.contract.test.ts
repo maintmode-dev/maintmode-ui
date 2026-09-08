@@ -35,6 +35,7 @@ const wire = JSON.parse(
   success: { status: number };
   probe_failed: { status: number; body: { code: string; message: string } };
   validation_tls_none_with_username: { status: number; body: { code: string; message: string } };
+  validation_bad_recipient: { status: number; body: { code: string; message: string } };
 };
 
 const readActiveSession = vi.fn();
@@ -53,6 +54,7 @@ vi.mock("@/server/backend/client/authenticated-backend-request", () => ({
   authenticatedBackendRequest: (opts: unknown) => backendRequest(opts),
 }));
 
+const { BackendRequestError } = await import("@/server/backend/errors/backend-request-error");
 const { POST } = await import("@/app/api/admin/integrations/[kind]/test/route");
 
 beforeEach(() => {
@@ -120,31 +122,36 @@ describe("test-send — the answer reaches the client intact", () => {
     expect(await response.text()).toBe("");
   });
 
-  it("keeps a failed probe a failure instead of degrading into success", async () => {
-    // The case the button exists for. A route that reported success here would
-    // tell an operator their broken SMTP works.
-    const error = Object.assign(new Error("probe failed"), {
-      status: wire.probe_failed.status,
-      responseBody: JSON.stringify(wire.probe_failed.body),
-    });
-    backendRequest.mockRejectedValue(error);
+  it("passes a failed probe through with its status and the server's own words", async () => {
+    // The case the button exists for, and the reason this throws a REAL
+    // `BackendRequestError`: `normalizeRouteError` branches on `instanceof`, so
+    // a plain Error with the right-looking fields lands in the generic 500 path
+    // instead — the assertions would pass while the diagnostic text, the whole
+    // point of the endpoint, was silently dropped.
+    backendRequest.mockRejectedValue(
+      new BackendRequestError(wire.probe_failed.status, JSON.stringify(wire.probe_failed.body)),
+    );
 
     const response = await post(BODY);
 
-    expect(response.status).toBeGreaterThanOrEqual(400);
-    expect(response.status).not.toBe(204);
+    expect(response.status).toBe(wire.probe_failed.status);
+    // The far end's text must survive to the client: an operator fixes their
+    // SMTP from this string, not from a status code.
+    expect((await response.json()).error).toBe(wire.probe_failed.body.message);
   });
 
-  it("keeps a validation rejection a failure too", async () => {
-    const error = Object.assign(new Error("invalid request"), {
-      status: wire.validation_tls_none_with_username.status,
-      responseBody: JSON.stringify(wire.validation_tls_none_with_username.body),
-    });
-    backendRequest.mockRejectedValue(error);
+  it("passes a validation rejection through with its message", async () => {
+    backendRequest.mockRejectedValue(
+      new BackendRequestError(
+        wire.validation_tls_none_with_username.status,
+        JSON.stringify(wire.validation_tls_none_with_username.body),
+      ),
+    );
 
     const response = await post(BODY);
 
-    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBe(wire.validation_tls_none_with_username.status);
+    expect((await response.json()).error).toBe(wire.validation_tls_none_with_username.body.message);
   });
 });
 
@@ -166,9 +173,12 @@ describe("test-send — guards", () => {
   });
 
   it("requires a recipient, since the backend infers none from the token", async () => {
+    // Rejected here rather than forwarded: the backend answers
+    // `validation_bad_recipient` for this, and a round trip to be told so would
+    // be a wasted request against an endpoint that sends mail.
     const response = await post({ config: {}, secrets: {}, to: "" });
 
-    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).toBe(wire.validation_bad_recipient.status);
     expect(backendRequest).not.toHaveBeenCalled();
   });
 

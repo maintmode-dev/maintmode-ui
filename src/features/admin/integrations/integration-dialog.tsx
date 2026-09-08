@@ -126,19 +126,42 @@ function IntegrationDialogBody({
   // are looking at.
   const testMutation = useTestIntegration();
   const [testTo, setTestTo] = useState("");
-  const [testResult, setTestResult] = useState<{ ok: boolean; detail?: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; to?: string; detail?: string } | null>(null);
   // Only the newest run may write state. A response arriving after the operator
   // edited a field — or closed the dialog — describes a request that no longer
-  // matches the screen.
+  // matches the screen, so editing must RETIRE the run in flight, not just clear
+  // the plate. Bumping the counter is what does that; `setTestResult(null)`
+  // alone would let the late response paint itself back on.
   const testRunRef = useRef(0);
+  // Synchronous latch. `isPending` from react-query only lands on a re-render,
+  // so it cannot stop a second click in the same tick — and each click here is
+  // a real message, doubled again by the one 401 replay in
+  // `authenticatedBackendRequest`.
+  const testInFlightRef = useRef(false);
+
+  /**
+   * Retires any probe in flight and clears its result.
+   *
+   * Called from every edit that changes what would be sent — a config field, a
+   * secret's value, a secret's MODE (Replace / Clear / Undo alter the request
+   * without touching any field's text), and the recipient. NOT from `enabled`,
+   * the one deliberate exception: it is not part of what is tested.
+   *
+   * Deliberately unconditional. A tempting narrowing is to fire only when a
+   * value actually changed — but `onModeChange` passes `{ mode, value: "" }`, so
+   * `cleared → locked` moves between two states whose draft is `""` on both
+   * sides while changing what the request would carry. No DOM-level test can
+   * separate the two rules (both fire on every transition the UI can produce),
+   * which is exactly why the narrowing is dangerous: it would look covered.
+   */
+  const invalidateTest = () => {
+    testRunRef.current += 1;
+    setTestResult(null);
+  };
 
   const setSecret = (key: string, next: Partial<SecretFieldState>) => {
     setSecrets((cur) => ({ ...cur, [key]: { ...cur[key], ...next } }));
-    // A mode change (Replace / Clear / Undo) alters what would be sent without
-    // touching any field's text, so it invalidates the result just as an edit
-    // does. `enabled` is the one deliberate exception: it is not part of what
-    // is tested. Do not "fix" that away.
-    setTestResult(null);
+    invalidateTest();
   };
 
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
@@ -148,14 +171,22 @@ function IntegrationDialogBody({
   const warnMissingSecret = canTest && shouldWarnAboutMissingSecret(secrets);
 
   const runTest = async () => {
+    if (testInFlightRef.current) return;
+    testInFlightRef.current = true;
     const run = ++testRunRef.current;
+    // The address as it was WHEN SENT. Today this cannot differ from `testTo` at
+    // render time, because editing the recipient retires the run — so no test
+    // distinguishes the two, and none pretends to. It is pinned anyway: the copy
+    // is then correct by construction instead of by depending on that
+    // invalidation rule staying exactly as it is.
+    const sentTo = testTo.trim();
     setTestResult(null);
     try {
       await testMutation.mutateAsync({
         kind,
-        body: buildTestSendBody(meta, config, secrets, testTo, integration?.config ?? {}),
+        body: buildTestSendBody(meta, config, secrets, sentTo, integration?.config ?? {}),
       });
-      if (testRunRef.current === run) setTestResult({ ok: true });
+      if (testRunRef.current === run) setTestResult({ ok: true, to: sentTo });
     } catch (err) {
       if (testRunRef.current !== run) return;
       // The backend's own text, and nothing inferred from it. An earlier
@@ -165,6 +196,8 @@ function IntegrationDialogBody({
       // sends the operator to fix the wrong thing.
       const detail = err instanceof BffError ? err.message.slice(0, 300) : undefined;
       setTestResult({ ok: false, detail });
+    } finally {
+      testInFlightRef.current = false;
     }
   };
 
@@ -254,7 +287,7 @@ function IntegrationDialogBody({
             disabled={submitting}
             onChange={(value) => {
               setConfig((cur) => ({ ...cur, [field.name]: value }));
-              setTestResult(null);
+              invalidateTest();
             }}
           />
         ))}
@@ -274,7 +307,7 @@ function IntegrationDialogBody({
                 disabled={testMutation.isPending}
                 onChange={(e) => {
                   setTestTo(e.target.value);
-                  setTestResult(null);
+                  invalidateTest();
                 }}
               />
               <p className="text-xs text-fg-dim">
@@ -301,7 +334,7 @@ function IntegrationDialogBody({
                   )}
                   <span className="min-w-0 break-words">
                     {testResult.ok ? (
-                      `Test message sent to ${testTo}.`
+                      `Test message sent to ${testResult.to}.`
                     ) : (
                       <>
                         {"The test message wasn't sent."}

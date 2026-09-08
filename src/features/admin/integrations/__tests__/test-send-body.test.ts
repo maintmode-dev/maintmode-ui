@@ -32,6 +32,15 @@ describe("buildTestSendBody — which secret is sent", () => {
     expect(body.secrets).toEqual({ password: "  hunter2  " });
   });
 
+  it("sends nothing for a locked secret even if a value lingers in its state", () => {
+    // Unreachable through the UI today — `onModeChange` resets the draft — so
+    // this pins the rule directly rather than leaning on an invariant that lives
+    // in another file and could be relaxed without anyone noticing here.
+    const body = buildTestSendBody(meta, DRAFTS, secretState("locked", "leftover"), "a@b.test");
+
+    expect(body.secrets).toEqual({});
+  });
+
   it("sends no password for a stored-but-untouched secret", () => {
     // `locked` is the default state of an already-configured integration. There
     // is no fallback: the backend never substitutes the stored value.
