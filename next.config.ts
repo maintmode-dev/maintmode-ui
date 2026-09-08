@@ -44,6 +44,28 @@ const nextConfig: NextConfig = {
         source: "/((?!_next/static|_next/image|api/|.*\\.[\\w]+$).*)",
         headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
       },
+      {
+        /**
+         * Baseline security headers on every response.
+         *
+         * `Referrer-Policy` is here because of RUK-292: the OAuth receiver is
+         * loaded at `/auth/oauth/callback?code=<a live 60-second credential>`,
+         * and any same-origin subresource that page ever loads would send that
+         * full URL in `Referer`. Today it loads none, so nothing leaks — which
+         * is precisely why this belongs in config rather than in a comment on
+         * that route: the guarantee should not depend on nobody adding a font,
+         * a beacon or a CSS `url()` to the root layout later. The browser
+         * default is already `strict-origin-when-cross-origin` in current
+         * Chrome and Firefox; stating it stops an older or embedded webview
+         * defaulting to something looser.
+         */
+        source: "/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
     ];
   },
 };

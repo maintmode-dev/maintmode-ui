@@ -64,4 +64,22 @@ describe("next.config cache-header rule", () => {
       expect(matches(source, path), `${path} should be excluded from no-store`).toBe(false);
     }
   });
+  /**
+   * RUK-292. `Referrer-Policy` matters most for `/auth/oauth/callback`, whose
+   * URL carries a live one-time code: any same-origin subresource that page
+   * loads would otherwise send the whole URL in `Referer`. It is declared here,
+   * for every route, rather than on that one page — the guarantee should not
+   * depend on nobody adding a font or a beacon to the root layout later.
+   */
+  it("sets baseline security headers on every route", async () => {
+    const { default: config } = (await import("../../../../next.config")) as {
+      default: { headers: () => Promise<{ source: string; headers: { key: string; value: string }[] }[]> };
+    };
+    const rules = await config.headers();
+    const keys = rules.flatMap((r) => r.headers.map((h) => h.key));
+
+    expect(keys).toContain("Referrer-Policy");
+    expect(keys).toContain("X-Content-Type-Options");
+    expect(keys).toContain("X-Frame-Options");
+  });
 });
