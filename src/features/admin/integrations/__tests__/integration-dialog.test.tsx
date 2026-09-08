@@ -154,8 +154,17 @@ describe("IntegrationDialog — SMTP test config", () => {
   const testTo = () => document.getElementById("integration-test-to") as HTMLInputElement;
   const testButton = () => screen.queryByRole("button", { name: /Test config|Sending…/ });
 
+  /** The subject of every case below: a configured SMTP integration in edit mode. */
+  const renderEmailDialog = () => renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+
+  /** Name a recipient and press the button — the two steps that precede a probe. */
+  const pressTest = (to = "admin@example.test") => {
+    fireEvent.change(testTo(), { target: { value: to } });
+    fireEvent.click(testButton()!);
+  };
+
   it("offers the probe for email only", () => {
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
     expect(testButton()).toBeTruthy();
 
     cleanup();
@@ -167,7 +176,7 @@ describe("IntegrationDialog — SMTP test config", () => {
   it("stays disabled until a recipient is given", () => {
     // The backend infers no recipient from the token, so an empty field means a
     // guaranteed 400 — enabling the button would teach the operator nothing.
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
     expect(testButton()!.hasAttribute("disabled")).toBe(true);
 
     fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
@@ -176,10 +185,9 @@ describe("IntegrationDialog — SMTP test config", () => {
 
   it("posts to the test route and saves nothing", async () => {
     bffFetchMock.mockResolvedValue(undefined);
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
-    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest();
 
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
     const [url, init] = bffFetchMock.mock.calls[0] as [string, { method: string; body: string }];
@@ -193,10 +201,9 @@ describe("IntegrationDialog — SMTP test config", () => {
 
   it("reports success naming the mailbox to look in", async () => {
     bffFetchMock.mockResolvedValue(undefined);
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
-    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest();
 
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("sent"));
     expect(screen.getByRole("status").textContent).toContain("admin@example.test");
@@ -211,10 +218,9 @@ describe("IntegrationDialog — SMTP test config", () => {
     bffFetchMock.mockRejectedValue(
       new BffError(502, "integration probe failed: email send: dial tcp: connection refused"),
     );
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
-    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest();
 
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("wasn't sent"));
     expect(screen.getByRole("status").textContent).toContain("connection refused");
@@ -222,10 +228,9 @@ describe("IntegrationDialog — SMTP test config", () => {
 
   it("clears a stale result when a config field changes", async () => {
     bffFetchMock.mockResolvedValue(undefined);
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
-    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest();
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
 
     // A green "sent" plate above a host the operator has since edited claims
@@ -243,11 +248,10 @@ describe("IntegrationDialog — SMTP test config", () => {
     // and after. An implementation watching only values leaves the plate
     // standing over a request that would now carry something different.
     bffFetchMock.mockResolvedValue(undefined);
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest();
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
 
     // `cleared` → `locked` via Undo: no field's text changes, only the mode.
@@ -271,10 +275,9 @@ describe("IntegrationDialog — SMTP test config", () => {
         release = () => resolve();
       }),
     );
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
-    fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest();
     fireEvent.change(document.getElementById("integration-config-host")!, {
       target: { value: "moved.example.test" },
     });
@@ -292,10 +295,9 @@ describe("IntegrationDialog — SMTP test config", () => {
     // to would be theatre. The pinning stays because it makes the copy correct
     // by construction rather than by depending on that invariant holding.
     bffFetchMock.mockResolvedValue(undefined);
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
-    fireEvent.change(testTo(), { target: { value: "first@example.test" } });
-    fireEvent.click(testButton()!);
+    pressTest("first@example.test");
 
     await waitFor(() => expect(screen.getByRole("status")).toBeTruthy());
     expect(screen.getByRole("status").textContent).toContain("first@example.test");
@@ -307,7 +309,7 @@ describe("IntegrationDialog — SMTP test config", () => {
     // the same tick — and every click here is a real message, doubled again by
     // the single 401 replay in `authenticatedBackendRequest`.
     bffFetchMock.mockReturnValue(new Promise<void>(() => {}));
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
     fireEvent.change(testTo(), { target: { value: "admin@example.test" } });
     const button = testButton()!;
@@ -324,14 +326,14 @@ describe("IntegrationDialog — SMTP test config", () => {
   it("warns that a stored password is not part of the test", () => {
     // The default state of a configured integration: password stored, nothing
     // typed. Without the note a failure reads as a broken config.
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
     expect(screen.getByText(/saved password isn't included/i)).toBeTruthy();
   });
 
   it("does not warn when the operator deliberately cleared the password", () => {
     // Testing an anonymous relay is a supported configuration, not a mistake.
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     expect(screen.queryByText(/saved password isn't included/i)).toBeNull();
@@ -340,7 +342,7 @@ describe("IntegrationDialog — SMTP test config", () => {
   it("leaves Save usable without ever running a test", async () => {
     // The two buttons are independent: no gate, in either direction.
     bffFetchMock.mockResolvedValue({ ...EMAIL_CONFIGURED("mandatory") });
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    renderEmailDialog();
 
     expect(screen.getByRole("button", { name: "Save changes" }).hasAttribute("disabled")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));

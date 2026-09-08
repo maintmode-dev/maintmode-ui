@@ -82,6 +82,16 @@ export function IntegrationDialog({
   );
 }
 
+/**
+ * The two looks of the probe-result plate. Lifted out so the JSX branches on
+ * success once, next to the icon and the copy, instead of three times over.
+ */
+const TEST_PLATE = {
+  ok: "flex items-start gap-2 rounded-sm border border-[var(--status-completed-border,var(--border))] bg-[var(--status-completed-bg,transparent)] px-3 py-2 text-sm text-[var(--status-completed-fg)]",
+  failed:
+    "flex items-start gap-2 rounded-sm border border-[var(--destructive-border)] bg-[var(--destructive-bg)] px-3 py-2 text-sm text-[var(--destructive-fg)]",
+} as const;
+
 function IntegrationDialogBody({
   kind,
   integration,
@@ -332,14 +342,7 @@ function IntegrationDialogBody({
                 </p>
               ) : null}
               {testResult ? (
-                <div
-                  role="status"
-                  className={
-                    testResult.ok
-                      ? "flex items-start gap-2 rounded-sm border border-[var(--status-completed-border,var(--border))] bg-[var(--status-completed-bg,transparent)] px-3 py-2 text-sm text-[var(--status-completed-fg)]"
-                      : "flex items-start gap-2 rounded-sm border border-[var(--destructive-border)] bg-[var(--destructive-bg)] px-3 py-2 text-sm text-[var(--destructive-fg)]"
-                  }
-                >
+                <div role="status" className={TEST_PLATE[testResult.ok ? "ok" : "failed"]}>
                   {testResult.ok ? (
                     <MailCheck className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
                   ) : (

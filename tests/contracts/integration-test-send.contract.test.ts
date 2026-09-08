@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+
+import { readWireFixture } from "./_harness";
 
 /**
  * Contract test — `POST /api/admin/integrations/{kind}/test` →
@@ -29,14 +29,15 @@ import { join } from "node:path";
  *    rewriting it as a 200 with a body would invent a payload.
  */
 
-const wire = JSON.parse(
-  readFileSync(join(process.cwd(), "tests/fixtures/wire/integration-email-test.json"), "utf8"),
-) as {
+/** A recorded shape: the status, and the envelope the backend sent with it. */
+type WireCase = { status: number; body: { code: string; message: string } };
+
+const wire = readWireFixture<{
   success: { status: number };
-  probe_failed: { status: number; body: { code: string; message: string } };
-  validation_tls_none_with_username: { status: number; body: { code: string; message: string } };
-  validation_bad_recipient: { status: number; body: { code: string; message: string } };
-};
+  probe_failed: WireCase;
+  validation_tls_none_with_username: WireCase;
+  validation_bad_recipient: WireCase;
+}>("integration-email-test.json");
 
 const readActiveSession = vi.fn();
 vi.mock("@/server/auth/session-token", () => ({
