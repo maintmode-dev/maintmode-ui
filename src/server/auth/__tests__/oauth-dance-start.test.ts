@@ -12,7 +12,11 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/server/auth/oauth-next-cookie", () => ({
   setOAuthNext: (...args: unknown[]) => setOAuthNext(...args),
   clearOAuthNext: () => clearOAuthNext(),
+  readOAuthNext: vi.fn(),
 }));
+// The module also holds the receiver action, which imports NextAuth's `signIn`.
+// Mocked so this file exercises the redirect without loading the auth runtime.
+vi.mock("@/server/auth/auth-config", () => ({ signIn: vi.fn() }));
 
 const { startOAuthDanceAction } = await import("@/server/auth/oauth-dance-actions");
 

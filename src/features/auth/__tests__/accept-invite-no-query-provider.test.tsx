@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AcceptInvitePage } from "../accept-invite-page";
 import { LoginPage } from "../login-page";
+import { OAuthCallbackForm } from "../oauth-callback-form";
 
 afterEach(() => cleanup());
 
@@ -86,6 +87,15 @@ describe("public pages render without a QueryClientProvider", () => {
     expect(screen.getByRole("main")).toBeTruthy();
   });
 
+  /**
+   * RUK-292. The receiver lives under `(public)`, which omits `AppProviders` —
+   * so a `useQuery` anywhere in its graph would white-screen the one page a user
+   * cannot route around, mid-sign-in.
+   */
+  it("renders the OAuth receiver form with no provider in the tree", () => {
+    expect(() => render(<OAuthCallbackForm label="Continue" />)).not.toThrow();
+  });
+
   it("reaches no @tanstack/react-query import anywhere in either page module graph", async () => {
     // A render-time assertion only proves the hook wasn't hit on THIS path. This
     // walks the transitive import graph of the page module instead, so a query
@@ -103,6 +113,9 @@ describe("public pages render without a QueryClientProvider", () => {
     const entries = [
       resolve(featureDir, "../accept-invite-page.tsx"),
       resolve(featureDir, "../login-page.tsx"),
+      // RUK-292: the OAuth receiver is the third public screen, and the first
+      // one that is a client component by necessity.
+      resolve(featureDir, "../oauth-callback-form.tsx"),
     ];
 
     const importPattern = /(?:import|export)[\s\S]*?from\s+["']([^"']+)["']/g;

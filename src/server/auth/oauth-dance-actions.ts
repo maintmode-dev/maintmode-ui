@@ -3,7 +3,9 @@
 import { redirect } from "next/navigation";
 
 import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
-import { clearOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
+import { signIn } from "@/server/auth/auth-config";
+import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
+import { clearOAuthNext, readOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
 import { safeNext } from "@/server/auth/safe-next";
 
 /**
@@ -44,7 +46,82 @@ export async function startOAuthDanceAction(providerId: string, next?: string): 
   redirect(`${authPublicBaseUrl}/api/v1/login/oauth/${encodeURIComponent(providerId)}/start`);
 }
 
-/** Clears the dance's destination cookie. Exported for the receiver's own use. */
-export async function abandonOAuthDanceAction(): Promise<void> {
+/** A `redirect()` in flight, which Next signals by throwing. */
+function isNextRedirect(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { digest?: unknown }).digest === "string" &&
+    (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")
+  );
+}
+
+/**
+ * Maps the backend's redirect error code to one this app already renders.
+ *
+ * The backend's set is closed and owned by it: `access_denied`, `state_invalid`,
+ * `provider_error`, `internal_error`. Three of them collapse onto one message
+ * because the user's action is identical in all three — try again — and the
+ * detail that distinguishes them lives in the backend's audit trail, where it
+ * was put deliberately.
+ *
+ * `access_denied` is the one that earns a different message, because it is the
+ * one where retrying does not help. It covers three backend causes: signup
+ * closed, a blocked user, and a consent screen the user cancelled. Telling all
+ * three to ask for an invitation is wrong for the last two and right for the
+ * first — and the first is the only one where the user cannot act without being
+ * told. A blocked user being sent to an admin is a tolerable second-best; the
+ * message must not say more than that, since whether an account is blocked is
+ * not a fact to volunteer to whoever holds the browser.
+ *
+ * An unknown code from a newer backend maps to the generic failure rather than
+ * rendering blank.
+ */
+function mapDanceError(code: string): AuthErrorCode {
+  return code === "access_denied" ? AUTH_ERROR_CODES.signupDisabled : AUTH_ERROR_CODES.oauthHandoffFailed;
+}
+
+/**
+ * Completes the dance: trades the one-time code for a session.
+ *
+ * The cookie is cleared FIRST, its value captured into a local, so that "cleared
+ * on every exit" is true by construction rather than in five branches that each
+ * had to remember. The backend applies the same ordering to its own dance
+ * cookies for the same reason.
+ *
+ * `signIn` does not build the `?code=` redirect itself — NextAuth's server-action
+ * path rethrows instead, and the SUCCESS path also arrives as a throw
+ * (`NEXT_REDIRECT`). So the happy path is rethrown untouched and everything else
+ * is read structurally and redirected here. Reading `.code` structurally rather
+ * than via `instanceof AuthError` keeps the `next-auth` runtime out of every
+ * consumer of this module, matching `built-in-sign-in-actions.ts`.
+ */
+export async function completeOAuthDanceAction(formData: FormData): Promise<void> {
+  const destination = await readOAuthNext();
   await clearOAuthNext();
+
+  const providerError = String(formData.get("error") ?? "").trim();
+  if (providerError) {
+    redirect(`/login?code=${encodeURIComponent(mapDanceError(providerError))}`);
+  }
+
+  const code = String(formData.get("code") ?? "").trim();
+  if (!code) {
+    // Someone opened the receiver directly, or the backend redirected with
+    // neither parameter. Nothing to redeem.
+    redirect(`/login?code=${encodeURIComponent(AUTH_ERROR_CODES.oauthHandoffFailed)}`);
+  }
+
+  try {
+    await signIn("oauth-dance", { code, redirectTo: destination });
+  } catch (error) {
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    const failure =
+      typeof (error as { code?: unknown } | null)?.code === "string"
+        ? (error as { code: string }).code
+        : AUTH_ERROR_CODES.oauthHandoffFailed;
+    redirect(`/login?code=${encodeURIComponent(failure)}`);
+  }
 }

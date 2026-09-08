@@ -34,7 +34,18 @@ function matches(source: string, pathname: string): boolean {
 describe("next.config cache-header rule", () => {
   it("forces no-store on page document routes", async () => {
     const source = await noStoreSource();
-    for (const path of ["/", "/admin/audit-log", "/maintenance/abc-123/audit", "/login", "/resources"]) {
+    // `/auth/oauth/callback` (RUK-292) renders a page holding a live one-time
+    // code. It needs `no-store` more than any other route here, and it gets it
+    // from this rule rather than from a header of its own — pinned so a future
+    // narrowing of the pattern cannot quietly exclude it.
+    for (const path of [
+      "/",
+      "/admin/audit-log",
+      "/maintenance/abc-123/audit",
+      "/login",
+      "/resources",
+      "/auth/oauth/callback",
+    ]) {
       expect(matches(source, path), `${path} should be no-store`).toBe(true);
     }
   });
