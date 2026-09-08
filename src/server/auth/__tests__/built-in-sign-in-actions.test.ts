@@ -104,7 +104,13 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
   ])("refuses %s as a sign-in destination", async (_label, next) => {
     signIn.mockResolvedValue(undefined);
 
-    await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "pw", next });
+    await credentialsSignInAction({
+      kind: "password",
+      email: "a@b.test",
+      password: "pw",
+      rememberMe: false,
+      next,
+    });
 
     // This action is invocable by action id, so it cannot assume its caller
     // already sanitized the value.
@@ -118,10 +124,45 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
       kind: "password",
       email: "a@b.test",
       password: "pw",
+      rememberMe: false,
       next: "/maintenance/m-1001",
     });
 
     expect(redirectToOf()).toBe("/maintenance/m-1001");
+  });
+
+  it.each([
+    ["ticked", true, "true"],
+    ["unticked", false, "false"],
+  ])("hands the %s remember-me box to signIn as %s", async (_label, value, expected) => {
+    // Site 4 of the nine-site chain (RUK-290): the `signIn(...)` object literal.
+    // Widening this action's input union without adding the field HERE compiles
+    // cleanly and silently sends nothing — no type error, no runtime error, the
+    // checkbox just never works. Read off the signIn mock, not off the input.
+    signIn.mockResolvedValue(undefined);
+
+    await credentialsSignInAction({
+      kind: "password",
+      email: "a@b.test",
+      password: "pw",
+      rememberMe: value,
+    });
+
+    expect(signIn.mock.calls[0]?.[1]).toMatchObject({ rememberMe: expected });
+  });
+
+  it("carries the flag on the otp branch too", async () => {
+    // The easy half-miss: fixing password sign-in and forgetting OTP.
+    signIn.mockResolvedValue(undefined);
+
+    await credentialsSignInAction({
+      kind: "otp",
+      email: "a@b.test",
+      code: "123456",
+      rememberMe: true,
+    });
+
+    expect(signIn.mock.calls[0]?.[1]).toMatchObject({ rememberMe: "true" });
   });
 
   it("rethrows the redirect that signals a successful sign-in", async () => {
@@ -131,7 +172,7 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
     signIn.mockRejectedValue(redirect);
 
     await expect(
-      credentialsSignInAction({ kind: "password", email: "a@b.test", password: "pw" }),
+      credentialsSignInAction({ kind: "password", email: "a@b.test", password: "pw", rememberMe: false }),
     ).rejects.toBe(redirect);
   });
 
@@ -142,6 +183,7 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
       kind: "otp",
       email: "a@b.test",
       code: "123456",
+      rememberMe: false,
     });
 
     expect(result.error).toBe("otp_session_mismatch");

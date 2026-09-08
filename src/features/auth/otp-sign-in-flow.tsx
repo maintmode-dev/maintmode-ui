@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
+import { Checkbox } from "@/shared/ui/shadcn/checkbox";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
@@ -22,7 +23,11 @@ type Step = "email" | "code";
 export interface OtpSignInFlowProps {
   label: string;
   requestCode: (email: string) => Promise<{ error?: string }>;
-  submitCode: (email: string, code: string) => Promise<{ error?: string }>;
+  /**
+   * `rememberMe` is a required third argument (RUK-290) — optional would let a
+   * caller pass `undefined` into a chain typed `boolean` with no compiler error.
+   */
+  submitCode: (email: string, code: string, rememberMe: boolean) => Promise<{ error?: string }>;
   onChangeEmail: () => Promise<void>;
 }
 
@@ -30,6 +35,9 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  // Belongs to step two: this is the request that mints the session. Asking on
+  // the address step would attach the choice to a request that issues no token.
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
 
@@ -69,7 +77,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     const result = await timers.guard(async () => {
       setPending(true);
       setError(undefined);
-      const outcome = await submitCode(email, code.trim());
+      const outcome = await submitCode(email, code.trim(), rememberMe);
       setPending(false);
       return outcome;
     });
@@ -83,6 +91,10 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
       // is the primary action and nothing is throttled.
       setStep("email");
       setCode("");
+      // Reset explicitly: the step changes in place, the component is not
+      // unmounted, so nothing clears this for us. Returning to step one is a
+      // fresh sign-in and must not silently inherit the previous choice.
+      setRememberMe(false);
       timers.reset();
     }
     setError(result.error);
@@ -92,6 +104,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     await onChangeEmail();
     setStep("email");
     setCode("");
+    setRememberMe(false);
     setError(undefined);
     timers.reset();
   }
@@ -158,9 +171,23 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
         </p>
       )}
       {!expired ? (
-        <Button type="submit" disabled={pending || code.trim().length !== 6}>
-          {pending ? "Checking…" : "Sign in"}
-        </Button>
+        <>
+          <div className="flex items-center gap-2 py-0.5">
+            <Checkbox
+              id="otp-remember-me"
+              checked={rememberMe}
+              disabled={pending}
+              onCheckedChange={(checked) => setRememberMe(checked === true)}
+            />
+            {/* Names no duration on purpose — see the password form. */}
+            <Label htmlFor="otp-remember-me" className="text-xs font-normal text-fg-muted">
+              Keep me signed in
+            </Label>
+          </div>
+          <Button type="submit" disabled={pending || code.trim().length !== 6}>
+            {pending ? "Checking…" : "Sign in"}
+          </Button>
+        </>
       ) : null}
       <Button
         type="button"

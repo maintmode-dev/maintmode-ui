@@ -4,6 +4,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
 
+// jsdom implements no ResizeObserver, and Radix's Checkbox measures itself via
+// `useSize`. Without this every test in the file dies on render rather than on
+// an assertion. Inline rather than a shared helper: `src/features/**` may not
+// import `@/shared/testing/**` (eslint no-restricted-imports), and that
+// boundary is worth more than deduplicating six lines. Same stub as
+// `src/features/settings/__tests__/timezone-card.test.tsx`.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 afterEach(() => cleanup());
 
 function setup(submit = vi.fn(async () => ({}) as { error?: string })) {
@@ -21,7 +33,27 @@ describe("password sign-in form", () => {
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => expect(submit).toHaveBeenCalledWith("admin@example.test", "hunter2"));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith("admin@example.test", "hunter2", false));
+  });
+
+  it("sends the remember-me choice with the credentials", async () => {
+    // RUK-290. The box is a session-length REQUEST; the whole point is that it
+    // arrives. Asserted on the submit handler rather than on the checkbox's own
+    // state, because a checkbox that toggles but is never read looks identical.
+    const submit = setup();
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@example.test" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
+    fireEvent.click(screen.getByLabelText("Keep me signed in"));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith("admin@example.test", "hunter2", true));
+  });
+
+  it("starts unticked, so a shared computer is the default", () => {
+    setup();
+
+    expect(screen.getByLabelText("Keep me signed in").getAttribute("data-state")).toBe("unchecked");
   });
 
   it("stays disabled until both fields are filled", () => {

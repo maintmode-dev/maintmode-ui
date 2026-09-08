@@ -5,6 +5,18 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { LoginPage } from "@/features/auth/login-page";
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
 
+// jsdom implements no ResizeObserver, and Radix's Checkbox measures itself via
+// `useSize`. Without this every test in the file dies on render rather than on
+// an assertion. Inline rather than a shared helper: `src/features/**` may not
+// import `@/shared/testing/**` (eslint no-restricted-imports), and that
+// boundary is worth more than deduplicating six lines. Same stub as
+// `src/features/settings/__tests__/timezone-card.test.tsx`.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 afterEach(() => cleanup());
 
 const PASSWORD_METHOD: SignInMethod = {

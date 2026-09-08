@@ -97,6 +97,9 @@ describe("AC-4 — a lost binding must never be reported as a wrong code", () =>
       email: "someone@example.test",
       code: "123456",
       sessionNonce: "n-1",
+      // Normalised from an absent flag (RUK-290): `undefined` must not travel
+      // on, or `JSON.stringify` would turn "unticked" into "absent".
+      rememberMe: false,
     });
   });
 
@@ -171,6 +174,7 @@ describe("AC-3a — a verified code establishes the session", () => {
       email: "someone@example.test",
       code: "123456",
       sessionNonce: "n-42",
+      rememberMe: false,
     });
   });
 
@@ -200,7 +204,11 @@ describe("AC-3a — a verified code establishes the session", () => {
       callSignIn(account, { signInKind: "password", email: "admin@example.test", password: "pw" }),
     ).resolves.toBe(true);
 
-    expect(loginWithPassword).toHaveBeenCalledWith({ email: "admin@example.test", password: "pw" });
+    expect(loginWithPassword).toHaveBeenCalledWith({
+      email: "admin@example.test",
+      password: "pw",
+      rememberMe: false,
+    });
     expect(account.maintmodeTokens).toEqual(TOKENS);
     // A password sign-in must never touch the OTP binding.
     expect(readOtpBinding).not.toHaveBeenCalled();
