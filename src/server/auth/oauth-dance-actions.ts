@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
 import { signIn } from "@/server/auth/auth-config";
 import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
+import { isNextRedirect } from "@/server/auth/next-redirect";
 import { clearOAuthNext, readOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -46,14 +47,12 @@ export async function startOAuthDanceAction(providerId: string, next?: string): 
   redirect(`${authPublicBaseUrl}/api/v1/login/oauth/${encodeURIComponent(providerId)}/start`);
 }
 
-/** A `redirect()` in flight, which Next signals by throwing. */
-function isNextRedirect(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    typeof (error as { digest?: unknown }).digest === "string" &&
-    (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")
-  );
+/**
+ * Leaves the receiver for `/login` with a code it renders. Never returns — the
+ * `never` return type is what lets the callers below read as terminal exits.
+ */
+function redirectToLoginError(code: AuthErrorCode): never {
+  redirect(`/login?code=${encodeURIComponent(code)}`);
 }
 
 /**
@@ -102,14 +101,14 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
 
   const providerError = String(formData.get("error") ?? "").trim();
   if (providerError) {
-    redirect(`/login?code=${encodeURIComponent(mapDanceError(providerError))}`);
+    redirectToLoginError(mapDanceError(providerError));
   }
 
   const code = String(formData.get("code") ?? "").trim();
   if (!code) {
     // Someone opened the receiver directly, or the backend redirected with
     // neither parameter. Nothing to redeem.
-    redirect(`/login?code=${encodeURIComponent(AUTH_ERROR_CODES.oauthHandoffFailed)}`);
+    redirectToLoginError(AUTH_ERROR_CODES.oauthHandoffFailed);
   }
 
   try {
@@ -118,7 +117,7 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
     if (isNextRedirect(error)) {
       throw error;
     }
-    redirect(`/login?code=${encodeURIComponent(failureCode(error))}`);
+    redirectToLoginError(failureCode(error));
   }
 
   // `signIn` normally leaves by throwing — a redirect on success, a
