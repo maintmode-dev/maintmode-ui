@@ -40,7 +40,10 @@ describe("oauth-next-cookie", () => {
     expect(store.set).toHaveBeenCalledWith(
       OAUTH_NEXT_COOKIE,
       "/calendar?view=week",
-      expect.objectContaining({ httpOnly: true, sameSite: "lax", path: "/" }),
+      // `maxAge` included: it is the attribute whose entire purpose is
+      // outliving the provider round-trip. A shortened value degrades every
+      // deep link to `/` while every other assertion here still passes.
+      expect.objectContaining({ httpOnly: true, sameSite: "lax", path: "/", maxAge: 600 }),
     );
   });
 

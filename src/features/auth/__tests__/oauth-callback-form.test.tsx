@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -20,22 +21,49 @@ describe("OAuthCallbackForm", () => {
     HTMLFormElement.prototype.requestSubmit = function requestSubmit(this: HTMLFormElement) {
       this.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     };
-    render(
+    const tree = (
       <form onSubmit={onSubmit}>
         <OAuthCallbackForm label="Continue" />
-      </form>,
+      </form>
     );
-    return onSubmit;
+    const view = render(tree);
+    return { onSubmit, rerender: () => view.rerender(tree) };
   }
 
   it("submits the form it lives in as soon as it mounts", () => {
-    const onSubmit = renderInForm();
+    const { onSubmit } = renderInForm();
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
-  it("submits exactly once, so a spent code cannot be redeemed twice", () => {
-    const onSubmit = renderInForm();
+  /**
+   * What the guard actually defends, stated precisely because an earlier version
+   * of this test claimed more than it checked.
+   *
+   * The effect's dependency list is empty, so an ordinary re-render never runs
+   * it twice — a "called once after re-render" assertion passes whether or not
+   * the guard exists. The case the ref DOES cover is React's StrictMode, which
+   * double-invokes effects in development (`reactStrictMode: true` in
+   * `next.config.ts`), and that is what this reproduces.
+   *
+   * It does not cover a genuine remount: a new mount builds a new ref, and
+   * nothing in the component could prevent that. The reload-with-a-spent-code
+   * path is handled server-side instead — `oauth-dance-complete.test.ts` pins it
+   * landing on the error branch rather than on a second redemption.
+   */
+  it("submits once under StrictMode's double-invoked effect", () => {
+    const onSubmit = vi.fn((event: React.FormEvent) => event.preventDefault());
+    HTMLFormElement.prototype.requestSubmit = function requestSubmit(this: HTMLFormElement) {
+      this.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    };
+
+    render(
+      <StrictMode>
+        <form onSubmit={onSubmit}>
+          <OAuthCallbackForm label="Continue" />
+        </form>
+      </StrictMode>,
+    );
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Continue" }).hasAttribute("disabled")).toBe(true);

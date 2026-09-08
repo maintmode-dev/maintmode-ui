@@ -47,6 +47,13 @@ describe("oauth-dance is wired into the signIn callback", () => {
     expect(source).toMatch(/user\?\.danceCode/);
   });
 
+  it("refuses an empty code before it reaches the backend", () => {
+    // Without the guard an empty `danceCode` is redeemed and answered 401,
+    // which is indistinguishable from an expired code — so the operator log the
+    // change added points at the wrong cause.
+    expect(source).toMatch(/if \(!code\) \{[\s\S]*?throw new BackendExchangeError/);
+  });
+
   it("redeems in the callback, not in authorize", () => {
     // `authorize` must stay a shape check. The code is single-use with a 60s
     // life: redeeming in both halves spends it twice for one sign-in.
@@ -58,15 +65,11 @@ describe("oauth-dance is wired into the signIn callback", () => {
     expect(authorizeBody).not.toContain("fetchBackendMe");
   });
 
-  it("keeps the redeem and profile stages mapped to different failures", () => {
-    // The two-stage split is the whole reason `runDanceRedemption` has two
-    // catches: collapsing them mislabels every redemption failure as an
-    // identity-lookup failure, which is the defect that split them in
-    // `runBackendExchange`.
-    const start = source.indexOf("async function runDanceRedemption");
-    const body = source.slice(start, source.indexOf("\n}", source.indexOf("identityLookupFailed", start)));
-
-    expect(body.indexOf("oauthHandoffFailed")).toBeGreaterThan(-1);
-    expect(body.indexOf("identityLookupFailed")).toBeGreaterThan(body.indexOf("oauthHandoffFailed"));
+  it("delegates the redemption to the extracted module", () => {
+    // The stage split itself is covered behaviorally in
+    // `oauth-dance-redemption.test.ts`. What this file still owns is the
+    // wiring: that the callback calls into that module at all.
+    expect(source).toContain("runDanceRedemption(account, code)");
+    expect(source).toContain("OAuthDanceError");
   });
 });

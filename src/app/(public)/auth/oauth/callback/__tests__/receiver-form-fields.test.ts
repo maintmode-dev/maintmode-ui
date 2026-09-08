@@ -23,8 +23,10 @@ const action = readFileSync(join(process.cwd(), "src/server/auth/oauth-dance-act
 
 describe("the receiver form carries what the action reads", () => {
   it.each(["code", "error"])("submits the %s parameter under that name", (field) => {
-    expect(page).toMatch(new RegExp(`<input[^>]*type="hidden"[^>]*name="${field}"`));
-    expect(page).toContain(`sp.${field}`);
+    // Matched across newlines: Prettier reflows a long `<input>` onto several
+    // lines, and a single-line regex here failed on formatting rather than on
+    // the property it guards.
+    expect(page).toMatch(new RegExp(`<input[\\s\\S]*?name="${field}"[\\s\\S]*?value=\\{sp\\.${field}`));
     expect(action).toContain(`formData.get("${field}")`);
   });
 

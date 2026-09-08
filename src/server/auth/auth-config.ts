@@ -8,12 +8,12 @@ import { parseMaintmodeAuthConfig, type MaintmodeAuthConfig } from "@/shared/con
 import {
   exchangeGoogleIdToken,
   fetchBackendMe,
-  redeemOAuthDanceCode,
   refreshBackendToken,
 } from "@/server/auth/backend-token-exchange";
 import { isRole } from "@/domain/auth/permissions";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
 import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
+import { OAuthDanceError, runDanceRedemption } from "@/server/auth/oauth-dance-redemption";
 import {
   AUTH_ERROR_CODES,
   BackendAuthError,
@@ -200,7 +200,18 @@ export const config = {
         if (!code) {
           throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
         }
-        return runDanceRedemption(account, code);
+        try {
+          return await runDanceRedemption(account, code);
+        } catch (error) {
+          // `oauth-dance-redemption.ts` deliberately does not import NextAuth,
+          // so its failures arrive as a plain error and are rewrapped here —
+          // the same split `built-in-sign-in.ts` uses. Without this the code
+          // would not reach `/login` as `?code=`.
+          if (error instanceof OAuthDanceError) {
+            throw new BackendExchangeError(error.code as AuthErrorCode);
+          }
+          throw error;
+        }
       }
       if (account.provider === BACKEND_LOGIN_PROVIDER_ID) {
         try {
@@ -340,54 +351,6 @@ async function runBackendExchange(
   } catch {
     // Exchange succeeded but loading the profile did not: the one genuine
     // identity-lookup failure.
-    throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
-  }
-}
-
-/**
- * Trades the one-time dance code for a session (RUK-292).
- *
- * Split into two stages caught separately, exactly like `runBackendExchange`:
- * collapsing them mislabels every redemption failure as an identity-lookup
- * failure, which is the defect that split them there in the first place.
- *
- * The redemption stage cannot distinguish its failures — the backend answers a
- * uniform 401 for unknown, expired, spent and malformed codes on purpose, and a
- * 429 from a bucket shared with password sign-in, OTP and invitations. All of
- * them are one thing to the user: the handoff did not complete, try again. The
- * STATUS is logged so an operator can still tell a rate limit from a dead code;
- * the user-facing message stays collapsed.
- */
-async function runDanceRedemption(
-  account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
-  code: string,
-): Promise<true> {
-  let tokens: BackendTokenPair;
-  try {
-    tokens = await redeemOAuthDanceCode(code);
-  } catch (error) {
-    // Logged, not surfaced. The two failures most worth telling apart here —
-    // a spent code and a shared-bucket rate limit — are indistinguishable to the
-    // user and must stay that way, but an operator debugging "sign-in is broken"
-    // has nothing else to go on: a /start failure never reaches this process at
-    // all, because that step is a browser navigation.
-    console.error("oauth dance code redemption failed", {
-      status: error instanceof BackendAuthError ? error.status : undefined,
-    });
-    throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
-  }
-
-  try {
-    const me = await fetchBackendMe(tokens.access_token);
-    account.maintmodeTokens = tokens;
-    account.maintmodeUser = {
-      id: me.id,
-      email: me.email,
-      displayName: me.display_name,
-      roles: me.roles,
-    };
-    return true;
-  } catch {
     throw new BackendExchangeError(AUTH_ERROR_CODES.identityLookupFailed);
   }
 }
