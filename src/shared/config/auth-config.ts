@@ -22,10 +22,7 @@ export type MaintmodeAuthConfig = {
 };
 
 export type AuthConfigIssue = {
-  field:
-    | "MAINTMODE_AUTH_SECRET"
-    | "MAINTMODE_APP_BASE_URL"
-    | "MAINTMODE_AUTH_PUBLIC_BASE_URL";
+  field: "MAINTMODE_AUTH_SECRET" | "MAINTMODE_APP_BASE_URL" | "MAINTMODE_AUTH_PUBLIC_BASE_URL";
   message: string;
 };
 

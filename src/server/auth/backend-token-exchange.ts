@@ -170,10 +170,8 @@ export async function loginWithPassword(args: {
  * while telling the user the same thing.
  */
 export async function redeemOAuthDanceCode(code: string): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(
-    DANCE_CODE_EXCHANGE_PATH,
-    { code },
-    (parsed) => Boolean(parsed?.access_token),
+  return postBackendJson<BackendTokenPair>(DANCE_CODE_EXCHANGE_PATH, { code }, (parsed) =>
+    Boolean(parsed?.access_token),
   );
 }
 

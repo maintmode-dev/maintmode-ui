@@ -36,10 +36,7 @@ export function AcceptInvitePage({ token, preview }: AcceptInvitePageProps) {
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
         {preview.status === "valid" ? (
-          <ValidInvite
-            token={token}
-            suggestedProvider={asSuggestedProvider(preview.suggested_provider)}
-          />
+          <ValidInvite token={token} suggestedProvider={asSuggestedProvider(preview.suggested_provider)} />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
         )}
@@ -99,8 +96,8 @@ function ValidInvite({
         {label}
       </Button>
       <p className="caption">
-        Accepting an invitation with a provider is temporarily unavailable. Your invitation is still
-        valid — ask whoever invited you how to finish signing up.
+        Accepting an invitation with a provider is temporarily unavailable. Your invitation is still valid —
+        ask whoever invited you how to finish signing up.
       </p>
     </div>
   );

@@ -45,12 +45,7 @@ describe("public pages render without a QueryClientProvider", () => {
     "renders the %s state with no provider in the tree",
     (status) => {
       expect(() =>
-        render(
-          <AcceptInvitePage
-            token={status === "missing" ? undefined : "tok-1"}
-            preview={{ status }}
-          />,
-        ),
+        render(<AcceptInvitePage token={status === "missing" ? undefined : "tok-1"} preview={{ status }} />),
       ).not.toThrow();
 
       // Rendered real content, not an empty tree.
