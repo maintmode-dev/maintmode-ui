@@ -11,7 +11,7 @@ import {
   requestPasswordResetAction,
 } from "@/server/auth/password-reset-actions";
 import { readPasswordResetBinding } from "@/server/auth/otp-nonce-cookie";
-import { signIn } from "@/server/auth/auth-config";
+import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
 import { safeNext } from "@/server/auth/safe-next";
 
 export default async function Page({
@@ -29,15 +29,17 @@ export default async function Page({
   const errorCode = sp.code ?? sp.error;
 
   /**
-   * Start an OAuth sign-in via the NextAuth v5 `signIn` server action. Defined
-   * here (server page) — not inside the browser-owned LoginPage component —
-   * because the auth boundary lives in `src/server/**`. Using `signIn` lets
-   * NextAuth attach the CSRF token itself; a plain HTML form POST to
-   * `/api/auth/signin/<id>` omits it and fails with `MissingCSRF`.
+   * Start a provider sign-in.
+   *
+   * RUK-292: this no longer runs an OAuth flow. The backend owns the dance, so
+   * the action stashes the destination and redirects the browser to the
+   * backend's `/start`; NextAuth is not involved until the receiver redeems the
+   * code it comes back with. `redirectTo` is closed over here, so a client can
+   * never supply a destination of its own.
    */
   async function signInAction(providerId: string) {
     "use server";
-    await signIn(providerId, { redirectTo });
+    await startOAuthDanceAction(providerId, redirectTo);
   }
 
   // Resolved server-side: `/login` sits under `(public)`, which deliberately
