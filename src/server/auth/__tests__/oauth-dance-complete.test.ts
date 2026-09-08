@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const readOAuthNext = vi.fn();
 const clearOAuthNext = vi.fn();
 const signIn = vi.fn();
+const readActiveSession = vi.fn();
 const redirect = vi.fn((url: string) => {
   const error = new Error(`redirect:${url}`) as Error & { digest: string };
   error.digest = `NEXT_REDIRECT;replace;${url};307;`;
@@ -16,6 +17,7 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
   setOAuthNext: vi.fn(),
 }));
 vi.mock("@/server/auth/auth-config", () => ({ signIn: (...args: unknown[]) => signIn(...args) }));
+vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
 
 const { completeOAuthDanceAction } = await import("@/server/auth/oauth-dance-actions");
 
@@ -49,7 +51,30 @@ describe("completeOAuthDanceAction", () => {
     readOAuthNext.mockReset().mockResolvedValue("/");
     clearOAuthNext.mockReset();
     signIn.mockReset();
+    readActiveSession.mockReset().mockResolvedValue(null);
     redirect.mockClear();
+  });
+
+  /**
+   * Session fixation. An attacker who starts a dance on their own account and
+   * gets a signed-in victim to open the receiver with that code — a link is
+   * enough, since our own page submits the form — would otherwise swap the
+   * victim's identity for theirs, and everything the victim writes afterwards
+   * lands in the attacker's account.
+   */
+  it("refuses to redeem into a browser that already holds a session", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    expect(await landsOn(form({ code: "attacker-code" }))).toBe("/");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("still clears the destination cookie when it refuses", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    await landsOn(form({ code: "attacker-code" }));
+
+    expect(clearOAuthNext).toHaveBeenCalledTimes(1);
   });
 
   it.each([

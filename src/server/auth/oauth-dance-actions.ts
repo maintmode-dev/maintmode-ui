@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
 import { signIn } from "@/server/auth/auth-config";
+import { readActiveSession } from "@/server/auth/session-token";
 import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
 import { clearOAuthNext, readOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
@@ -98,6 +99,22 @@ function mapDanceError(code: string): AuthErrorCode {
 export async function completeOAuthDanceAction(formData: FormData): Promise<void> {
   const destination = await readOAuthNext();
   await clearOAuthNext();
+
+  // Refuse to redeem into a browser that already holds a session.
+  //
+  // Without this, an attacker who starts a dance on their own account and gets
+  // a signed-in victim to open the receiver with that code — a link is enough,
+  // since our own page submits the form — silently swaps the victim's identity
+  // for theirs. Everything the victim then writes lands in the attacker's
+  // account. The 60-second TTL and the POST-only redemption narrow the window;
+  // they do not close it.
+  //
+  // Refusing rather than signing out first: a signed-in user reaching the
+  // receiver is either a stale tab or an attack, and neither wants a silent
+  // identity swap. The unspent code simply expires.
+  if (await readActiveSession()) {
+    redirect(destination);
+  }
 
   const providerError = String(formData.get("error") ?? "").trim();
   if (providerError) {
