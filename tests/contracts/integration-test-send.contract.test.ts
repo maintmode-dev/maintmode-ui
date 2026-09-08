@@ -43,7 +43,14 @@ const readActiveSession = vi.fn();
 vi.mock("@/server/auth/session-token", () => ({
   readActiveSession: () => readActiveSession(),
 }));
-vi.mock("@/server/backend/security/csrf", () => ({ isSameOriginRequest: () => true }));
+// Stubbed so the other cases can post without dressing every request in
+// origin headers. One case below deliberately unstubs it — the guard matters
+// more on this route than on most, and a permanently-true stub would let its
+// removal pass unnoticed.
+const isSameOriginRequest = vi.fn((_request: Request) => true);
+vi.mock("@/server/backend/security/csrf", () => ({
+  isSameOriginRequest: (request: Request) => isSameOriginRequest(request),
+}));
 
 const requireAdminSession = vi.fn();
 vi.mock("@/server/auth/require-admin", () => ({
@@ -60,6 +67,7 @@ const { POST } = await import("@/app/api/admin/integrations/[kind]/test/route");
 
 beforeEach(() => {
   vi.clearAllMocks();
+  isSameOriginRequest.mockReturnValue(true);
   requireAdminSession.mockResolvedValue(undefined);
   readActiveSession.mockResolvedValue({ accessToken: "access-1" });
   backendRequest.mockResolvedValue(undefined);
@@ -181,6 +189,19 @@ describe("test-send — guards", () => {
 
     expect(response.status).toBe(wire.validation_bad_recipient.status);
     expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-origin post before doing any work", async () => {
+    // Checked before the session, the body parse and the backend call, because
+    // this handler sends mail: the cheapest rejection has to come first.
+    // Without this case, deleting the guard outright leaves the suite green.
+    isSameOriginRequest.mockReturnValue(false);
+
+    const response = await post(BODY);
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+    expect(requireAdminSession).not.toHaveBeenCalled();
   });
 
   it("requires an admin session", async () => {

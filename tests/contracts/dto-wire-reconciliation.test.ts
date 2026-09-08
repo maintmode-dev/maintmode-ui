@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -197,5 +197,24 @@ describe("fixture capture age (advisory)", () => {
     // The assertion is that the manifest is READABLE and dated — that much is a
     // real precondition. Age itself only warns.
     expect(Object.keys(manifest.endpoints).length).toBeGreaterThan(0);
+  });
+
+  it("has a manifest entry for every committed fixture", () => {
+    // The age check above walks the MANIFEST, so a fixture with no entry is
+    // invisible to it — the file simply never comes up. This walks the other
+    // way. RUK-290 added a hand-captured fixture that reached a green gate with
+    // no entry at all, which is how the gap was found; without this the next one
+    // would land just as quietly.
+    //
+    // The Contract Policy asks a hand-edited fixture to declare itself and say
+    // why. That declaration is worth nothing if forgetting it costs nothing.
+    const manifest = JSON.parse(readFileSync(join(FIXTURE_DIR, "manifest.json"), "utf8"));
+    const declared = new Set(Object.keys(manifest.endpoints as Record<string, unknown>));
+
+    const onDisk = readdirSync(FIXTURE_DIR)
+      .filter((file) => file.endsWith(".json") && file !== "manifest.json")
+      .map((file) => file.replace(/\.json$/, ""));
+
+    expect(onDisk.filter((name) => !declared.has(name))).toEqual([]);
   });
 });
