@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 
@@ -23,19 +23,30 @@ import { Button } from "@/shared/ui/shadcn/button";
  */
 export function OAuthCallbackForm({ label }: { label: string }) {
   const ref = useRef<HTMLButtonElement>(null);
-  const [submitted, setSubmitted] = useState(false);
+  // A ref, not state: the guard exists to stop a SECOND submission, and setting
+  // state inside the effect that submits would schedule a cascading render for
+  // a value the render output does not depend on. `disabled` is set on the DOM
+  // node directly for the same reason — by the time it matters the form is
+  // already navigating away.
+  const submitted = useRef(false);
 
   useEffect(() => {
-    // `requestSubmit`, not `form.submit()`: the latter bypasses React's
-    // submit handling, which is what dispatches the server action.
-    if (!submitted) {
-      setSubmitted(true);
-      ref.current?.form?.requestSubmit();
+    if (submitted.current) {
+      return;
     }
-  }, [submitted]);
+    submitted.current = true;
+    const button = ref.current;
+    if (!button) {
+      return;
+    }
+    button.disabled = true;
+    // `requestSubmit`, not `form.submit()`: the latter bypasses React's submit
+    // handling, which is what dispatches the server action.
+    button.form?.requestSubmit();
+  }, []);
 
   return (
-    <Button ref={ref} type="submit" className="w-full" disabled={submitted}>
+    <Button ref={ref} type="submit" className="w-full">
       {label}
     </Button>
   );
