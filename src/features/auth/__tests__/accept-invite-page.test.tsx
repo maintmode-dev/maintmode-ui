@@ -97,6 +97,11 @@ describe("AcceptInvitePage token states", () => {
     expect(button.hasAttribute("disabled")).toBe(false);
     expect(button.getAttribute("type")).toBe("submit");
     expect(button.closest("form")).toBeTruthy();
+    // Asserted on the ANONYMOUS render, not only on the signed-in one: with the
+    // guard inverted, each render still satisfies one half of the pair — the
+    // form appears for the signed-in visitor and the caption for everyone else.
+    // Only checking that this render has no caption catches the swap.
+    expect(screen.queryByText(/signed in as/i)).toBeNull();
   });
 
   it("no longer says acceptance is unavailable", () => {

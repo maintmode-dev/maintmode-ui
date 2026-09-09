@@ -46,6 +46,27 @@ describe("the invitation page starts the dance with the invitation", () => {
     expect(page).not.toMatch(/readActiveSession\s*\(/);
   });
 
+  /**
+   * The page's SUPPLY of the signed-in state, not the component's use of it.
+   * Replacing this with `undefined` disables the invitation-burn guard at its
+   * source while every component test still passes — the component would simply
+   * never be told anyone is signed in.
+   */
+  it("derives the signed-in identity from the session", () => {
+    expect(page).toMatch(/signedInAs\s*=\s*session\?\.user\?\.email/);
+    expect(page).toMatch(/signedInAs=\{signedInAs\}/);
+  });
+
+  /**
+   * A `<form>` with no `action` renders a button that does nothing — which is
+   * exactly the dead page this change replaced, and the existing component test
+   * (`button.closest("form")`) is satisfied by it. `receiver-form-fields.test.ts`
+   * guards the same property for the sibling page.
+   */
+  it("binds the form to the accept action", () => {
+    expect(component).toContain("action={acceptAction}");
+  });
+
   it("names one provider, in one place", () => {
     // The component must not reintroduce a label that can disagree with the
     // action's provider.
