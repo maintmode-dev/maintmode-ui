@@ -150,9 +150,13 @@ URI.
 shipped default (`/auth/oauth/callback`) already agrees; if you customized it,
 change both.
 
-> **Accepting an invitation through a provider is unavailable in this release.**
-> The backend's accept endpoint needs a provider `id_token`, which the dance does
-> not hand to the frontend. Invitation links stay valid and are not consumed.
+> **Accepting an invitation goes through the dance too.** Opening an invitation
+> link and choosing the provider starts the same dance as an ordinary sign-in,
+> carrying the invitation; the backend applies the invitation's roles and spends
+> the invitation from inside it. So invitation acceptance needs the dance armed
+> exactly as provider sign-in does — see step 1 above. Until then the button
+> leads to the same 404, and the invited person has no other route: unlike
+> `/login`, this page has no password form to fall back to.
 
 ## First login (bootstrap admin)
 

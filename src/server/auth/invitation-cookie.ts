@@ -6,12 +6,17 @@ import { cookies } from "next/headers";
  * Short-lived, httpOnly cookie that carried the raw invitation token across the
  * OAuth round-trip on the public `/accept-invite` flow.
  *
- * NO PRODUCTION CALLER SINCE RUK-292, and parked rather than deleted. Accepting
- * an invitation through a provider needed that provider's `id_token`, which the
- * backend-driven dance never hands the frontend; the flow is disabled until the
- * backend grows an accept path that takes a dance code (SPEC section 3 and 7).
- * The description below is what this module DID, kept because it is what a
- * restored flow would need to do again.
+ * NO PRODUCTION CALLER, and this design is now SUPERSEDED rather than pending.
+ *
+ * RUK-292 removed the last caller. The backend has since grown its own path
+ * (`/login/oauth/{provider}/start?invitation=…`), and it does not work like
+ * this: the raw token goes to the backend as a query parameter and the backend
+ * keeps an opaque single-use handle on its side, so the seven-day credential
+ * never sits in a browser cookie at all. A restored flow would not want what is
+ * described below.
+ *
+ * Kept only because deleting it belongs with `acceptInvitation` — same dead
+ * code, same owner, one pass. The description below is history.
  *
  * Why a cookie: the accept endpoint needs BOTH the invitation token AND a fresh
  * provider `id_token`. The `id_token` only materializes after NextAuth finishes
