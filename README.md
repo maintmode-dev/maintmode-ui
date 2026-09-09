@@ -126,13 +126,15 @@ What that means in the shipped samples, which is not symmetric:
   enough, and the gate rejects an empty `auth_url` or `token_url` even though
   those lines already carry Google's own endpoints. Uncomment the four _key_
   lines: the same block holds prose comments that begin with the word `auth_url`.
-- **`redirect_uri` ships as a placeholder** (`https://<your-domain>/…`) and must
+- **`redirect_uri` ships as a placeholder in the prod sample**
+  (`https://<your-domain>/…`; the local, dev and test samples carry a working
+  `localhost` value) and must
   be the **external** URL, including the gateway's `/auth` prefix. Uncommented
   verbatim it is still a non-empty string, so the gate passes, the routes
   register, and the check below reports success — while every sign-in dies at the
   provider with `redirect_uri_mismatch`, which never reaches our logs.
-- **`app.frontend_url` also ships as a placeholder** (`https://maintmode.example.com`)
-  and is the most dangerous value here. The dance's success redirect — carrying a
+- **`app.frontend_url` is also a prod-sample placeholder**
+  (`https://maintmode.example.com`) and is the most dangerous value here. The dance's success redirect — carrying a
   live one-time code — is built from it. Left at the sample value, every completed
   sign-in hands an auth code to a domain you do not control. The `redirect_uri`
   placeholder fails safely because the provider rejects it; this one does not fail
@@ -156,8 +158,9 @@ It is not a lockout: email + password stays on the login page.
 some of the four but not all leaves the dance unregistered and `/start` still
 answering 404, on an instance that booted cleanly. There is no panic, and there
 is no warning: every shipped `app.config.yaml` sample claims a partial block
-"logs a warning and registers nothing", and **no such warning exists**. The
-`/start` check above is the only signal you get.
+"logs a warning and registers nothing", and **no such warning exists** — that
+sample comment is a known upstream inaccuracy, tracked separately. The `/start`
+check above is the only signal you get.
 
 One genuine boot failure does exist nearby: `client_secret` is a `<secret:…>`
 reference, and the resolver hard-fails on a **missing key**, not on a placeholder
