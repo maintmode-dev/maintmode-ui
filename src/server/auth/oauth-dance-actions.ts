@@ -93,8 +93,9 @@ function redirectToLoginError(code: AuthErrorCode): never {
 /**
  * Maps the backend's redirect error code to one this app already renders.
  *
- * The backend's set is closed and owned by it: `access_denied`, `state_invalid`,
- * `provider_error`, `internal_error`. Three of them collapse onto one message
+ * The backend's set is closed and owned by it: `access_denied`, `email_mismatch`,
+ * `state_invalid`, `provider_error`, `internal_error`. Three of them collapse
+ * onto one message
  * because the user's action is identical in all three — try again — and the
  * detail that distinguishes them lives in the backend's audit trail, where it
  * was put deliberately.
@@ -112,7 +113,18 @@ function redirectToLoginError(code: AuthErrorCode): never {
  * rendering blank.
  */
 function mapDanceError(code: string): AuthErrorCode {
-  return code === "access_denied" ? AUTH_ERROR_CODES.signupDisabled : AUTH_ERROR_CODES.oauthHandoffFailed;
+  if (code === "access_denied") {
+    return AUTH_ERROR_CODES.signupDisabled;
+  }
+  // The invitation path's one recoverable failure: the person signed in with an
+  // account that is not the invited one, and they can fix it themselves by
+  // using the right account. The constant and its copy predate this — they are
+  // what the old accept path used, and the backend added this code at our
+  // request precisely because we still had them.
+  if (code === "email_mismatch") {
+    return AUTH_ERROR_CODES.emailMismatch;
+  }
+  return AUTH_ERROR_CODES.oauthHandoffFailed;
 }
 
 /**

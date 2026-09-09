@@ -77,8 +77,17 @@ describe("completeOAuthDanceAction", () => {
     expect(clearOAuthNext).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * All five backend codes plus an unknown one.
+   *
+   * The three middle codes collapsing onto the generic message is a DECISION,
+   * not an omission — the user's action is the same for all three and the detail
+   * lives in the backend's audit trail. Asserted explicitly so a later reader
+   * cannot mistake the folding for a gap and "fix" it into an oracle.
+   */
   it.each([
     ["access_denied", "/login?code=signup_disabled"],
+    ["email_mismatch", "/login?code=email_mismatch"],
     ["state_invalid", "/login?code=oauth_handoff_failed"],
     ["provider_error", "/login?code=oauth_handoff_failed"],
     ["internal_error", "/login?code=oauth_handoff_failed"],
