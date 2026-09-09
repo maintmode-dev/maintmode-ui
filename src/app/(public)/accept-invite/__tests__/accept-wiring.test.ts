@@ -29,13 +29,19 @@ const component = codeOf("src/features/auth/accept-invite-page.tsx");
 
 describe("the invitation page starts the dance with the invitation", () => {
   it("passes the token from the query, not a literal", () => {
-    expect(page).toMatch(/startOAuthDanceAction\([^)]*sp\.token\s*\)/);
+    expect(page).toMatch(/startOAuthDanceAction\([\s\S]*?sp\.token\s*,?\s*\)/);
   });
 
   it("passes no destination, so an invited person lands on /", () => {
     // The middle argument must be `undefined`: passing a path here would send
     // someone arriving by invitation to a deep link they never asked for.
-    expect(page).toMatch(/startOAuthDanceAction\(\s*"google"\s*,\s*undefined\s*,\s*sp\.token\s*\)/);
+    // `[\s\S]` between arguments, not `\s`: the property is the ARGUMENT LIST,
+    // and a reflow across lines (which Prettier would do if the call grew) must
+    // not read as a security regression. A false failure on an auth guard
+    // teaches the next reader to weaken the guard.
+    expect(page).toMatch(
+      /startOAuthDanceAction\(\s*"google"\s*,[\s\S]*?undefined\s*,[\s\S]*?sp\.token\s*,?\s*\)/,
+    );
   });
 
   it("reads the session with auth(), never the cookie-writing reader", () => {

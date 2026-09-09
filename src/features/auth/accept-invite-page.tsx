@@ -96,7 +96,7 @@ function ValidInvite({
         The action refuses this case too; this is what stops the click.
       */}
       {signedInAs ? (
-        <p className="caption">
+        <p role="status" className="caption">
           You are signed in as {signedInAs}. Sign out first, then open this invitation again.
         </p>
       ) : (
