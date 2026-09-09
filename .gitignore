@@ -36,6 +36,13 @@ SPEC*.md
 
 tasks/
 
+# Agent worktrees: a git worktree an isolated subagent gets under
+# .claude/worktrees is a complete checkout of this repo. Without this every
+# gate that walks the tree reports on a checkout that is not this one, and a
+# teammate could commit one. Currently hidden only by .git/info/exclude, which
+# is per-clone and travels nowhere.
+.claude/worktrees/
+
 # Scratch state and archived specs/plans from the /flow skill. Working
 # artifacts of a single task, not repository content.
 .flow/
