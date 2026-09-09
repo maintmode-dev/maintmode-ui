@@ -36,8 +36,39 @@ import { safeNext } from "@/server/auth/safe-next";
  * providers it has enabled, and the backend checks the segment against its own
  * registry before minting anything, so a second gate here would be a third
  * opinion about the same question.
+ *
+ * `invitation` carries an invitation token into the dance: the backend resolves
+ * it before creating the user, which is the only ordering under which an invited
+ * but uncreated person can be created at all. It is appended ONLY when non-empty,
+ * so the ordinary sign-in URL is unchanged — `?invitation=` with no value is a
+ * different request from no parameter.
  */
-export async function startOAuthDanceAction(providerId: string, next?: string): Promise<void> {
+export async function startOAuthDanceAction(
+  providerId: string,
+  next?: string,
+  invitation?: string,
+): Promise<void> {
+  // Refuse before anything else, and unconditionally — not gated on `invitation`.
+  //
+  // This action is exported, so it is invocable by action id with
+  // attacker-chosen arguments; a check living only in a page's render would be
+  // exactly the "every caller sanitized first" dependency this module rejects
+  // for `next`. Two things are at stake and only this placement covers both: a
+  // signed-in browser completing a dance has its identity swapped, and — because
+  // the backend claims the invitation in phase 2, INSIDE the dance — the
+  // invitation is spent before our receiver ever sees the code.
+  //
+  // `readActiveSession()`, matching `completeOAuthDanceAction` below: a Server
+  // Action may write cookies, so its refresh-and-persist is legitimate here. A
+  // page render may not, which is why the page uses `auth()` instead.
+  //
+  // `/login`'s caller never reaches this in practice — `proxy.ts` bounces a
+  // signed-in user off that path — so this fires for a direct invocation, which
+  // is the case it exists for.
+  if (await readActiveSession()) {
+    redirect("/");
+  }
+
   await setOAuthNext(next ? safeNext(next) : "/");
 
   const { authPublicBaseUrl } = parseMaintmodeAuthConfig(process.env);
@@ -45,7 +76,10 @@ export async function startOAuthDanceAction(providerId: string, next?: string): 
   // `authPublicBaseUrl`, never `authApiBaseUrl`: this is a BROWSER navigation.
   // The API base is server-to-server and resolves to a container name in two of
   // the three shipped deployments, where it would produce a dead button.
-  redirect(`${authPublicBaseUrl}/api/v1/login/oauth/${encodeURIComponent(providerId)}/start`);
+  const base = `${authPublicBaseUrl}/api/v1/login/oauth/${encodeURIComponent(providerId)}/start`;
+  const token = invitation?.trim();
+
+  redirect(token ? `${base}?invitation=${encodeURIComponent(token)}` : base);
 }
 
 /**
