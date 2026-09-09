@@ -15,8 +15,9 @@ import { safeNext } from "@/server/auth/safe-next";
  * only place the destination can live. Without it, a deep link into a protected
  * page would silently land on `/` after sign-in.
  *
- * Modeled on `invitation-cookie.ts`, deliberately: same attributes, same
- * lifetime, same single-use discipline. `sameSite: "lax"` is load-bearing — the
+ * Same attributes and lifetime as the invitation cookie this app used to keep
+ * (removed once the backend took over invitation handling): httpOnly, lax,
+ * secure in production, ten minutes, single-use. `sameSite: "lax"` is load-bearing — the
  * return trip is a top-level GET navigation from another origin, which Lax
  * permits and Strict would drop.
  *
