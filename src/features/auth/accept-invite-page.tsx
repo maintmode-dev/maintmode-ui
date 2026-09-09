@@ -57,20 +57,10 @@ export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: A
   );
 }
 
-/**
- * The server projection types `suggested_provider` as a bare string (it only
- * guarantees the field is a string, never that it is a provider we wire).
- * Narrow it here; anything unrecognized falls through to `undefined`, which
- * `ValidInvite` treats as the Google default.
- */
-
 function ValidInvite({
   acceptAction,
   signedInAs,
-}: {
-  acceptAction: () => Promise<void>;
-  signedInAs?: string;
-}) {
+}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs">) {
   // ONE provider, named in one place.
   //
   // There used to be a label branch on `suggested_provider`, while the action
