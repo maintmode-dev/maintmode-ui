@@ -79,6 +79,15 @@ describe("next.config cache-header rule", () => {
     const keys = rules.flatMap((r) => r.headers.map((h) => h.key));
 
     expect(keys).toContain("Referrer-Policy");
+    // The VALUE, not just the presence. `strict-origin-when-cross-origin` was
+    // here first and does not cover this app: prod serves the frontend and the
+    // auth backend from one origin behind a path prefix, and for a SAME-origin
+    // request that value sends the full URL — query string included. Two routes
+    // carry a credential in their query (`?code=` on the OAuth receiver,
+    // `?token=` on the invitation page), and the root layout preloads a font, so
+    // every asset request would have carried the credential in `Referer`.
+    const referrer = rules.flatMap((r) => r.headers).find((h) => h.key === "Referrer-Policy");
+    expect(referrer?.value).toBe("strict-origin");
     expect(keys).toContain("X-Content-Type-Options");
     expect(keys).toContain("X-Frame-Options");
   });
