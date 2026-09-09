@@ -115,6 +115,15 @@ describe("startOAuthDanceAction", () => {
     const target = await run("google", undefined, "inv-token-1");
 
     expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start?invitation=inv-token-1");
+    // The invited person lands on `/`, NOT back on `/accept-invite`.
+    //
+    // By the time they return the backend has claimed the invitation inside the
+    // dance, so re-resolving the preview would render "already claimed" and
+    // present a successful signup as a terminal failure — and asking for a
+    // fresh invitation could not help, because the account already exists.
+    // This is the only argument path whose stashed destination is otherwise
+    // unasserted.
+    expect(setOAuthNext).toHaveBeenCalledWith("/");
   });
 
   /**

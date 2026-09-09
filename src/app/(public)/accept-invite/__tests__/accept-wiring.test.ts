@@ -58,6 +58,19 @@ describe("the invitation page starts the dance with the invitation", () => {
    * source while every component test still passes — the component would simply
    * never be told anyone is signed in.
    */
+  /**
+   * Source-text, and narrower than the property it defends — worth naming so the
+   * failure is legible.
+   *
+   * What matters behaviourally is that a session carrying
+   * `RefreshAccessTokenError` STILL suppresses the button: the page's predicate
+   * is deliberately broader than the action's, so the page never offers a click
+   * the action would refuse. This project has no harness that renders a server
+   * component, so that decision is guarded by matching the expression rather
+   * than by exercising it. A refactor that keeps the behaviour (extracting a
+   * helper, say) will fail this test — reread the page's comment before
+   * loosening it, because the narrowing it warns against fails the same way.
+   */
   it("derives the signed-in identity from the session", () => {
     expect(page).toMatch(/signedInAs\s*=\s*session\?\.user\?\.email/);
     expect(page).toMatch(/signedInAs=\{signedInAs\}/);

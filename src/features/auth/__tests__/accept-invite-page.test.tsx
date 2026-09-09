@@ -123,5 +123,10 @@ describe("AcceptInvitePage token states", () => {
 
     expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
     expect(screen.getByText(/signed in as admin@corp.test/i)).toBeTruthy();
+    // The instruction, not just the diagnosis. This caption is the ENTIRE
+    // recovery path for someone who would otherwise burn the invitation, so
+    // truncating it to "you are signed in as X" leaves them blocked with
+    // nothing to do — and the name-only assertion above would still pass.
+    expect(screen.getByText(/sign out first/i)).toBeTruthy();
   });
 });
