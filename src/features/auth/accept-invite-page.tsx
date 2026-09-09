@@ -19,6 +19,18 @@ export interface AcceptInvitePageProps {
    * `QueryClientProvider` (see `accept-invite-no-query-provider.test.tsx`).
    */
   preview: InvitationPreviewResult;
+  /**
+   * Server action that starts the backend OAuth dance carrying the invitation.
+   * Bound with the token on the server, mirroring `/login`'s `signInAction`, so
+   * a client can never supply a token of its own.
+   */
+  acceptAction: () => Promise<void>;
+  /**
+   * The signed-in visitor's own email, when there is a session. Not the invited
+   * address — the frozen tone forbids surfacing that, and this is a fact about
+   * whoever is holding the browser.
+   */
+  signedInAs?: string;
 }
 
 export interface InvitationPreviewResult {
@@ -31,12 +43,17 @@ export interface InvitationPreviewResult {
  * only `status` and (when valid) `suggested_provider`; everything else is a
  * single recovery-first explanation.
  */
-export function AcceptInvitePage({ token, preview }: AcceptInvitePageProps) {
+export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: AcceptInvitePageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
         {preview.status === "valid" ? (
-          <ValidInvite token={token} suggestedProvider={asSuggestedProvider(preview.suggested_provider)} />
+          <ValidInvite
+            token={token}
+            suggestedProvider={asSuggestedProvider(preview.suggested_provider)}
+            acceptAction={acceptAction}
+            signedInAs={signedInAs}
+          />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
         )}
@@ -58,9 +75,13 @@ function asSuggestedProvider(value: string | undefined): SuggestedProvider | und
 function ValidInvite({
   token,
   suggestedProvider,
+  acceptAction,
+  signedInAs,
 }: {
   token?: string;
   suggestedProvider?: SuggestedProvider;
+  acceptAction: () => Promise<void>;
+  signedInAs?: string;
 }) {
   // MVP wires Google only; other providers ship later. The backend currently
   // always returns null for suggested_provider, so this defaults to Google.
@@ -81,24 +102,26 @@ function ValidInvite({
       </header>
       <p className="body-sm">Sign in with the email this invitation was sent to.</p>
       {/*
-        RUK-292: the button is inert, and deliberately still shown.
+        Signing in here means BECOMING the invited person, so an existing session
+        has to go first — and the stake is higher than a wrong identity. The
+        backend claims the invitation inside the dance, before this app sees the
+        result, so a signed-in click would spend the invitation and leave the
+        next visitor reading "already claimed". An admin opening the link to
+        check it is the ordinary way that happens.
 
-        Accepting through a provider required that provider's `id_token`, which
-        the backend-driven dance never hands the frontend (SPEC section 3). The
-        previous predicate here was `googleOnly = provider !== "google"` — it
-        disabled the button for everything EXCEPT Google, which is the inverse of
-        what is true now: no provider can complete an accept.
-
-        Rendering it disabled rather than hiding it keeps the page explaining
-        itself. The invitation is not consumed, so the link stays valid.
+        The action refuses this case too; this is what stops the click.
       */}
-      <Button type="button" className="w-full" disabled>
-        {label}
-      </Button>
-      <p className="caption">
-        Accepting an invitation with a provider is temporarily unavailable. Your invitation is still valid —
-        ask whoever invited you how to finish signing up.
-      </p>
+      {signedInAs ? (
+        <p className="caption">
+          You are signed in as {signedInAs}. Sign out first, then open this invitation again.
+        </p>
+      ) : (
+        <form action={acceptAction} className="w-full">
+          <Button type="submit" className="w-full">
+            {label}
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

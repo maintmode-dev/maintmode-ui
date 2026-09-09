@@ -10,8 +10,8 @@ afterEach(() => cleanup());
 
 const noopAccept = vi.fn(async () => {});
 
-function renderPage(preview: InvitationPreviewResult, token?: string) {
-  render(<AcceptInvitePage token={token} preview={preview} />);
+function renderPage(preview: InvitationPreviewResult, token?: string, extra: { signedInAs?: string } = {}) {
+  render(<AcceptInvitePage token={token} preview={preview} acceptAction={noopAccept} {...extra} />);
 }
 
 describe("AcceptInvitePage token states", () => {
@@ -85,28 +85,38 @@ describe("AcceptInvitePage token states", () => {
   });
 
   /**
-   * RUK-292. The accept button is inert for EVERY provider, not just the ones
-   * that were "coming soon": accepting needed the provider's `id_token`, and the
-   * backend-driven dance never gives the frontend one (SPEC section 3).
-   *
-   * Asserted per provider because the predicate this replaced was
-   * `provider !== "google"` — it disabled everything EXCEPT Google. A test that
-   * only checked GitHub would have passed against that inverted predicate.
+   * The button is live again: accepting is now the ordinary dance with the
+   * invitation riding along (the backend resolves it before creating the user).
+   * A real `<form>`, not an `onClick`, so the flow degrades without JavaScript
+   * like every other sign-in path here.
    */
-  it.each([
-    ["google" as const, /Continue with Google/],
-    ["github" as const, /Continue with GitHub/],
-  ])("disables the accept button for %s", (provider, label) => {
-    renderPage({ status: "valid", suggested_provider: provider }, "tok-1");
-
-    expect(screen.getByRole("button", { name: label }).hasAttribute("disabled")).toBe(true);
-  });
-
-  it("says the invitation is still valid rather than that providers are coming", () => {
+  it("submits the accept action through a form", () => {
     renderPage({ status: "valid" }, "tok-1");
 
-    expect(screen.getByText(/temporarily unavailable/)).toBeTruthy();
-    expect(screen.getByText(/still\s+valid/)).toBeTruthy();
+    const button = screen.getByRole("button", { name: /Continue with Google/ });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("type")).toBe("submit");
+    expect(button.closest("form")).toBeTruthy();
+  });
+
+  it("no longer says acceptance is unavailable", () => {
+    renderPage({ status: "valid" }, "tok-1");
+
+    expect(screen.queryByText(/temporarily unavailable/)).toBeNull();
     expect(screen.queryByText(/Other providers are coming soon/)).toBeNull();
+  });
+
+  /**
+   * A signed-in visitor must not be able to click.
+   *
+   * Not cosmetic: the backend claims the invitation in phase 2, inside the
+   * dance, so a click would spend it and the next visitor would read "already
+   * claimed". An admin opening the link to check it is how that happens.
+   */
+  it("offers no accept button to a signed-in visitor", () => {
+    renderPage({ status: "valid" }, "tok-1", { signedInAs: "admin@corp.test" });
+
+    expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
+    expect(screen.getByText(/signed in as admin@corp.test/i)).toBeTruthy();
   });
 });

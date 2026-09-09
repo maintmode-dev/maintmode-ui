@@ -1,4 +1,6 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
+import { auth } from "@/server/auth/auth-config";
+import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
@@ -13,19 +15,38 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const preview = await resolveInvitationPreview(sp.token);
 
   /**
-   * RUK-292: there is no accept action any more.
+   * Accepting an invitation is now the ordinary OAuth dance with the invitation
+   * riding along: the backend resolves it before creating the user and grants
+   * its roles from inside the dance, so there is no accept call to make.
    *
-   * Accepting through a provider needed the provider's `id_token` — the backend's
-   * accept endpoint takes one (`OAuthPayload.IDToken`) — and the backend-driven
-   * dance never hands the frontend an `id_token`, only an opaque one-time code
-   * redeemable for a token pair. Routing accept through the dance does not work
-   * either: the dance signs in with an empty `UserCreationPolicy`, so an invited
-   * user who does not exist yet is refused with `signup_disabled` before the
-   * invitation is ever read.
-   *
-   * The preview still resolves and the invitation is NOT consumed, so the link
-   * stays valid for whenever the backend gains a dance-based accept path.
-   * (SPEC section 3.)
+   * Defined here rather than in the component because the component is
+   * `"use client"` and may not import `src/server/**` — and because closing the
+   * token over the action on the server is what stops a client supplying one of
+   * its own.
    */
-  return <AcceptInvitePage token={sp.token} preview={preview} />;
+  async function acceptAction() {
+    "use server";
+    await startOAuthDanceAction("google", undefined, sp.token);
+  }
+
+  /**
+   * `auth()`, NOT `readActiveSession()`. The latter refreshes and writes the
+   * session cookie when the access token is near expiry, and Next permits a
+   * cookie write only in a Server Action or Route Handler — in a page render it
+   * throws. That failure appears only inside the rotation window: green tests,
+   * intermittent production 500s. `set-password-page.tsx` documents the same
+   * trap. The action does the enforcing and may use the refreshing reader; this
+   * read is only to decide what to render.
+   */
+  const session = await auth();
+  const signedInAs = session?.user?.email ?? undefined;
+
+  return (
+    <AcceptInvitePage
+      token={sp.token}
+      preview={preview}
+      acceptAction={acceptAction}
+      signedInAs={signedInAs}
+    />
+  );
 }
