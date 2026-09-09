@@ -48,12 +48,7 @@ export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: A
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
         {preview.status === "valid" ? (
-          <ValidInvite
-            token={token}
-            suggestedProvider={asSuggestedProvider(preview.suggested_provider)}
-            acceptAction={acceptAction}
-            signedInAs={signedInAs}
-          />
+          <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
         )}
@@ -68,25 +63,24 @@ export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: A
  * Narrow it here; anything unrecognized falls through to `undefined`, which
  * `ValidInvite` treats as the Google default.
  */
-function asSuggestedProvider(value: string | undefined): SuggestedProvider | undefined {
-  return value === "google" || value === "github" ? value : undefined;
-}
 
 function ValidInvite({
-  token,
-  suggestedProvider,
   acceptAction,
   signedInAs,
 }: {
-  token?: string;
-  suggestedProvider?: SuggestedProvider;
   acceptAction: () => Promise<void>;
   signedInAs?: string;
 }) {
-  // MVP wires Google only; other providers ship later. The backend currently
-  // always returns null for suggested_provider, so this defaults to Google.
-  const provider = suggestedProvider ?? "google";
-  const label = provider === "github" ? "Continue with GitHub" : "Continue with Google";
+  // ONE provider, named in one place.
+  //
+  // There used to be a label branch on `suggested_provider`, while the action
+  // that actually starts the dance passed "google" unconditionally — so a
+  // backend that ever returned "github" would have rendered a GitHub button
+  // that started a Google dance. Two opinions about one question, on an auth
+  // path, settled by a field the backend controls. The branch was unreachable
+  // (the backend always returns null today) and is gone rather than kept for a
+  // provider this app cannot start; adding a second provider means changing the
+  // action and the label together, which is the point.
 
   // Centered composition — consistent with the error/terminal states' stack.
   return (
@@ -118,7 +112,7 @@ function ValidInvite({
       ) : (
         <form action={acceptAction} className="w-full">
           <Button type="submit" className="w-full">
-            {label}
+            Continue with Google
           </Button>
         </form>
       )}

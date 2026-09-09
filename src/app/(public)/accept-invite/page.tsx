@@ -37,6 +37,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * intermittent production 500s. `set-password-page.tsx` documents the same
    * trap. The action does the enforcing and may use the refreshing reader; this
    * read is only to decide what to render.
+   *
+   * The two readers are NOT the same predicate, and the difference is
+   * deliberate. `readActiveSession()` returns null for a session whose refresh
+   * token is dead; `auth()` still returns the user and merely annotates
+   * `session.error`. Kept BROADER here on purpose — a `RefreshAccessTokenError`
+   * session still counts as signed in for this page — so the page never renders
+   * a button the action would then refuse. Narrowing it to match the action
+   * would put a live button in front of someone whose click cannot work; a
+   * false "you are signed in" costs one sign-out.
    */
   const session = await auth();
   const signedInAs = session?.user?.email ?? undefined;
