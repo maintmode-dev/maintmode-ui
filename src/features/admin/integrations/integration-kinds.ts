@@ -7,6 +7,7 @@
  */
 
 import type { IntegrationKind } from "@/domain/admin/integration";
+import type { IntegrationBrand } from "@/shared/ui/icons/brand-icons";
 
 /**
  * Sentinel option value for "leave this optional field unset". Radix Select
@@ -60,6 +61,12 @@ export interface SecretMeta {
 export interface IntegrationKindMeta {
   label: string;
   description: string;
+  /**
+   * Which mark `IntegrationBrandIcon` renders. A data field rather than a
+   * second hand-maintained union keyed by kind — the previous shape drifted out
+   * of sync with `IntegrationKind` the moment a kind was added.
+   */
+  brand: IntegrationBrand;
   configFields: ConfigFieldMeta[];
   secrets: SecretMeta[];
 }
@@ -68,6 +75,7 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   slack: {
     label: "Slack",
     description: "Posts maintenance notifications to Slack channels via a bot.",
+    brand: "slack",
     configFields: [
       {
         name: "api_url",
@@ -98,6 +106,7 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   telegram: {
     label: "Telegram",
     description: "Sends maintenance notifications to Telegram chats via a bot.",
+    brand: "telegram",
     configFields: [
       {
         name: "api_url",
@@ -128,6 +137,7 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   email: {
     label: "Email",
     description: "Delivers maintenance notifications over SMTP.",
+    brand: "email",
     configFields: [
       { name: "host", label: "SMTP host", optional: false, placeholder: "smtp.example.com" },
       { name: "port", label: "Port", optional: true, placeholder: "587", numeric: true },
@@ -178,6 +188,88 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
         clearable: true,
         placeholder: "••••••••",
         help: "SMTP password. Clear it to use an unauthenticated relay.",
+      },
+    ],
+  },
+  oidc: {
+    label: "OpenID Connect",
+    description: "Lets people sign in through a corporate identity provider.",
+    brand: "oidc",
+    configFields: [
+      {
+        name: "display_name",
+        label: "Display name",
+        optional: false,
+        placeholder: "Corporate SSO",
+        help: "Shown on the sign-in button.",
+      },
+      {
+        name: "issuer_url",
+        label: "Issuer URL",
+        optional: false,
+        url: true,
+        placeholder: "https://idp.example.com/realms/corp",
+        help: "Discovery base — the provider serves /.well-known/openid-configuration under it.",
+      },
+      { name: "client_id", label: "Client ID", optional: false },
+      {
+        name: "redirect_uri",
+        label: "Redirect URI",
+        optional: true,
+        url: true,
+        placeholder: "https://maintmode.example.com/auth/callback",
+        help: "Leave empty to use this instance's default callback.",
+      },
+      {
+        name: "scopes",
+        label: "Scopes",
+        optional: true,
+        list: true,
+        placeholder: "openid, profile, email",
+        help: "Separate with commas or spaces. Clearing this hands the choice to the server.",
+      },
+    ],
+    secrets: [
+      {
+        key: "client_secret",
+        label: "Client secret",
+        required: true,
+        clearable: false,
+        placeholder: "••••••••",
+        help: "Issued by the provider when you registered this application.",
+      },
+    ],
+  },
+  github_oauth: {
+    label: "GitHub",
+    description: "Sign-in through GitHub. Configurable here, not yet active.",
+    brand: "github",
+    configFields: [
+      {
+        name: "display_name",
+        label: "Display name",
+        optional: true,
+        placeholder: "GitHub",
+        help: "Shown on the sign-in button. Defaults to GitHub.",
+      },
+      { name: "client_id", label: "Client ID", optional: false },
+      {
+        name: "scopes",
+        label: "Scopes",
+        optional: true,
+        list: true,
+        placeholder: "read:user, user:email",
+        help: "Separate with commas or spaces. Clearing this hands the choice to the server.",
+      },
+    ],
+    secrets: [
+      {
+        key: "client_secret",
+        label: "Client secret",
+        required: true,
+        clearable: false,
+        placeholder: "••••••••",
+        help: "Issued by GitHub when you registered the OAuth app.",
       },
     ],
   },

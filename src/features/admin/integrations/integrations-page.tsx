@@ -119,7 +119,7 @@ function IntegrationRow({
           !configured && "opacity-85",
         )}
       >
-        <IntegrationBrandIcon name={kind} size={18} />
+        <IntegrationBrandIcon name={meta.brand} size={18} />
       </span>
 
       <div className="flex-1 min-w-0">

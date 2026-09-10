@@ -22,10 +22,7 @@
 
 export const NOTIFICATION_INTEGRATION_KINDS = ["slack", "telegram", "email"] as const;
 export const AUTH_INTEGRATION_KINDS = ["oidc", "github_oauth"] as const;
-export const INTEGRATION_KINDS = [
-  ...NOTIFICATION_INTEGRATION_KINDS,
-  ...AUTH_INTEGRATION_KINDS,
-] as const;
+export const INTEGRATION_KINDS = [...NOTIFICATION_INTEGRATION_KINDS, ...AUTH_INTEGRATION_KINDS] as const;
 
 export type NotificationIntegrationKind = (typeof NOTIFICATION_INTEGRATION_KINDS)[number];
 export type AuthIntegrationKind = (typeof AUTH_INTEGRATION_KINDS)[number];

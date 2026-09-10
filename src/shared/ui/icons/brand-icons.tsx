@@ -103,11 +103,17 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
 }
 
 /**
- * Notification-transport brand marks for the integrations registry (screen 19).
- * Slack/Telegram keep their vendor colours; email is a neutral mail glyph.
+ * Brand marks for the integrations registry (screen 19). Slack/Telegram keep
+ * their vendor colours; email and OIDC are neutral glyphs, and GitHub reuses
+ * the provider mark above rather than duplicating its path data.
+ *
+ * Callers pass `INTEGRATION_KIND_META[kind].brand`, not the kind itself: this
+ * union used to be a hand-maintained mirror of `IntegrationKind` and silently
+ * fell out of step whenever a kind was added.
+ *
  * Source: the integrations-settings design snapshot.
  */
-export type IntegrationBrand = "slack" | "telegram" | "email";
+export type IntegrationBrand = "slack" | "telegram" | "email" | "github" | "oidc";
 
 export function IntegrationBrandIcon({
   name,
@@ -164,6 +170,44 @@ export function IntegrationBrandIcon({
         >
           <rect width="20" height="16" x="2" y="4" rx="2" />
           <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+        </svg>
+      );
+    case "github":
+      // Reuses the provider mark rather than a second copy of the path data.
+      return <BrandIcon name="github" size={size} className={className} />;
+    case "oidc":
+      // No vendor mark: an OIDC provider is whoever the operator points it at.
+      // A neutral key reads as "identity" without implying a brand.
+      return (
+        <svg
+          {...wrap}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#52525B"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m15.5 7.5 3 3L22 7l-3-3" />
+          <path d="m19 10.5-1.5-1.5" />
+          <path d="M8.5 14.5 15 8" />
+          <circle cx="6" cy="17" r="3.5" />
+        </svg>
+      );
+    default:
+      // Exhaustive fallback: a kind whose mark is not drawn yet degrades to a
+      // neutral plug rather than rendering nothing at all.
+      return (
+        <svg
+          {...wrap}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#52525B"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="12" cy="12" r="9" />
         </svg>
       );
   }
