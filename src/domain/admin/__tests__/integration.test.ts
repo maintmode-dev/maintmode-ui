@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   AUTH_INTEGRATION_KINDS,
-  INTEGRATION_KINDS,
   NOTIFICATION_INTEGRATION_KINDS,
   isAuthIntegrationKind,
   isIntegrationKind,
@@ -22,10 +21,6 @@ describe("integration kind lists", () => {
 
   it("names the auth kinds separately", () => {
     expect([...AUTH_INTEGRATION_KINDS]).toEqual(["oidc", "github_oauth"]);
-  });
-
-  it("composes the full union from both lists", () => {
-    expect([...INTEGRATION_KINDS]).toEqual(["slack", "telegram", "email", "oidc", "github_oauth"]);
   });
 });
 

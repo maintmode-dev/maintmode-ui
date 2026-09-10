@@ -354,6 +354,10 @@ describe("IntegrationDialog — SMTP test config", () => {
   });
 });
 
+// A distinctive value so an assertion can search the whole outgoing payload
+// for it, rather than trusting one rendered attribute.
+const SECRET = "s3cret-from-the-idp-console";
+
 describe("sign-in provider kinds", () => {
   function renderDialog(kind: "oidc" | "github_oauth") {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -385,17 +389,26 @@ describe("sign-in provider kinds", () => {
       target: { value: "https://idp.example.com" },
     });
     fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
-    fireEvent.change(screen.getByLabelText(/Client secret/), {
-      target: { value: "s3cret-from-the-idp-console" },
-    });
+    fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
 
     const save = screen.getByRole("button", { name: /Connect|Save changes/ });
     expect(save.hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(save);
-    await waitFor(() => {
-      expect(bffFetchMock).not.toHaveBeenCalled();
-    });
+    // Let any save path settle before judging. `waitFor` cannot do this job: it
+    // retries until its callback stops throwing, so a negative assertion passes
+    // on the first synchronous attempt — before React has flushed the click —
+    // and can never fail. Draining the microtask and macrotask queues is what
+    // makes the assertion mean anything.
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(bffFetchMock).not.toHaveBeenCalled();
+    // Tied to the secret rather than to the button: a future save path that
+    // bypasses this button (form submit, Enter key, a "Save and test" control)
+    // keeps the disabled attribute intact but would still transmit. This is the
+    // assertion that survives the mechanism changing.
+    expect(JSON.stringify(bffFetchMock.mock.calls)).not.toContain(SECRET);
   });
 
   it("says why saving is unavailable", () => {
