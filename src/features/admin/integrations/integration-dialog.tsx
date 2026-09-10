@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
-import { isAuthIntegrationKind, type Integration, type IntegrationKind } from "@/domain/admin/integration";
+import { isIntegrationKind, type Integration, type IntegrationKind } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -198,13 +198,17 @@ function IntegrationDialogBody({
     [fieldVerdicts],
   );
 
-  // A kind that declares `unavailableNotice` is configurable but not routable:
-  // the BFF whitelist rejects it because the backend has no route for it
-  // (RUK-294). Save must be DISABLED rather than allowed to fail — a save that
-  // fired and 400'd would still put a typed client_secret on the wire, reaching
+  // Derived from the ROUTE WHITELIST, not from copy. A kind the BFF rejects
+  // cannot be saved, so Save must be disabled rather than allowed to fire: a
+  // save that 400'd would still put a typed client_secret on the wire, reaching
   // the Next server process and any request logging there. Blocking the button
   // is what keeps the credential in the browser.
-  const savingUnavailable = meta.unavailableNotice !== undefined;
+  //
+  // Reading this from `unavailableNotice` would tie a security control to a
+  // string — deleting the notice would silently re-enable saving on a
+  // credentials form. `isIntegrationKind` is the same predicate the routes gate
+  // on, so the button and the route can never disagree.
+  const savingUnavailable = !isIntegrationKind(kind);
 
   // A live probe exists for SMTP only; the other kinds have no equivalent.
   const canTest = kind === "email";

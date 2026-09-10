@@ -411,6 +411,34 @@ describe("sign-in provider kinds", () => {
     expect(JSON.stringify(bffFetchMock.mock.calls)).not.toContain(SECRET);
   });
 
+  /**
+   * The control must follow the route whitelist, not the copy. If Save were
+   * derived from `unavailableNotice`, deleting that string would silently
+   * re-enable saving on a credentials form — a copy edit with a security
+   * consequence.
+   */
+  it("keeps Save disabled even with the explanatory notice stripped", async () => {
+    const { AUTH_KIND_META } = await import("../auth-kinds");
+    const original = AUTH_KIND_META.oidc.unavailableNotice;
+    AUTH_KIND_META.oidc.unavailableNotice = undefined;
+    try {
+      renderDialog("oidc");
+      // Fill every required field first: otherwise `missingRequired` disables
+      // Save on its own and the assertion cannot tell the two causes apart.
+      fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
+      fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+        target: { value: "https://idp.example.com" },
+      });
+      fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
+      fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
+
+      const save = screen.getByRole("button", { name: /Connect|Save changes/ });
+      expect(save.hasAttribute("disabled")).toBe(true);
+    } finally {
+      AUTH_KIND_META.oidc.unavailableNotice = original;
+    }
+  });
+
   it("says why saving is unavailable", () => {
     renderDialog("oidc");
     expect(screen.getByText(/backend support/i)).toBeTruthy();
