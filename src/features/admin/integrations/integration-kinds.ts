@@ -34,6 +34,16 @@ export interface ConfigFieldMeta {
   numeric?: boolean;
   /** Renders as a select instead of a free-text input. */
   options?: ConfigFieldOption[];
+  /**
+   * A list of strings (OIDC `scopes`). Edited as one comma-or-space separated
+   * text input — see `parseList`/`buildDrafts` in `dialog-form.ts`.
+   */
+  list?: true;
+  /**
+   * Format-validated as an absolute http(s) URL by `validateUrlFields`. These
+   * become auth-dance parameters, so a malformed one is not cosmetic.
+   */
+  url?: true;
 }
 
 export interface SecretMeta {
