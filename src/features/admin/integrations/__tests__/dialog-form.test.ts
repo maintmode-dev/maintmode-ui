@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { INTEGRATION_KIND_META } from "../integration-kinds";
+import { NOTIFICATION_KIND_META } from "../integration-kinds";
 import { buildConfig, buildDrafts, hasMissingRequired, validateUrlFields } from "../dialog-form";
 import type { SecretFieldState } from "../secret-patch";
 
-const slack = INTEGRATION_KIND_META.slack;
-const email = INTEGRATION_KIND_META.email;
+const slack = NOTIFICATION_KIND_META.slack;
+const email = NOTIFICATION_KIND_META.email;
 
 const secret = (mode: SecretFieldState["mode"], value = ""): SecretFieldState => ({ mode, value });
 
@@ -89,6 +89,7 @@ describe("buildDrafts — hydration", () => {
     label: "OpenID Connect",
     description: "",
     brand: "oidc" as const,
+    statusHint: ["on", "off"] as [string, string],
     configFields: [
       { name: "issuer_url", label: "Issuer URL", optional: false },
       { name: "scopes", label: "Scopes", optional: true, list: true as const },
@@ -131,6 +132,7 @@ describe("buildConfig — list fields", () => {
     label: "OpenID Connect",
     description: "",
     brand: "oidc" as const,
+    statusHint: ["on", "off"] as [string, string],
     configFields: [{ name: "scopes", label: "Scopes", optional: true, list: true as const }],
     secrets: [],
   };
@@ -171,6 +173,7 @@ describe("validateUrlFields", () => {
     label: "OpenID Connect",
     description: "",
     brand: "oidc" as const,
+    statusHint: ["on", "off"] as [string, string],
     configFields: [
       { name: "issuer_url", label: "Issuer URL", optional: false, url: true as const },
       { name: "redirect_uri", label: "Redirect URI", optional: true, url: true as const },

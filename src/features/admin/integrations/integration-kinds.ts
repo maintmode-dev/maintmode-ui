@@ -6,7 +6,7 @@
  * integrations-settings design snapshot.
  */
 
-import type { IntegrationKind } from "@/domain/admin/integration";
+import type { NotificationIntegrationKind } from "@/domain/admin/integration";
 import type { IntegrationBrand } from "@/shared/ui/icons/brand-icons";
 
 /**
@@ -62,6 +62,19 @@ export interface IntegrationKindMeta {
   label: string;
   description: string;
   /**
+   * Status-switch copy for this kind, `[enabled, disabled]`. Data rather than a
+   * branch in the dialog: the dialog is shared with the transports and ships to
+   * every production browser, so a per-category `if` there would carry the
+   * sign-in wording into production chunks (RUK-294's gate is verified by
+   * grepping for exactly that).
+   */
+  statusHint: [enabled: string, disabled: string];
+  /**
+   * Shown above the Status block when this kind cannot be saved yet, and
+   * disables Save. Present only while a kind is configurable but not routable.
+   */
+  unavailableNotice?: string;
+  /**
    * Which mark `IntegrationBrandIcon` renders. A data field rather than a
    * second hand-maintained union keyed by kind — the previous shape drifted out
    * of sync with `IntegrationKind` the moment a kind was added.
@@ -71,9 +84,13 @@ export interface IntegrationKindMeta {
   secrets: SecretMeta[];
 }
 
-export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta> = {
+export const NOTIFICATION_KIND_META: Record<NotificationIntegrationKind, IntegrationKindMeta> = {
   slack: {
     label: "Slack",
+    statusHint: [
+      "Channels using this transport will deliver notifications.",
+      "Delivery through this transport is paused; settings are kept.",
+    ],
     description: "Posts maintenance notifications to Slack channels via a bot.",
     brand: "slack",
     configFields: [
@@ -105,6 +122,10 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   },
   telegram: {
     label: "Telegram",
+    statusHint: [
+      "Channels using this transport will deliver notifications.",
+      "Delivery through this transport is paused; settings are kept.",
+    ],
     description: "Sends maintenance notifications to Telegram chats via a bot.",
     brand: "telegram",
     configFields: [
@@ -136,6 +157,10 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   },
   email: {
     label: "Email",
+    statusHint: [
+      "Channels using this transport will deliver notifications.",
+      "Delivery through this transport is paused; settings are kept.",
+    ],
     description: "Delivers maintenance notifications over SMTP.",
     brand: "email",
     configFields: [
@@ -191,86 +216,24 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
       },
     ],
   },
-  oidc: {
-    label: "OpenID Connect",
-    description: "Lets people sign in through a corporate identity provider.",
-    brand: "oidc",
-    configFields: [
-      {
-        name: "display_name",
-        label: "Display name",
-        optional: false,
-        placeholder: "Corporate SSO",
-        help: "Shown on the sign-in button.",
-      },
-      {
-        name: "issuer_url",
-        label: "Issuer URL",
-        optional: false,
-        url: true,
-        placeholder: "https://idp.example.com/realms/corp",
-        help: "Discovery base — the provider serves /.well-known/openid-configuration under it.",
-      },
-      { name: "client_id", label: "Client ID", optional: false },
-      {
-        name: "redirect_uri",
-        label: "Redirect URI",
-        optional: true,
-        url: true,
-        placeholder: "https://maintmode.example.com/auth/callback",
-        help: "Leave empty to use this instance's default callback.",
-      },
-      {
-        name: "scopes",
-        label: "Scopes",
-        optional: true,
-        list: true,
-        placeholder: "openid, profile, email",
-        help: "Separate with commas or spaces. Clearing this hands the choice to the server.",
-      },
-    ],
-    secrets: [
-      {
-        key: "client_secret",
-        label: "Client secret",
-        required: true,
-        clearable: false,
-        placeholder: "••••••••",
-        help: "Issued by the provider when you registered this application.",
-      },
-    ],
-  },
-  github_oauth: {
-    label: "GitHub",
-    description: "Sign-in through GitHub. Configurable here, not yet active.",
-    brand: "github",
-    configFields: [
-      {
-        name: "display_name",
-        label: "Display name",
-        optional: true,
-        placeholder: "GitHub",
-        help: "Shown on the sign-in button. Defaults to GitHub.",
-      },
-      { name: "client_id", label: "Client ID", optional: false },
-      {
-        name: "scopes",
-        label: "Scopes",
-        optional: true,
-        list: true,
-        placeholder: "read:user, user:email",
-        help: "Separate with commas or spaces. Clearing this hands the choice to the server.",
-      },
-    ],
-    secrets: [
-      {
-        key: "client_secret",
-        label: "Client secret",
-        required: true,
-        clearable: false,
-        placeholder: "••••••••",
-        help: "Issued by GitHub when you registered the OAuth app.",
-      },
-    ],
-  },
 };
+
+/**
+ * Metadata for any kind the UI is currently rendering.
+ *
+ * Deliberately NOT one eager `Record<IntegrationKind, …>`: the row and the
+ * dialog are shared by both sections and ship to every production browser, so a
+ * single record would drag the sign-in provider descriptors into production
+ * chunks along with them (RUK-294's gate is verified by grepping for exactly
+ * that). Auth metadata is registered by the gated section at import time, so it
+ * exists only where that section does.
+ */
+const registered: Partial<Record<string, IntegrationKindMeta>> = {};
+
+export function registerKindMeta(entries: Record<string, IntegrationKindMeta>): void {
+  Object.assign(registered, entries);
+}
+
+export function kindMeta(kind: string): IntegrationKindMeta | null {
+  return (NOTIFICATION_KIND_META as Record<string, IntegrationKindMeta>)[kind] ?? registered[kind] ?? null;
+}

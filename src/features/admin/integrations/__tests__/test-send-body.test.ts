@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildTestSendBody, shouldWarnAboutMissingSecret } from "../test-send-body";
-import { INTEGRATION_KIND_META } from "../integration-kinds";
+import { NOTIFICATION_KIND_META } from "../integration-kinds";
 import type { SecretFieldState } from "../secret-patch";
 
 /**
@@ -14,7 +14,7 @@ import type { SecretFieldState } from "../secret-patch";
  * wrong implementation rather than to describe the happy path.
  */
 
-const meta = INTEGRATION_KIND_META.email;
+const meta = NOTIFICATION_KIND_META.email;
 
 /** The dialog's per-secret state, in whichever mode the case needs. */
 function secretState(mode: SecretFieldState["mode"], value = ""): Record<string, SecretFieldState> {

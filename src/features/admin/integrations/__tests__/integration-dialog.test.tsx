@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Integration } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
+// Registers the sign-in provider metadata, exactly as the gated section does.
+import "../auth-kinds";
 import { IntegrationDialog } from "../integration-dialog";
 
 // The dialog renders through a Radix portal into document.body; this config
@@ -349,5 +351,92 @@ describe("IntegrationDialog — SMTP test config", () => {
 
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
     expect(String(bffFetchMock.mock.calls[0][0])).not.toContain("/test");
+  });
+});
+
+describe("sign-in provider kinds", () => {
+  function renderDialog(kind: "oidc" | "github_oauth") {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind={kind} integration={null} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("renders the OIDC fields", () => {
+    renderDialog("oidc");
+    expect(screen.getByLabelText(/Issuer URL/)).toBeTruthy();
+    expect(screen.getByLabelText(/Client ID/)).toBeTruthy();
+    expect(screen.getByLabelText(/Scopes/)).toBeTruthy();
+  });
+
+  /**
+   * The load-bearing test. A Save that fired and 400'd would still put a typed
+   * client_secret on the wire — it reaches the Next server process, and any
+   * request logging there, before the route's kind check rejects it. The
+   * backend cannot accept these kinds yet, so nothing may be sent at all.
+   */
+  it("disables Save and issues NO request carrying secrets", async () => {
+    renderDialog("oidc");
+
+    fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "https://idp.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
+    fireEvent.change(screen.getByLabelText(/Client secret/), {
+      target: { value: "s3cret-from-the-idp-console" },
+    });
+
+    const save = screen.getByRole("button", { name: /Connect|Save changes/ });
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(save);
+    await waitFor(() => {
+      expect(bffFetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  it("says why saving is unavailable", () => {
+    renderDialog("oidc");
+    expect(screen.getByText(/backend support/i)).toBeTruthy();
+  });
+
+  it("blocks a malformed issuer URL with a message naming the problem", () => {
+    renderDialog("oidc");
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), { target: { value: "not-a-url" } });
+    expect(screen.getByText(/absolute URL/i)).toBeTruthy();
+  });
+
+  it("warns about plain http without blocking", () => {
+    renderDialog("oidc");
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "http://keycloak.local" },
+    });
+    expect(screen.getByText(/Not encrypted/i)).toBeTruthy();
+  });
+
+  it("shows no notification-transport copy", () => {
+    renderDialog("oidc");
+    expect(screen.queryByText(/deliver notifications/i)).toBeNull();
+    expect(screen.queryByText(/through this transport/i)).toBeNull();
+  });
+});
+
+describe("transport status copy is preserved verbatim", () => {
+  function renderSlack() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind="slack" integration={SLACK_CONFIGURED} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+  }
+
+  // Quoted so a reword during the per-category refactor cannot pass as compliance.
+  it("keeps the enabled sentence", () => {
+    renderSlack();
+    expect(screen.getByText("Channels using this transport will deliver notifications.")).toBeTruthy();
   });
 });
