@@ -1,15 +1,47 @@
 /**
- * Domain types for the notification-integrations registry.
+ * Domain types for the integrations registry.
  *
- * The registry is a closed list of three kinds; secrets are write-only — the
- * read view carries `secrets_set` (key → is-configured) and never a value.
+ * Secrets are write-only — the read view carries `secrets_set`
+ * (key → is-configured) and never a value.
+ *
+ * ## Two lists, one union, and a deliberately narrow predicate
+ *
+ * The registry now spans two categories: notification transports (Slack,
+ * Telegram, email) and sign-in providers (OIDC, GitHub OAuth). They render as
+ * separate sections, so each has its own list, and `IntegrationKind` is the
+ * union of both.
+ *
+ * `isIntegrationKind` is NOT that union. It is the whitelist every BFF
+ * integrations route gates on, and it stays narrow on purpose: the backend does
+ * not know the auth kinds yet, so admitting one would let a real `client_secret`
+ * be forwarded to a service with no route for it. Until the backend learns them
+ * (RUK-294 reconciliation), the routes reject auth kinds with the same 400 they
+ * give any unknown kind. `isAuthIntegrationKind` serves the UI, which needs to
+ * name these kinds without making them routable.
  */
 
-export const INTEGRATION_KINDS = ["slack", "telegram", "email"] as const;
+export const NOTIFICATION_INTEGRATION_KINDS = ["slack", "telegram", "email"] as const;
+export const AUTH_INTEGRATION_KINDS = ["oidc", "github_oauth"] as const;
+export const INTEGRATION_KINDS = [
+  ...NOTIFICATION_INTEGRATION_KINDS,
+  ...AUTH_INTEGRATION_KINDS,
+] as const;
+
+export type NotificationIntegrationKind = (typeof NOTIFICATION_INTEGRATION_KINDS)[number];
+export type AuthIntegrationKind = (typeof AUTH_INTEGRATION_KINDS)[number];
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 
-export function isIntegrationKind(value: string): value is IntegrationKind {
-  return (INTEGRATION_KINDS as readonly string[]).includes(value);
+/**
+ * The BFF route whitelist. Narrower than `IntegrationKind` by design — see the
+ * module docblock. Widening this is a backend-gated change, not a cleanup.
+ */
+export function isIntegrationKind(value: string): value is NotificationIntegrationKind {
+  return (NOTIFICATION_INTEGRATION_KINDS as readonly string[]).includes(value);
+}
+
+/** UI-side predicate: names the sign-in providers without making them routable. */
+export function isAuthIntegrationKind(value: string): value is AuthIntegrationKind {
+  return (AUTH_INTEGRATION_KINDS as readonly string[]).includes(value);
 }
 
 /**
