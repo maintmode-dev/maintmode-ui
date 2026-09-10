@@ -56,6 +56,12 @@ declare module "next-auth" {
     email?: string | null;
     otpCode?: string;
     password?: string;
+    /**
+     * RUK-292. The one-time code from the backend's OAuth callback, carried from
+     * `authorize` to the `signIn` callback that redeems it. Same discipline as
+     * the fields above: an input to an exchange, single-use, and never a token.
+     */
+    danceCode?: string;
   }
 }
 

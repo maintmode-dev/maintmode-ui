@@ -22,7 +22,11 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
-    ignores: [".next/**", "node_modules/**", "coverage/**"],
+    // `.claude/worktrees/**` and not `.claude/**`: an isolated subagent's git
+    // worktree is a whole other checkout of this repo and has no business in
+    // this one's lint run, but `.claude/launch.json` IS tracked and does.
+    // Matches `.prettierignore`'s scope for the same path.
+    ignores: [".next/**", "node_modules/**", "coverage/**", ".claude/worktrees/**"],
   },
   {
     files: [

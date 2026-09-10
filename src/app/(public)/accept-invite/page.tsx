@@ -1,6 +1,6 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
-import { signIn } from "@/server/auth/auth-config";
-import { setInvitationToken } from "@/server/auth/invitation-cookie";
+import { auth } from "@/server/auth/auth-config";
+import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
@@ -15,20 +15,47 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const preview = await resolveInvitationPreview(sp.token);
 
   /**
-   * Start the invitation-accept sign-in via the NextAuth v5 `signIn` server
-   * action — the same path `/login` uses, so NextAuth attaches the CSRF token
-   * itself. (A plain form POST / redirect to `/api/auth/signin/<id>` omits CSRF
-   * and fails with `Configuration`.) Before handing off, stash the raw
-   * invitation token in a short-lived httpOnly cookie so the `signIn` callback
-   * can bind this OAuth round-trip to the invite and exchange it via the backend
-   * accept endpoint — the token never appears in a URL and backend tokens never
-   * reach the browser.
+   * Accepting an invitation is now the ordinary OAuth dance with the invitation
+   * riding along: the backend resolves it before creating the user and grants
+   * its roles from inside the dance, so there is no accept call to make.
+   *
+   * Defined here rather than in the component because the component is
+   * `"use client"` and may not import `src/server/**` — and because closing the
+   * token over the action on the server is what stops a client supplying one of
+   * its own.
    */
-  async function acceptInviteAction(token: string) {
+  async function acceptAction() {
     "use server";
-    if (token) await setInvitationToken(token);
-    await signIn("google", { redirectTo: "/" });
+    await startOAuthDanceAction("google", undefined, sp.token);
   }
 
-  return <AcceptInvitePage token={sp.token} preview={preview} acceptAction={acceptInviteAction} />;
+  /**
+   * `auth()`, NOT `readActiveSession()`. The latter refreshes and writes the
+   * session cookie when the access token is near expiry, and Next permits a
+   * cookie write only in a Server Action or Route Handler — in a page render it
+   * throws. That failure appears only inside the rotation window: green tests,
+   * intermittent production 500s. `set-password-page.tsx` documents the same
+   * trap. The action does the enforcing and may use the refreshing reader; this
+   * read is only to decide what to render.
+   *
+   * The two readers are NOT the same predicate, and the difference is
+   * deliberate. `readActiveSession()` returns null for a session whose refresh
+   * token is dead; `auth()` still returns the user and merely annotates
+   * `session.error`. Kept BROADER here on purpose — a `RefreshAccessTokenError`
+   * session still counts as signed in for this page — so the page never renders
+   * a button the action would then refuse. Narrowing it to match the action
+   * would put a live button in front of someone whose click cannot work; a
+   * false "you are signed in" costs one sign-out.
+   */
+  const session = await auth();
+  const signedInAs = session?.user?.email ?? undefined;
+
+  return (
+    <AcceptInvitePage
+      token={sp.token}
+      preview={preview}
+      acceptAction={acceptAction}
+      signedInAs={signedInAs}
+    />
+  );
 }

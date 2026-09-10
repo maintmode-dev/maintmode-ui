@@ -10,8 +10,7 @@ describe("auth-config", () => {
   const validEnv: Record<string, string | undefined> = {
     MAINTMODE_AUTH_SECRET: "a".repeat(32),
     MAINTMODE_APP_BASE_URL: "http://localhost:3000",
-    MAINTMODE_GOOGLE_OAUTH_CLIENT_ID: "client-id",
-    MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: "client-secret",
+    MAINTMODE_AUTH_PUBLIC_BASE_URL: "http://localhost:9000/auth",
   };
 
   it("parses a complete env into a normalized config", () => {
@@ -19,8 +18,7 @@ describe("auth-config", () => {
     expect(config).toEqual({
       authSecret: "a".repeat(32),
       appBaseUrl: "http://localhost:3000",
-      googleClientId: "client-id",
-      googleClientSecret: "client-secret",
+      authPublicBaseUrl: "http://localhost:9000/auth",
       devAuthBypassEnabled: false,
     });
   });
@@ -60,13 +58,49 @@ describe("auth-config", () => {
     );
   });
 
-  it("requires google client id and secret", () => {
+  /**
+   * RUK-292. The dance is a BROWSER navigation to the backend, so the address it
+   * targets must be reachable from the browser — which the neighbouring
+   * `MAINTMODE_AUTH_API_BASE_URL` is not (`http://caddy:3000/auth` in dev). A
+   * missing value has to fail at startup rather than at the first click on the
+   * provider button, which is the only other moment it would ever be noticed.
+   */
+  it("requires the public auth base url", () => {
     expect(() =>
-      parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_GOOGLE_OAUTH_CLIENT_ID: undefined }),
+      parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_AUTH_PUBLIC_BASE_URL: undefined }),
     ).toThrow(AuthConfigValidationError);
+  });
+
+  it("rejects a non-http public auth base url", () => {
     expect(() =>
-      parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: undefined }),
+      parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_AUTH_PUBLIC_BASE_URL: "ftp://auth.test" }),
     ).toThrow(AuthConfigValidationError);
+  });
+
+  it("trims one trailing slash from the public auth base url", () => {
+    const config = parseMaintmodeAuthConfig({
+      ...validEnv,
+      MAINTMODE_AUTH_PUBLIC_BASE_URL: "https://auth.test/auth/",
+    });
+    // The gateway path prefix is part of the value, not something the caller
+    // appends: Caddy serves the backend under `handle_path /auth/*`.
+    expect(config.authPublicBaseUrl).toBe("https://auth.test/auth");
+  });
+
+  /**
+   * The Google pair is no longer read at all (RUK-292 removed the NextAuth
+   * provider). Asserted rather than assumed: leaving the required-ness behind
+   * would keep every deployment setting two variables nothing consumes, and the
+   * next person to delete them would take the app's startup down with them.
+   */
+  it("no longer requires the google client id and secret", () => {
+    expect(() =>
+      parseMaintmodeAuthConfig({
+        ...validEnv,
+        MAINTMODE_GOOGLE_OAUTH_CLIENT_ID: undefined,
+        MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: undefined,
+      }),
+    ).not.toThrow();
   });
 });
 

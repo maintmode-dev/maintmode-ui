@@ -44,6 +44,38 @@ const nextConfig: NextConfig = {
         source: "/((?!_next/static|_next/image|api/|.*\\.[\\w]+$).*)",
         headers: [{ key: "Cache-Control", value: "no-store, must-revalidate" }],
       },
+      {
+        /**
+         * Baseline security headers on every response.
+         *
+         * `Referrer-Policy: strict-origin`, not `strict-origin-when-cross-origin`.
+         *
+         * Two routes carry a credential in their URL: the OAuth receiver
+         * (`/auth/oauth/callback?code=…`, a 60-second one-time code) and the
+         * invitation page (`/accept-invite?token=…`, a SEVEN-DAY bearer token).
+         * Any subresource those documents load sends the page URL in `Referer`.
+         *
+         * The weaker value does not cover them, and the reason is the shipped
+         * topology rather than anything subtle: prod puts the app and the auth
+         * backend on ONE origin behind a path prefix
+         * (`https://…` and `https://…/auth`, see deployment/prod/app.env.example).
+         * `strict-origin-when-cross-origin` trims to the origin only when the
+         * origin differs — for a SAME-origin request it sends the full URL,
+         * query included. The root layout already preloads a font, so this is
+         * not hypothetical: every asset request would put the raw token in the
+         * gateway's access log, where it outlives nothing and the token stays
+         * valid for a week.
+         *
+         * `strict-origin` sends only the origin either way. Nothing in this app
+         * reads `Referer`, so the stricter value costs nothing.
+         */
+        source: "/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "strict-origin" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "DENY" },
+        ],
+      },
     ];
   },
 };

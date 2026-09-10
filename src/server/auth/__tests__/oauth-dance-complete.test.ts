@@ -1,0 +1,223 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const readOAuthNext = vi.fn();
+const clearOAuthNext = vi.fn();
+const signIn = vi.fn();
+const readActiveSession = vi.fn();
+const redirect = vi.fn((url: string) => {
+  const error = new Error(`redirect:${url}`) as Error & { digest: string };
+  error.digest = `NEXT_REDIRECT;replace;${url};307;`;
+  throw error;
+});
+
+vi.mock("next/navigation", () => ({ redirect: (url: string) => redirect(url) }));
+vi.mock("@/server/auth/oauth-next-cookie", () => ({
+  readOAuthNext: () => readOAuthNext(),
+  clearOAuthNext: () => clearOAuthNext(),
+  setOAuthNext: vi.fn(),
+}));
+vi.mock("@/server/auth/auth-config", () => ({ signIn: (...args: unknown[]) => signIn(...args) }));
+vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+
+const { completeOAuthDanceAction } = await import("@/server/auth/oauth-dance-actions");
+
+function form(fields: Record<string, string>): FormData {
+  const data = new FormData();
+  for (const [k, v] of Object.entries(fields)) data.set(k, v);
+  return data;
+}
+
+/** Captures where the action sent the browser, or "" if it did not redirect. */
+async function landsOn(data: FormData): Promise<string> {
+  try {
+    await completeOAuthDanceAction(data);
+  } catch (error) {
+    const message = String((error as Error).message);
+    return message.startsWith("redirect:") ? message.slice("redirect:".length) : `THROWN:${message}`;
+  }
+  return "";
+}
+
+/**
+ * RUK-292 — the receiver action.
+ *
+ * The cases here are the ones where a wrong answer is invisible: a code that is
+ * spent before it is used, a destination that survives into somebody else's
+ * sign-in, and the success path, which arrives as a thrown redirect and must not
+ * be mistaken for a failure.
+ */
+describe("completeOAuthDanceAction", () => {
+  beforeEach(() => {
+    readOAuthNext.mockReset().mockResolvedValue("/");
+    clearOAuthNext.mockReset();
+    signIn.mockReset();
+    readActiveSession.mockReset().mockResolvedValue(null);
+    redirect.mockClear();
+  });
+
+  /**
+   * Session fixation. An attacker who starts a dance on their own account and
+   * gets a signed-in victim to open the receiver with that code — a link is
+   * enough, since our own page submits the form — would otherwise swap the
+   * victim's identity for theirs, and everything the victim writes afterwards
+   * lands in the attacker's account.
+   */
+  it("refuses to redeem into a browser that already holds a session", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    expect(await landsOn(form({ code: "attacker-code" }))).toBe("/");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("still clears the destination cookie when it refuses", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    await landsOn(form({ code: "attacker-code" }));
+
+    expect(clearOAuthNext).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * All five backend codes plus an unknown one.
+   *
+   * The three middle codes collapsing onto the generic message is a DECISION,
+   * not an omission — the user's action is the same for all three and the detail
+   * lives in the backend's audit trail. Asserted explicitly so a later reader
+   * cannot mistake the folding for a gap and "fix" it into an oracle.
+   */
+  it.each([
+    ["access_denied", "/login?code=signup_disabled"],
+    ["email_mismatch", "/login?code=email_mismatch"],
+    ["state_invalid", "/login?code=oauth_handoff_failed"],
+    ["provider_error", "/login?code=oauth_handoff_failed"],
+    ["internal_error", "/login?code=oauth_handoff_failed"],
+    ["something_new_from_a_later_backend", "/login?code=oauth_handoff_failed"],
+  ])("maps the backend error %s", async (error, expected) => {
+    expect(await landsOn(form({ error }))).toBe(expected);
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("does not attempt a redemption when the backend reported an error", async () => {
+    await landsOn(form({ error: "access_denied", code: "still-here" }));
+
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("fails cleanly when the receiver is opened with neither parameter", async () => {
+    expect(await landsOn(form({}))).toBe("/login?code=oauth_handoff_failed");
+  });
+
+  it("redeems the code with the stored destination", async () => {
+    readOAuthNext.mockResolvedValue("/calendar?view=week");
+    signIn.mockImplementation(() => {
+      const error = new Error("ok") as Error & { digest: string };
+      error.digest = "NEXT_REDIRECT;replace;/calendar?view=week;307;";
+      throw error;
+    });
+
+    const outcome = await landsOn(form({ code: "one-time" }));
+
+    expect(signIn).toHaveBeenCalledWith("oauth-dance", {
+      code: "one-time",
+      redirectTo: "/calendar?view=week",
+    });
+    // The success path is a THROWN redirect that must pass through untouched;
+    // swallowing it would turn a completed sign-in into an error page.
+    expect(outcome).toBe("THROWN:ok");
+  });
+
+  it("falls back to / when no destination was stored", async () => {
+    readOAuthNext.mockResolvedValue("/");
+    signIn.mockResolvedValue(undefined);
+
+    await landsOn(form({ code: "one-time" }));
+
+    expect(signIn).toHaveBeenCalledWith("oauth-dance", { code: "one-time", redirectTo: "/" });
+  });
+
+  /**
+   * `signIn` usually leaves by throwing, but it has a path that returns: NextAuth
+   * builds its redirect from a `Location` header its own source calls
+   * possibly-unset. Falling off the end there strands the browser on the receiver
+   * forever — "Signing you in…" under a disabled button — with the code already
+   * spent, so a reload cannot recover.
+   *
+   * Asserted as a landing, not as a call: the two tests above mock this exact
+   * shape and check only what `signIn` was called with, which is what let the
+   * dead end hide.
+   */
+  it("still leaves the receiver when signIn returns instead of redirecting", async () => {
+    readOAuthNext.mockResolvedValue("/calendar");
+    signIn.mockResolvedValue(undefined);
+
+    expect(await landsOn(form({ code: "one-time" }))).toBe("/calendar");
+  });
+
+  /**
+   * Cleared before any branch can return, so no exit path can leave it behind to
+   * steer an unrelated later sign-in.
+   */
+  it.each([
+    ["an error redirect", { error: "state_invalid" }],
+    ["a missing code", {}],
+    ["a redemption", { code: "one-time" }],
+  ])("clears the destination cookie on %s", async (_case, fields) => {
+    signIn.mockResolvedValue(undefined);
+
+    await landsOn(form(fields));
+
+    expect(clearOAuthNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears the cookie before redeeming, not after", async () => {
+    signIn.mockResolvedValue(undefined);
+
+    await landsOn(form({ code: "one-time" }));
+
+    expect(clearOAuthNext.mock.invocationCallOrder[0]).toBeLessThan(signIn.mock.invocationCallOrder[0]);
+  });
+
+  /**
+   * A spent code — the ordinary browser reload of the receiver URL, which
+   * resends `?code=`. It runs through the error branch rather than short-
+   * circuiting, and the user keeps the session they already have.
+   */
+  it("surfaces a rejected redemption as a handoff failure", async () => {
+    const failure = new Error("nope") as Error & { code: string };
+    failure.code = "oauth_handoff_failed";
+    signIn.mockRejectedValue(failure);
+
+    expect(await landsOn(form({ code: "spent" }))).toBe("/login?code=oauth_handoff_failed");
+  });
+
+  it("passes through a distinct failure code from the callback", async () => {
+    const failure = new Error("nope") as Error & { code: string };
+    failure.code = "identity_lookup_failed";
+    signIn.mockRejectedValue(failure);
+
+    expect(await landsOn(form({ code: "c" }))).toBe("/login?code=identity_lookup_failed");
+  });
+
+  it("falls back to the generic code when the failure carries none", async () => {
+    signIn.mockRejectedValue(new Error("network down"));
+
+    expect(await landsOn(form({ code: "c" }))).toBe("/login?code=oauth_handoff_failed");
+  });
+
+  /**
+   * A `.code` this app did not define is not ours to forward. A dead backend
+   * throws `ECONNREFUSED`; putting that in the address bar tells the user
+   * nothing, renders the same generic message either way, and leaks a fact about
+   * our infrastructure into their bug report and the access log.
+   */
+  it.each(["ECONNREFUSED", "ABORT_ERR", "javascript:alert(1)"])(
+    "does not forward the foreign error code %s",
+    async (code) => {
+      const failure = new Error("boom") as Error & { code: string };
+      failure.code = code;
+      signIn.mockRejectedValue(failure);
+
+      expect(await landsOn(form({ code: "c" }))).toBe("/login?code=oauth_handoff_failed");
+    },
+  );
+});

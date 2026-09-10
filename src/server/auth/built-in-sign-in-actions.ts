@@ -4,6 +4,7 @@ import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
 import { clearOtpBinding, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
+import { isNextRedirect } from "@/server/auth/next-redirect";
 import { safeNext } from "@/server/auth/safe-next";
 
 /**
@@ -15,16 +16,6 @@ import { safeNext } from "@/server/auth/safe-next";
  * be called from the server so it attaches the CSRF token itself; a bare POST
  * to the callback endpoint fails with `MissingCSRF`.
  */
-
-/** A `redirect()` in flight, which Next signals by throwing. */
-function isNextRedirect(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    typeof (error as { digest?: unknown }).digest === "string" &&
-    (error as { digest: string }).digest.startsWith("NEXT_REDIRECT")
-  );
-}
 
 export interface SignInActionResult {
   /** An `AUTH_ERROR_CODES` value the client renders in place, or undefined on success. */
@@ -95,9 +86,7 @@ export async function credentialsSignInAction(
     return {};
   } catch (error) {
     // A successful sign-in redirects by THROWING (NEXT_REDIRECT), so the happy
-    // path arrives in this catch too and must be rethrown. Detected by digest
-    // rather than by importing `next/dist/**`: that internal path is unstable
-    // across Next releases and nothing else in this repo depends on it.
+    // path arrives in this catch too and must be rethrown.
     if (isNextRedirect(error)) {
       throw error;
     }

@@ -34,7 +34,18 @@ function matches(source: string, pathname: string): boolean {
 describe("next.config cache-header rule", () => {
   it("forces no-store on page document routes", async () => {
     const source = await noStoreSource();
-    for (const path of ["/", "/admin/audit-log", "/maintenance/abc-123/audit", "/login", "/resources"]) {
+    // `/auth/oauth/callback` (RUK-292) renders a page holding a live one-time
+    // code. It needs `no-store` more than any other route here, and it gets it
+    // from this rule rather than from a header of its own — pinned so a future
+    // narrowing of the pattern cannot quietly exclude it.
+    for (const path of [
+      "/",
+      "/admin/audit-log",
+      "/maintenance/abc-123/audit",
+      "/login",
+      "/resources",
+      "/auth/oauth/callback",
+    ]) {
       expect(matches(source, path), `${path} should be no-store`).toBe(true);
     }
   });
@@ -52,5 +63,32 @@ describe("next.config cache-header rule", () => {
     ]) {
       expect(matches(source, path), `${path} should be excluded from no-store`).toBe(false);
     }
+  });
+  /**
+   * RUK-292. `Referrer-Policy` matters most for `/auth/oauth/callback`, whose
+   * URL carries a live one-time code: any same-origin subresource that page
+   * loads would otherwise send the whole URL in `Referer`. It is declared here,
+   * for every route, rather than on that one page — the guarantee should not
+   * depend on nobody adding a font or a beacon to the root layout later.
+   */
+  it("sets baseline security headers on every route", async () => {
+    const { default: config } = (await import("../../../../next.config")) as {
+      default: { headers: () => Promise<{ source: string; headers: { key: string; value: string }[] }[]> };
+    };
+    const rules = await config.headers();
+    const keys = rules.flatMap((r) => r.headers.map((h) => h.key));
+
+    expect(keys).toContain("Referrer-Policy");
+    // The VALUE, not just the presence. `strict-origin-when-cross-origin` was
+    // here first and does not cover this app: prod serves the frontend and the
+    // auth backend from one origin behind a path prefix, and for a SAME-origin
+    // request that value sends the full URL — query string included. Two routes
+    // carry a credential in their query (`?code=` on the OAuth receiver,
+    // `?token=` on the invitation page), and the root layout preloads a font, so
+    // every asset request would have carried the credential in `Referer`.
+    const referrer = rules.flatMap((r) => r.headers).find((h) => h.key === "Referrer-Policy");
+    expect(referrer?.value).toBe("strict-origin");
+    expect(keys).toContain("X-Content-Type-Options");
+    expect(keys).toContain("X-Frame-Options");
   });
 });

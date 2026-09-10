@@ -26,7 +26,9 @@ export const config = {
  *   (`{ code: "AUTH_REQUIRED" }`) — the browser fetcher redirects.
  * - `/login`, `/accept-invite`, `/dev/*`: public.
  * - Everything else: requires a session. Unauthenticated users are
- *   bounced to `/login?next=<original path>`.
+ *   bounced to `/login?next=<original path>`. Public prefixes live in
+ *   `PUBLIC_PREFIXES` — `/login`, `/accept-invite`, `/auth/oauth` (the dance
+ *   receiver, RUK-292) and `/dev`.
  * - `/approvals`: also requires an approve-capable role (reviewer/admin);
  *   others are silently redirected to `/`.
  * - `/admin/*`: also requires `roles.includes("admin")`; non-admins

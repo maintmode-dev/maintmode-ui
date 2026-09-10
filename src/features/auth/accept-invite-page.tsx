@@ -20,11 +20,17 @@ export interface AcceptInvitePageProps {
    */
   preview: InvitationPreviewResult;
   /**
-   * Server action that stashes the invitation token and starts the OAuth
-   * sign-in via NextAuth `signIn` (so CSRF is attached). Bound with the token
-   * at the call site, mirroring the `/login` `signInAction` pattern.
+   * Server action that starts the backend OAuth dance carrying the invitation.
+   * Bound with the token on the server, mirroring `/login`'s `signInAction`, so
+   * a client can never supply a token of its own.
    */
-  acceptAction: (token: string) => Promise<void>;
+  acceptAction: () => Promise<void>;
+  /**
+   * The signed-in visitor's own email, when there is a session. Not the invited
+   * address — the frozen tone forbids surfacing that, and this is a fact about
+   * whoever is holding the browser.
+   */
+  signedInAs?: string;
 }
 
 export interface InvitationPreviewResult {
@@ -37,16 +43,12 @@ export interface InvitationPreviewResult {
  * only `status` and (when valid) `suggested_provider`; everything else is a
  * single recovery-first explanation.
  */
-export function AcceptInvitePage({ token, preview, acceptAction }: AcceptInvitePageProps) {
+export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: AcceptInvitePageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
         {preview.status === "valid" ? (
-          <ValidInvite
-            token={token}
-            suggestedProvider={asSuggestedProvider(preview.suggested_provider)}
-            acceptAction={acceptAction}
-          />
+          <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
         )}
@@ -55,30 +57,20 @@ export function AcceptInvitePage({ token, preview, acceptAction }: AcceptInviteP
   );
 }
 
-/**
- * The server projection types `suggested_provider` as a bare string (it only
- * guarantees the field is a string, never that it is a provider we wire).
- * Narrow it here; anything unrecognized falls through to `undefined`, which
- * `ValidInvite` treats as the Google default.
- */
-function asSuggestedProvider(value: string | undefined): SuggestedProvider | undefined {
-  return value === "google" || value === "github" ? value : undefined;
-}
-
 function ValidInvite({
-  token,
-  suggestedProvider,
   acceptAction,
-}: {
-  token?: string;
-  suggestedProvider?: SuggestedProvider;
-  acceptAction: (token: string) => Promise<void>;
-}) {
-  // MVP wires Google only; other providers ship later. The backend currently
-  // always returns null for suggested_provider, so this defaults to Google.
-  const provider = suggestedProvider ?? "google";
-  const label = provider === "github" ? "Continue with GitHub" : "Continue with Google";
-  const googleOnly = provider !== "google";
+  signedInAs,
+}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs">) {
+  // ONE provider, named in one place.
+  //
+  // There used to be a label branch on `suggested_provider`, while the action
+  // that actually starts the dance passed "google" unconditionally — so a
+  // backend that ever returned "github" would have rendered a GitHub button
+  // that started a Google dance. Two opinions about one question, on an auth
+  // path, settled by a field the backend controls. The branch was unreachable
+  // (the backend always returns null today) and is gone rather than kept for a
+  // provider this app cannot start; adding a second provider means changing the
+  // action and the label together, which is the point.
 
   // Centered composition — consistent with the error/terminal states' stack.
   return (
@@ -94,19 +86,26 @@ function ValidInvite({
       </header>
       <p className="body-sm">Sign in with the email this invitation was sent to.</p>
       {/*
-        Submit to the `acceptAction` server action (not a plain POST to NextAuth):
-        it stashes the invitation token in an httpOnly cookie, then starts the
-        OAuth round-trip via NextAuth `signIn` so the CSRF token is attached.
-        The `signIn` callback consumes the cookie and exchanges via the backend
-        accept endpoint — the token never appears in a URL and backend tokens
-        never reach the browser.
+        Signing in here means BECOMING the invited person, so an existing session
+        has to go first — and the stake is higher than a wrong identity. The
+        backend claims the invitation inside the dance, before this app sees the
+        result, so a signed-in click would spend the invitation and leave the
+        next visitor reading "already claimed". An admin opening the link to
+        check it is the ordinary way that happens.
+
+        The action refuses this case too; this is what stops the click.
       */}
-      <form action={acceptAction.bind(null, token ?? "")} className="w-full">
-        <Button type="submit" className="w-full" disabled={googleOnly}>
-          {label}
-        </Button>
-      </form>
-      {googleOnly ? <p className="caption">Other providers are coming soon. Use Google for now.</p> : null}
+      {signedInAs ? (
+        <p role="status" className="caption">
+          You are signed in as {signedInAs}. Sign out first, then open this invitation again.
+        </p>
+      ) : (
+        <form action={acceptAction} className="w-full">
+          <Button type="submit" className="w-full">
+            Continue with Google
+          </Button>
+        </form>
+      )}
     </div>
   );
 }

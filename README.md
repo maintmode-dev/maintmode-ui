@@ -62,20 +62,27 @@ is the selfhost compose stack.
 
 ### Required environment
 
-Four variables are **mandatory**. `src/shared/config/auth-config.ts` validates
+Three variables are **mandatory**. `src/shared/config/auth-config.ts` validates
 them **at module load**, and throws when any is missing or malformed:
 
-| Variable                               | Notes                                                        |
-| -------------------------------------- | ------------------------------------------------------------ |
-| `MAINTMODE_AUTH_SECRET`                | at least 32 characters — `openssl rand -hex 32`              |
-| `MAINTMODE_APP_BASE_URL`               | e.g. `http://localhost:3000`; must be a valid http/https URL |
-| `MAINTMODE_GOOGLE_OAUTH_CLIENT_ID`     | see below                                                    |
-| `MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET` | see below                                                    |
+| Variable                         | Notes                                                                 |
+| -------------------------------- | --------------------------------------------------------------------- |
+| `MAINTMODE_AUTH_SECRET`          | at least 32 characters — `openssl rand -hex 32`                       |
+| `MAINTMODE_APP_BASE_URL`         | e.g. `http://localhost:3000`; must be a valid http/https URL          |
+| `MAINTMODE_AUTH_PUBLIC_BASE_URL` | the auth backend as the **browser** reaches it; see the warning below |
 
-> **Without the two Google values, nothing starts at all — including
-> `/login`.** The validation runs when the config module is imported, not when
-> someone tries to sign in, so the failure is a startup crash rather than a
-> broken login button. If the app dies immediately on boot, check these first.
+> **Without these, nothing starts at all — including `/login`.** The validation
+> runs when the config module is imported, not when someone tries to sign in, so
+> the failure is a startup crash rather than a broken login button. If the app
+> dies immediately on boot, check these first.
+
+> **`MAINTMODE_AUTH_PUBLIC_BASE_URL` is not `MAINTMODE_AUTH_API_BASE_URL`.** The
+> first is followed by the user's browser; the second is used server-to-server
+> and is a container name in the dev and local deployments
+> (`http://caddy:3000/auth`). Setting the internal value here passes validation
+> and then fails at the first click on a provider button, with nothing in this
+> app's logs — the request never reaches it. Include any gateway path prefix:
+> `http://localhost:9000/auth`, not `http://localhost:9000`.
 
 Backend wiring (see `.env.example` for the full annotated list):
 
@@ -95,35 +102,105 @@ Two local-only flags, both ignored when `NODE_ENV=production`:
 Neither can be turned on in a production build; that is deliberate. See
 [SECURITY.md](SECURITY.md).
 
-### Setting up a Google OAuth client
+### Provider sign-in is configured on the backend
 
-1. In the [Google Cloud Console](https://console.cloud.google.com/), pick or
-   create a project, then go to **APIs & Services → Credentials**.
-2. Configure the OAuth consent screen if you have not already.
-3. **Create credentials → OAuth client ID**, application type **Web
-   application**.
-4. Under **Authorized redirect URIs**, add:
+This app is no longer an OAuth client. The dance runs on the backend, which
+holds the client secret; the button on `/login` redirects the browser to the
+backend and `/auth/oauth/callback` receives the result. There is nothing to
+configure here beyond `MAINTMODE_AUTH_PUBLIC_BASE_URL` above — the provider
+client, its secret and its redirect URI are all backend configuration.
 
-   ```
-   <MAINTMODE_APP_BASE_URL>/api/auth/callback/google
-   ```
+### Upgrading to the backend OAuth dance
 
-   For local development that is
-   `http://localhost:3000/api/auth/callback/google`. The URI must match your
-   `MAINTMODE_APP_BASE_URL` exactly, including scheme, host, and port.
+If you are upgrading an existing installation, four things need doing, and the
+order matters.
 
-5. Copy the client ID and client secret into `MAINTMODE_GOOGLE_OAUTH_CLIENT_ID`
-   and `MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET`.
+**1. Arm the backend first, and check it.** The dance routes register only when
+**seven** values are set: four under `oauth_providers.google` — `client_secret`,
+`redirect_uri`, `auth_url`, `token_url` — plus `app.frontend_url`,
+`app.oauth_callback_path` and `app.oauth_cookie_path`.
 
-The same client ID must also be configured on the backend, which verifies the
-Google ID token's `aud` during exchange. The **client secret lives only here** —
-this app is the OAuth client, and the backend deliberately holds no copy.
+What that means in the shipped samples, which is not symmetric:
+
+- **All four provider keys ship commented out. Uncomment all four** — two are not
+  enough, and the gate rejects an empty `auth_url` or `token_url` even though
+  those lines already carry Google's own endpoints. Uncomment the four _key_
+  lines: the same block holds prose comments that begin with the word `auth_url`.
+- **`redirect_uri` ships as a placeholder in the prod sample**
+  (`https://<your-domain>/…`; the local, dev and test samples carry a working
+  `localhost` value) and must
+  be the **external** URL, including the gateway's `/auth` prefix. Uncommented
+  verbatim it is still a non-empty string, so the gate passes, the routes
+  register, and the check below reports success — while every sign-in dies at the
+  provider with `redirect_uri_mismatch`, which never reaches our logs.
+- **`app.frontend_url` is also a prod-sample placeholder**
+  (`https://maintmode.example.com`) and is the most dangerous value here. The dance's success redirect — carrying a
+  live one-time code — is built from it. Left at the sample value, every completed
+  sign-in hands an auth code to a domain you do not control. The `redirect_uri`
+  placeholder fails safely because the provider rejects it; this one does not fail
+  at all, it just goes somewhere else.
+- **`app.oauth_callback_path` and `app.oauth_cookie_path` ship correct.** Leave
+  them unless you have a reason.
+
+Then verify by hand, because the frontend cannot: the call is a browser
+navigation, not a request this app makes. The backend is up, **and**
+`GET <MAINTMODE_AUTH_PUBLIC_BASE_URL>/api/v1/login/oauth/google/start` answers a
+redirect rather than 404.
+
+That check proves the routes are **registered**, not that they are **correct** —
+a placeholder passes it. It can also answer 429: that rate-limit bucket is shared
+with password sign-in, so a burst there makes this report a false negative.
+
+Deploying this frontend first breaks provider sign-in until the backend is armed.
+It is not a lockout: email + password stays on the login page.
+
+**2. A half-filled block fails silently — do not wait for an error.** Setting
+some of the four but not all leaves the dance unregistered and `/start` still
+answering 404, on an instance that booted cleanly. There is no panic, and there
+is no warning: every shipped `app.config.yaml` sample claims a partial block
+"logs a warning and registers nothing", and **no such warning exists** — that
+sample comment is a known upstream inaccuracy, tracked separately. The `/start`
+check above is the only signal you get.
+
+One genuine boot failure does exist nearby: `client_secret` is a `<secret:…>`
+reference, and the resolver hard-fails on a **missing key**, not on a placeholder
+value. Every sample secrets file already ships that key, so this bites only a
+secrets file that predates the dance, or a store built from an older key set —
+there, add the key by hand first. Note the sampled values are themselves
+placeholders: they boot fine and then fail every token exchange.
+
+**3. Re-register the redirect URI** in the provider's console, from
+`<MAINTMODE_APP_BASE_URL>/api/auth/callback/google` to the backend's external
+callback. This is manual and outside both repositories. A mismatch is rejected by
+the provider on its own side and **never appears in any of our logs**.
+
+Because of this, rolling back is three steps, not two: revert the frontend,
+restore `MAINTMODE_GOOGLE_OAUTH_CLIENT_ID` and `MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET`
+(without them the older build will not boot), and re-register the old redirect
+URI.
+
+**4. Keep the callback paths in agreement.** The backend's
+`app.oauth_callback_path` and this app's receiver route are one shared value. The
+shipped default (`/auth/oauth/callback`) already agrees; if you customized it,
+change both.
+
+> **Accepting an invitation goes through the dance too.** Opening an invitation
+> link and choosing the provider starts the same dance as an ordinary sign-in,
+> carrying the invitation; the backend applies the invitation's roles and spends
+> the invitation from inside it. So invitation acceptance needs the dance armed
+> exactly as provider sign-in does — see step 1 above. Until then the button
+> leads to the same 404, and the invited person has no other route: unlike
+> `/login`, this page has no password form to fall back to.
 
 ## First login (bootstrap admin)
 
-On a fresh installation the **first person who signs in through Google becomes
-the administrator**. This is first-login-wins: there is no invite, no claim
-code, and no lock on the window.
+On a fresh installation the **first person to sign in becomes the
+administrator**. This is first-login-wins: there is no invite, no claim code, and
+no lock on the window.
+
+Note for a fresh install: provider sign-in requires the backend dance to be
+armed (see above). Until it is, use email + password, which is always available
+on the login page.
 
 **Sign in yourself before the instance is reachable from anywhere else.** If a
 stranger reaches your `/login` first, they get the admin account. Bring the app

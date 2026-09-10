@@ -95,8 +95,8 @@ jobs:
         env:
           MAINTMODE_AUTH_SECRET: build-time-placeholder-secret-32chars-min
           MAINTMODE_APP_BASE_URL: http://localhost:3000
-          MAINTMODE_GOOGLE_OAUTH_CLIENT_ID: build-time-placeholder
-          MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: build-time-placeholder
+          # A URL, not an opaque placeholder: config validation parses it.
+          MAINTMODE_AUTH_PUBLIC_BASE_URL: http://localhost:9000/auth
       # Stays in this job rather than one of its own: it reads the RSC manifests
       # out of `.next/`, so it needs the build that just ran. Fails when a heavy
       # dependency (FullCalendar, luxon, cmdk, react-day-picker) becomes

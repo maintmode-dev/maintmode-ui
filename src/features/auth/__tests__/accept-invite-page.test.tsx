@@ -10,8 +10,8 @@ afterEach(() => cleanup());
 
 const noopAccept = vi.fn(async () => {});
 
-function renderPage(preview: InvitationPreviewResult, token?: string) {
-  render(<AcceptInvitePage token={token} preview={preview} acceptAction={noopAccept} />);
+function renderPage(preview: InvitationPreviewResult, token?: string, extra: { signedInAs?: string } = {}) {
+  render(<AcceptInvitePage token={token} preview={preview} acceptAction={noopAccept} {...extra} />);
 }
 
 describe("AcceptInvitePage token states", () => {
@@ -81,15 +81,52 @@ describe("AcceptInvitePage token states", () => {
   it("treats an unrecognized suggested_provider as the Google default", () => {
     renderPage({ status: "valid", suggested_provider: "saml-corp" }, "tok-1");
 
-    const button = screen.getByRole("button", { name: /Continue with Google/ });
-    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
   });
 
-  it("disables the button and explains when the backend suggests GitHub", () => {
-    renderPage({ status: "valid", suggested_provider: "github" }, "tok-1");
+  /**
+   * The button is live again: accepting is now the ordinary dance with the
+   * invitation riding along (the backend resolves it before creating the user).
+   * A real `<form>`, not an `onClick`, so the flow degrades without JavaScript
+   * like every other sign-in path here.
+   */
+  it("submits the accept action through a form", () => {
+    renderPage({ status: "valid" }, "tok-1");
 
-    const button = screen.getByRole("button", { name: /Continue with GitHub/ });
-    expect(button.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText(/Other providers are coming soon/)).toBeTruthy();
+    const button = screen.getByRole("button", { name: /Continue with Google/ });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("type")).toBe("submit");
+    expect(button.closest("form")).toBeTruthy();
+    // Asserted on the ANONYMOUS render, not only on the signed-in one: with the
+    // guard inverted, each render still satisfies one half of the pair — the
+    // form appears for the signed-in visitor and the caption for everyone else.
+    // Only checking that this render has no caption catches the swap.
+    expect(screen.queryByText(/signed in as/i)).toBeNull();
+  });
+
+  it("no longer says acceptance is unavailable", () => {
+    renderPage({ status: "valid" }, "tok-1");
+
+    expect(screen.queryByText(/temporarily unavailable/)).toBeNull();
+    expect(screen.queryByText(/Other providers are coming soon/)).toBeNull();
+  });
+
+  /**
+   * A signed-in visitor must not be able to click.
+   *
+   * Not cosmetic: the backend claims the invitation in phase 2, inside the
+   * dance, so a click would spend it and the next visitor would read "already
+   * claimed". An admin opening the link to check it is how that happens.
+   */
+  it("offers no accept button to a signed-in visitor", () => {
+    renderPage({ status: "valid" }, "tok-1", { signedInAs: "admin@corp.test" });
+
+    expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
+    expect(screen.getByText(/signed in as admin@corp.test/i)).toBeTruthy();
+    // The instruction, not just the diagnosis. This caption is the ENTIRE
+    // recovery path for someone who would otherwise burn the invitation, so
+    // truncating it to "you are signed in as X" leaves them blocked with
+    // nothing to do — and the name-only assertion above would still pass.
+    expect(screen.getByText(/sign out first/i)).toBeTruthy();
   });
 });
