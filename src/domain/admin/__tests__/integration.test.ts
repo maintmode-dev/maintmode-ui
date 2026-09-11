@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AUTH_INTEGRATION_KINDS,
-  NOTIFICATION_INTEGRATION_KINDS,
-  isAuthIntegrationKind,
-  isIntegrationKind,
-} from "../integration";
+import { AUTH_INTEGRATION_KINDS, NOTIFICATION_INTEGRATION_KINDS, isIntegrationKind } from "../integration";
 
 /**
  * The two predicates are deliberately asymmetric, and that asymmetry is the
@@ -40,17 +35,5 @@ describe("isIntegrationKind — the BFF route whitelist", () => {
 
   it("rejects an unknown kind", () => {
     expect(isIntegrationKind("carrier_pigeon")).toBe(false);
-  });
-});
-
-describe("isAuthIntegrationKind — the UI-side predicate", () => {
-  it("accepts the auth kinds", () => {
-    expect(isAuthIntegrationKind("oidc")).toBe(true);
-    expect(isAuthIntegrationKind("github_oauth")).toBe(true);
-  });
-
-  it("rejects the notification kinds", () => {
-    expect(isAuthIntegrationKind("slack")).toBe(false);
-    expect(isAuthIntegrationKind("email")).toBe(false);
   });
 });

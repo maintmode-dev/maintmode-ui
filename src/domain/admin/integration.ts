@@ -16,8 +16,9 @@
  * not know the auth kinds yet, so admitting one would let a real `client_secret`
  * be forwarded to a service with no route for it. Until the backend learns them
  * (RUK-294 reconciliation), the routes reject auth kinds with the same 400 they
- * give any unknown kind. `isAuthIntegrationKind` serves the UI, which needs to
- * name these kinds without making them routable.
+ * give any unknown kind. The UI names the auth kinds through
+ * `AUTH_INTEGRATION_KINDS` instead, which lists them without making them
+ * routable.
  */
 
 export const NOTIFICATION_INTEGRATION_KINDS = ["slack", "telegram", "email"] as const;
@@ -34,11 +35,6 @@ export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
  */
 export function isIntegrationKind(value: string): value is NotificationIntegrationKind {
   return (NOTIFICATION_INTEGRATION_KINDS as readonly string[]).includes(value);
-}
-
-/** UI-side predicate: names the sign-in providers without making them routable. */
-export function isAuthIntegrationKind(value: string): value is AuthIntegrationKind {
-  return (AUTH_INTEGRATION_KINDS as readonly string[]).includes(value);
 }
 
 /**
