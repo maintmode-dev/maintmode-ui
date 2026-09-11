@@ -246,6 +246,11 @@ function IntegrationDialogBody({
   };
 
   const save = async () => {
+    // Guard the function, not just the button. The disabled Save is what an
+    // operator meets, but any other caller — a form submit, an Enter handler, a
+    // future "Save and test" control — would otherwise put the typed
+    // client_secret on the wire. The defence belongs where the request is made.
+    if (savingUnavailable) return;
     setError(null);
     try {
       if (isEdit) {

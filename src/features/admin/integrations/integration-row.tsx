@@ -13,8 +13,11 @@ import { kindMeta } from "./integration-kinds";
 
 /**
  * One registry row, shared by both sections (transports and sign-in providers).
- * Everything category-specific comes from `INTEGRATION_KIND_META` — the label,
- * the description and the brand mark — so the row itself stays category-blind.
+ * Everything category-specific comes from `kindMeta(kind)` — the label, the
+ * description and the brand mark — so the row itself stays category-blind. A
+ * kind whose metadata is not registered renders nothing rather than throwing;
+ * that is the production state for the auth kinds, whose metadata ships only
+ * with the dev-only section.
  */
 export function IntegrationRow({
   kind,

@@ -475,9 +475,17 @@ describe("transport status copy is preserved verbatim", () => {
     );
   }
 
-  // Quoted so a reword during the per-category refactor cannot pass as compliance.
+  // Both literals are quoted so a reword during the per-category refactor cannot
+  // pass as compliance. SPEC §7.9 requires both; only the enabled one was pinned
+  // until the ship review caught that rewording the other left every test green.
   it("keeps the enabled sentence", () => {
     renderSlack();
     expect(screen.getByText("Channels using this transport will deliver notifications.")).toBeTruthy();
+  });
+
+  it("keeps the disabled sentence", () => {
+    renderSlack();
+    fireEvent.click(screen.getByLabelText("Integration enabled"));
+    expect(screen.getByText("Delivery through this transport is paused; settings are kept.")).toBeTruthy();
   });
 });

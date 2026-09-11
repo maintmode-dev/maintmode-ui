@@ -107,9 +107,9 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
  * their vendor colours; email and OIDC are neutral glyphs, and GitHub reuses
  * the provider mark above rather than duplicating its path data.
  *
- * Callers pass `INTEGRATION_KIND_META[kind].brand`, not the kind itself: this
- * union used to be a hand-maintained mirror of `IntegrationKind` and silently
- * fell out of step whenever a kind was added.
+ * Callers pass `kindMeta(kind).brand`, not the kind itself: this union used to
+ * be a hand-maintained mirror of `IntegrationKind` and silently fell out of
+ * step whenever a kind was added.
  *
  * Source: the integrations-settings design snapshot.
  */
