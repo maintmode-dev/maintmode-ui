@@ -29,6 +29,13 @@ const actions = {
 const PASSWORD: SignInMethod = { id: "email_password", type: "password", display_name: "Password" };
 const OTP: SignInMethod = { id: "email_otp", type: "code", display_name: "Email code" };
 
+/**
+ * A live Google provider as the backend now advertises it. Every login row is
+ * stamped `type: "redirect"` (`providers_list.go`), so `id` is the only thing
+ * that distinguishes a configured provider from an unknown method type.
+ */
+const GOOGLE: SignInMethod = { id: "google", type: "redirect", display_name: "Google" };
+
 describe("AC-1 — the method list comes from the backend, not from a literal", () => {
   it("renders every method the backend advertises", () => {
     render(<LoginPage methods={[PASSWORD, OTP]} {...actions} />);
@@ -56,8 +63,63 @@ describe("AC-1 — the method list comes from the backend, not from a literal", 
 
     expect(screen.queryByText("Password")).toBeNull();
     expect(screen.queryByText("Email code")).toBeNull();
-    // Google still stands: it is not part of the backend list at all.
+  });
+});
+
+/**
+ * RUK-304. `b74a4536` moved sign-in providers into the integration registry,
+ * so Google IS in the backend's list now — and after the migration that
+ * deleted the old rows, a fresh deployment has no such row at all.
+ *
+ * Rendering the button unconditionally therefore sends the user to
+ * `startOAuthDanceAction`, which `redirect()`s; the backend answers an unknown
+ * provider with a JSON error rather than a redirect, deliberately, since it has
+ * no trusted frontend address at that point. The result is raw JSON on another
+ * origin with only the back button to escape.
+ */
+describe("RUK-304 — a provider button only for a provider that exists", () => {
+  it("renders Google when the backend advertises it", () => {
+    render(<LoginPage methods={[PASSWORD, GOOGLE]} {...actions} />);
+
     expect(screen.getByText("Continue with Google")).toBeDefined();
+  });
+
+  it("does NOT render Google when the backend does not advertise it", () => {
+    render(<LoginPage methods={[PASSWORD]} {...actions} />);
+
+    // A button that navigates to raw backend JSON is worse than no button.
+    expect(screen.queryByText("Continue with Google")).toBeNull();
+  });
+
+  it("renders no provider button at all for an empty list", () => {
+    render(<LoginPage methods={[]} {...actions} />);
+
+    expect(screen.queryByText("Continue with Google")).toBeNull();
+  });
+
+  /**
+   * `OAUTH_IDS` subtracts the branded ids from the generic list. Without that,
+   * an advertised Google appears twice — once branded, once as a disabled
+   * `redirect` placeholder.
+   */
+  it("renders an advertised Google exactly once", () => {
+    render(<LoginPage methods={[GOOGLE]} {...actions} />);
+
+    expect(screen.queryAllByText("Continue with Google")).toHaveLength(1);
+    expect(screen.queryByText("Google")).toBeNull();
+  });
+
+  /**
+   * GitHub sign-in is not wired up on this frontend, so an advertised row must
+   * not become a live button. Enabling it is RUK-302's work; until then the
+   * placeholder is the honest answer.
+   */
+  it("keeps GitHub a disabled placeholder even if the backend advertises it", () => {
+    const github: SignInMethod = { id: "github", type: "redirect", display_name: "GitHub" };
+    render(<LoginPage methods={[github]} {...actions} />);
+
+    const button = screen.getByText("Continue with GitHub").closest("button");
+    expect(button?.hasAttribute("disabled")).toBe(true);
   });
 });
 
@@ -84,9 +146,14 @@ describe("AC-2 — rendering dispatches on `type`, never on `id`", () => {
 });
 
 describe("AC-11 — a broken auth service must not lock everyone out", () => {
+  /**
+   * The distinction that survives RUK-304: an EMPTY list is an answer (nothing
+   * is configured), a FAILED fetch is not an answer at all. Suppressing the
+   * button on a transport failure would remove a working method because the
+   * list could not be read — so the unconditional render is kept for exactly
+   * this case, and only this case.
+   */
   it("keeps Google when the providers fetch failed", () => {
-    // Google is not in the backend list, so deriving the buttons purely from
-    // `methods` would delete the one method that still works.
     render(<LoginPage methods={undefined} {...actions} />);
 
     expect(screen.getByText("Continue with Google")).toBeDefined();
