@@ -39,7 +39,9 @@ import { describe, expect, it } from "vitest";
  */
 
 const FIXTURE_DIR = join(process.cwd(), "tests/fixtures/wire");
-const DTO_FILE = join(process.cwd(), "src/server/backend/contracts/maintmode-dto.ts");
+const CONTRACTS_DIR = join(process.cwd(), "src/server/backend/contracts");
+/** Where a DTO lives unless its entry says otherwise. */
+const DEFAULT_DTO_FILE = "maintmode-dto.ts";
 
 /**
  * Which DTO describes which recorded payload, and where inside it to look.
@@ -48,8 +50,15 @@ const DTO_FILE = join(process.cwd(), "src/server/backend/contracts/maintmode-dto
  * DTO describes the envelope itself.
  */
 type Reconciliation = {
-  /** Interface name in `maintmode-dto.ts`. */
+  /** Interface name, in `source` (default `maintmode-dto.ts`). */
   dto: string;
+  /**
+   * The DTO's own module under `src/server/backend/contracts/`, when it is not
+   * the shared one. Present because contracts are grouped by endpoint family,
+   * and moving one into `maintmode-dto.ts` to satisfy this check would relocate
+   * a contract to suit a test helper.
+   */
+  source?: string;
   /** Fixture file under `tests/fixtures/wire/`. */
   fixture: string;
   /** Property holding the object the DTO describes, when it is nested. */
@@ -64,6 +73,22 @@ const RECONCILIATIONS: Reconciliation[] = [
   { dto: "CalendarViewMetaDto", fixture: "calendar.json", at: "meta" },
   { dto: "MaintenanceViewResponseDto", fixture: "maintenance-detail.json" },
   { dto: "MaintenanceViewDto", fixture: "maintenance-detail.json", at: "maintenance" },
+  /**
+   * RUK-304. `name` and `health` arrived on the wire undeclared, and nothing
+   * said so — the class of drift this check exists to catch, on the endpoint
+   * that proved it can reach a screen.
+   */
+  {
+    dto: "IntegrationDto",
+    source: "integrations-dto.ts",
+    fixture: "integrations.json",
+    rowsAt: "integrations",
+  },
+  {
+    dto: "ListIntegrationsResponseDto",
+    source: "integrations-dto.ts",
+    fixture: "integrations.json",
+  },
 ];
 
 /**
@@ -73,9 +98,13 @@ const RECONCILIATIONS: Reconciliation[] = [
  * DTO literally declares. Resolving inheritance or generics would start
  * INFERRING, and an inference is another belief — the thing under test here.
  */
-function declaredFields(source: string, interfaceName: string): { name: string; optional: boolean }[] {
+function declaredFields(
+  source: string,
+  interfaceName: string,
+  sourceName: string,
+): { name: string; optional: boolean }[] {
   const match = source.match(new RegExp(`export interface ${interfaceName} \\{([\\s\\S]*?)\\n\\}`));
-  if (!match) throw new Error(`interface ${interfaceName} not found in maintmode-dto.ts`);
+  if (!match) throw new Error(`interface ${interfaceName} not found in ${sourceName}`);
   const fields = [...match[1].matchAll(/^\s{2}(\w+)(\??):/gm)].map((m) => ({
     name: m[1],
     optional: m[2] === "?",
@@ -111,13 +140,12 @@ function wireFields(
   return target ? Object.keys(target) : [];
 }
 
-const dtoSource = readFileSync(DTO_FILE, "utf8");
-
 describe("DTO ↔ wire reconciliation", () => {
   for (const spec of RECONCILIATIONS) {
     describe(spec.dto, () => {
       const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, spec.fixture), "utf8"));
-      const declared = declaredFields(dtoSource, spec.dto);
+      const source = readFileSync(join(CONTRACTS_DIR, spec.source ?? DEFAULT_DTO_FILE), "utf8");
+      const declared = declaredFields(source, spec.dto, spec.source ?? DEFAULT_DTO_FILE);
       const onWire = wireFields(fixture, spec);
 
       it("declares no REQUIRED field the recorded response omits", () => {

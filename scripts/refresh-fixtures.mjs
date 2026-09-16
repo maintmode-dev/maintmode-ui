@@ -119,6 +119,12 @@ const ENDPOINTS = [
     why: "RUK-171: `details` is a flat string, `actor` an email — FE renders degraded.",
   },
   {
+    name: "integrations",
+    base: API_BASE,
+    path: "/api/v1/integrations",
+    why: "RUK-304: `b74a4536` turned `kind` into a category and moved the system to `name`, so the mapper's kind whitelist matched nothing and dropped every row — on a 200, with no error, while the screen rendered its static list and reported nothing configured. This fixture is what makes the next move of this shape fail in CI instead of on an administrator's screen. It must keep carrying BOTH halves of the pair and a login row's `health`.",
+  },
+  {
     name: "auth-providers",
     base: AUTH_BASE,
     path: "/api/v1/auth/providers",
