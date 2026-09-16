@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
-import type { Integration, IntegrationKind } from "@/domain/admin/integration";
+import { isIntegrationKind, type Integration, type IntegrationKind } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -16,12 +16,19 @@ import { formatUtc } from "@/shared/ui/lib/format";
 
 import {
   CONFIG_FIELD_UNSET,
-  INTEGRATION_KIND_META,
+  kindMeta,
   type ConfigFieldMeta,
+  type IntegrationKindMeta,
   type SecretMeta,
 } from "./integration-kinds";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
-import { buildConfig, hasMissingRequired } from "./dialog-form";
+import {
+  buildConfig,
+  buildDrafts,
+  hasMissingRequired,
+  validateUrlFields,
+  type FieldVerdict,
+} from "./dialog-form";
 import { buildTestSendBody, shouldWarnAboutMissingSecret } from "./test-send-body";
 import {
   useCreateIntegration,
@@ -49,7 +56,7 @@ export function IntegrationDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const meta = kind ? INTEGRATION_KIND_META[kind] : null;
+  const meta = kind ? kindMeta(kind) : null;
   const isEdit = integration !== null;
 
   return (
@@ -70,10 +77,11 @@ export function IntegrationDialog({
       {/* The body unmounts the moment the dialog closes (before the exit
           animation finishes) — deliberate: typed secret drafts must be
           destroyed on close, and that outweighs the brief empty flash. */}
-      {kind ? (
+      {kind && meta ? (
         <IntegrationDialogBody
           key={`${kind}-${integration?.updated_at ?? "create"}`}
           kind={kind}
+          meta={meta}
           integration={integration}
           onClose={() => onOpenChange(false)}
         />
@@ -94,14 +102,16 @@ const TEST_PLATE = {
 
 function IntegrationDialogBody({
   kind,
+  meta,
   integration,
   onClose,
 }: {
   kind: IntegrationKind;
+  /** Resolved by the parent — a kind whose metadata is absent renders nothing. */
+  meta: IntegrationKindMeta;
   integration: Integration | null;
   onClose: () => void;
 }) {
-  const meta = INTEGRATION_KIND_META[kind];
   const isEdit = integration !== null;
 
   const createMutation = useCreateIntegration();
@@ -109,15 +119,9 @@ function IntegrationDialogBody({
   const submitting = createMutation.isPending || updateMutation.isPending;
 
   const [enabled, setEnabled] = useState(isEdit ? integration.enabled : true);
-  const [config, setConfig] = useState<Record<string, string>>(() => {
-    const src = integration?.config ?? {};
-    const out: Record<string, string> = {};
-    for (const f of meta.configFields) {
-      const v = src[f.name];
-      out[f.name] = v == null ? "" : String(v);
-    }
-    return out;
-  });
+  const [config, setConfig] = useState<Record<string, string>>(() =>
+    buildDrafts(meta, integration?.config ?? {}),
+  );
   const [secrets, setSecrets] = useState<Record<string, SecretFieldState>>(() => {
     const out: Record<string, SecretFieldState> = {};
     for (const s of meta.secrets) {
@@ -188,6 +192,23 @@ function IntegrationDialogBody({
   };
 
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
+  const fieldVerdicts = useMemo(() => validateUrlFields(meta, config), [meta, config]);
+  const hasBlockingField = useMemo(
+    () => Object.values(fieldVerdicts).some((v) => v.block !== undefined),
+    [fieldVerdicts],
+  );
+
+  // Derived from the ROUTE WHITELIST, not from copy. A kind the BFF rejects
+  // cannot be saved, so Save must be disabled rather than allowed to fire: a
+  // save that 400'd would still put a typed client_secret on the wire, reaching
+  // the Next server process and any request logging there. Blocking the button
+  // is what keeps the credential in the browser.
+  //
+  // Reading this from `unavailableNotice` would tie a security control to a
+  // string — deleting the notice would silently re-enable saving on a
+  // credentials form. `isIntegrationKind` is the same predicate the routes gate
+  // on, so the button and the route can never disagree.
+  const savingUnavailable = !isIntegrationKind(kind);
 
   // A live probe exists for SMTP only; the other kinds have no equivalent.
   const canTest = kind === "email";
@@ -225,6 +246,11 @@ function IntegrationDialogBody({
   };
 
   const save = async () => {
+    // Guard the function, not just the button. The disabled Save is what an
+    // operator meets, but any other caller — a form submit, an Enter handler, a
+    // future "Save and test" control — would otherwise put the typed
+    // client_secret on the wire. The defence belongs where the request is made.
+    if (savingUnavailable) return;
     setError(null);
     try {
       if (isEdit) {
@@ -265,6 +291,12 @@ function IntegrationDialogBody({
           </div>
         ) : null}
 
+        {meta.unavailableNotice ? (
+          <p className="rounded-md border border-border-subtle bg-bg-elev-2 px-3 py-2.5 text-xs text-fg-muted">
+            {meta.unavailableNotice}
+          </p>
+        ) : null}
+
         {/* Enabled is part of the form: the backend rejects a create without
             an explicit flag, so the choice must be visible, not implied. */}
         <div className="space-y-1.5">
@@ -278,11 +310,7 @@ function IntegrationDialogBody({
             />
             <div className="min-w-0">
               <div className="text-sm font-medium text-fg">{enabled ? "Enabled" : "Disabled"}</div>
-              <div className="text-xs text-fg-muted">
-                {enabled
-                  ? "Channels using this transport will deliver notifications."
-                  : "Delivery through this transport is paused; settings are kept."}
-              </div>
+              <div className="text-xs text-fg-muted">{meta.statusHint[enabled ? 0 : 1]}</div>
             </div>
           </div>
         </div>
@@ -306,6 +334,7 @@ function IntegrationDialogBody({
           <ConfigField
             key={field.name}
             field={field}
+            verdict={fieldVerdicts[field.name]}
             value={config[field.name]}
             disabled={submitting}
             onChange={(value) => {
@@ -388,7 +417,10 @@ function IntegrationDialogBody({
             {testMutation.isPending ? "Sending…" : "Test config"}
           </Button>
         ) : null}
-        <Button disabled={submitting || missingRequired} onClick={save}>
+        <Button
+          disabled={submitting || missingRequired || hasBlockingField || savingUnavailable}
+          onClick={save}
+        >
           {submitting ? "Saving…" : isEdit ? "Save changes" : "Connect"}
         </Button>
       </CreateDialogFooter>
@@ -431,11 +463,14 @@ function ConfigField({
   field,
   value,
   disabled,
+  verdict,
   onChange,
 }: {
   field: ConfigFieldMeta;
   value: string;
   disabled: boolean;
+  /** Format verdict for a `url` field — blocks submit, or warns and lets it through. */
+  verdict?: FieldVerdict;
   onChange: (value: string) => void;
 }) {
   const inputId = `integration-config-${field.name}`;
@@ -483,6 +518,8 @@ function ConfigField({
         />
       )}
       {activeDanger ? <p className="text-xs text-destructive">{activeDanger}</p> : null}
+      {verdict?.block ? <p className="text-xs text-destructive">{verdict.block}</p> : null}
+      {verdict?.warn ? <p className="text-xs text-[var(--status-in_progress-fg)]">{verdict.warn}</p> : null}
       {field.help ? <p className="text-xs text-fg-dim">{field.help}</p> : null}
     </div>
   );

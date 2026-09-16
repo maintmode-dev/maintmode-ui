@@ -6,7 +6,8 @@
  * integrations-settings design snapshot.
  */
 
-import type { IntegrationKind } from "@/domain/admin/integration";
+import type { NotificationIntegrationKind } from "@/domain/admin/integration";
+import type { IntegrationBrand } from "@/shared/ui/icons/brand-icons";
 
 /**
  * Sentinel option value for "leave this optional field unset". Radix Select
@@ -34,6 +35,16 @@ export interface ConfigFieldMeta {
   numeric?: boolean;
   /** Renders as a select instead of a free-text input. */
   options?: ConfigFieldOption[];
+  /**
+   * A list of strings (OIDC `scopes`). Edited as one comma-or-space separated
+   * text input — see `parseList`/`buildDrafts` in `dialog-form.ts`.
+   */
+  list?: true;
+  /**
+   * Format-validated as an absolute http(s) URL by `validateUrlFields`. These
+   * become auth-dance parameters, so a malformed one is not cosmetic.
+   */
+  url?: true;
 }
 
 export interface SecretMeta {
@@ -50,14 +61,38 @@ export interface SecretMeta {
 export interface IntegrationKindMeta {
   label: string;
   description: string;
+  /**
+   * Status-switch copy for this kind, `[enabled, disabled]`. Data rather than a
+   * branch in the dialog: the dialog is shared with the transports and ships to
+   * every production browser, so a per-category `if` there would carry the
+   * sign-in wording into production chunks (RUK-294's gate is verified by
+   * grepping for exactly that).
+   */
+  statusHint: [enabled: string, disabled: string];
+  /**
+   * Shown above the Status block when this kind cannot be saved yet, and
+   * disables Save. Present only while a kind is configurable but not routable.
+   */
+  unavailableNotice?: string;
+  /**
+   * Which mark `IntegrationBrandIcon` renders. A data field rather than a
+   * second hand-maintained union keyed by kind — the previous shape drifted out
+   * of sync with `IntegrationKind` the moment a kind was added.
+   */
+  brand: IntegrationBrand;
   configFields: ConfigFieldMeta[];
   secrets: SecretMeta[];
 }
 
-export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta> = {
+export const NOTIFICATION_KIND_META: Record<NotificationIntegrationKind, IntegrationKindMeta> = {
   slack: {
     label: "Slack",
+    statusHint: [
+      "Channels using this transport will deliver notifications.",
+      "Delivery through this transport is paused; settings are kept.",
+    ],
     description: "Posts maintenance notifications to Slack channels via a bot.",
+    brand: "slack",
     configFields: [
       {
         name: "api_url",
@@ -87,7 +122,12 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   },
   telegram: {
     label: "Telegram",
+    statusHint: [
+      "Channels using this transport will deliver notifications.",
+      "Delivery through this transport is paused; settings are kept.",
+    ],
     description: "Sends maintenance notifications to Telegram chats via a bot.",
+    brand: "telegram",
     configFields: [
       {
         name: "api_url",
@@ -117,7 +157,12 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
   },
   email: {
     label: "Email",
+    statusHint: [
+      "Channels using this transport will deliver notifications.",
+      "Delivery through this transport is paused; settings are kept.",
+    ],
     description: "Delivers maintenance notifications over SMTP.",
+    brand: "email",
     configFields: [
       { name: "host", label: "SMTP host", optional: false, placeholder: "smtp.example.com" },
       { name: "port", label: "Port", optional: true, placeholder: "587", numeric: true },
@@ -172,3 +217,23 @@ export const INTEGRATION_KIND_META: Record<IntegrationKind, IntegrationKindMeta>
     ],
   },
 };
+
+/**
+ * Metadata for any kind the UI is currently rendering.
+ *
+ * Deliberately NOT one eager `Record<IntegrationKind, …>`: the row and the
+ * dialog are shared by both sections and ship to every production browser, so a
+ * single record would drag the sign-in provider descriptors into production
+ * chunks along with them (RUK-294's gate is verified by grepping for exactly
+ * that). Auth metadata is registered by the gated section at import time, so it
+ * exists only where that section does.
+ */
+const registered: Partial<Record<string, IntegrationKindMeta>> = {};
+
+export function registerKindMeta(entries: Record<string, IntegrationKindMeta>): void {
+  Object.assign(registered, entries);
+}
+
+export function kindMeta(kind: string): IntegrationKindMeta | null {
+  return (NOTIFICATION_KIND_META as Record<string, IntegrationKindMeta>)[kind] ?? registered[kind] ?? null;
+}

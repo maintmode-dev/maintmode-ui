@@ -1,18 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Plug, Settings as SettingsIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 
-import { INTEGRATION_KINDS, type Integration, type IntegrationKind } from "@/domain/admin/integration";
-import { Button } from "@/shared/ui/shadcn/button";
+import {
+  NOTIFICATION_INTEGRATION_KINDS,
+  type Integration,
+  type IntegrationKind,
+} from "@/domain/admin/integration";
 import { Switch } from "@/shared/ui/shadcn/switch";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
-import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
-import { formatUtc } from "@/shared/ui/lib/format";
-import { cn } from "@/shared/ui/lib/cn";
 
-import { INTEGRATION_KIND_META } from "./integration-kinds";
 import { IntegrationDialog } from "./integration-dialog";
+import { IntegrationRow } from "./integration-row";
 import {
   useIntegrationsQuery,
   usePendingToggleKinds,
@@ -20,13 +19,16 @@ import {
 } from "./queries/use-integrations-queries";
 
 /**
- * Admin-only registry of notification transports at /admin/integrations
- * (screen 19, integrations-settings design snapshot). A closed list of
- * three kinds; a row is either configured (status + enabled switch +
- * Configure) or not (Set up → create sheet). No Delete — disable is the only
- * off-switch; no Test-connection (no backend endpoint).
+ * Admin-only integrations registry at /admin/integrations (screen 19,
+ * integrations-settings design snapshot). A row is either configured (status +
+ * enabled switch + Configure) or not (Set up → create sheet). No Delete —
+ * disable is the only off-switch; no Test-connection (no backend endpoint).
+ *
+ * The sign-in providers section is passed in rather than rendered here: it is
+ * dev-only, and the server page gates it behind an inlined NODE_ENV check so
+ * the whole branch drops out of a production build (RUK-294).
  */
-export function IntegrationsPage() {
+export function IntegrationsPage({ signInProviders }: { signInProviders?: ReactNode }) {
   const integrationsQuery = useIntegrationsQuery();
   const toggleMutation = useToggleIntegration();
   const pendingToggles = usePendingToggleKinds();
@@ -66,7 +68,7 @@ export function IntegrationsPage() {
           </p>
         ) : (
           <div className="rounded-lg border border-border bg-bg-elev-1 p-3 space-y-2">
-            {INTEGRATION_KINDS.map((kind) => (
+            {NOTIFICATION_INTEGRATION_KINDS.map((kind) => (
               <IntegrationRow
                 key={kind}
                 kind={kind}
@@ -80,90 +82,14 @@ export function IntegrationsPage() {
         )}
       </section>
 
+      {signInProviders}
+
       <IntegrationDialog
         kind={openKind}
         integration={openKind ? (byKind.get(openKind) ?? null) : null}
         open={openKind !== null}
         onOpenChange={(open) => !open && setOpenKind(null)}
       />
-    </div>
-  );
-}
-
-function IntegrationRow({
-  kind,
-  integration,
-  toggleBusy,
-  onToggle,
-  onOpen,
-}: {
-  kind: IntegrationKind;
-  integration: Integration | null;
-  toggleBusy: boolean;
-  onToggle: (enabled: boolean) => void;
-  onOpen: () => void;
-}) {
-  const meta = INTEGRATION_KIND_META[kind];
-  const configured = integration !== null;
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3.5 rounded-md border border-border-subtle px-3.5 py-3",
-        configured ? "bg-bg-elev-2" : "bg-transparent",
-      )}
-    >
-      <span
-        className={cn(
-          "flex size-7 shrink-0 items-center justify-center rounded-sm border border-border bg-white",
-          !configured && "opacity-85",
-        )}
-      >
-        <IntegrationBrandIcon name={kind} size={18} />
-      </span>
-
-      <div className="flex-1 min-w-0">
-        <div className={cn("text-sm font-semibold", configured ? "text-fg-strong" : "text-fg-muted")}>
-          {meta.label}
-        </div>
-        {configured ? (
-          <div className="mt-0.5 flex items-center gap-1.5 text-xs text-fg truncate">
-            <span
-              aria-hidden="true"
-              className={cn(
-                "size-1.5 rounded-full shrink-0",
-                integration.enabled ? "bg-[var(--status-completed-fg)]" : "bg-fg-dim",
-              )}
-            />
-            <span className="font-medium">{integration.enabled ? "Enabled" : "Disabled"}</span>
-            <span className="text-fg-dim truncate">
-              · updated {formatUtc(integration.updated_at)}
-              {integration.updated_by ? ` by ${integration.updated_by}` : ""}
-            </span>
-          </div>
-        ) : (
-          <div className="mt-0.5 text-xs text-fg-muted truncate">Not configured · {meta.description}</div>
-        )}
-      </div>
-
-      {configured ? (
-        <Switch
-          checked={integration.enabled}
-          disabled={toggleBusy}
-          onCheckedChange={onToggle}
-          aria-label={`${meta.label} enabled`}
-        />
-      ) : null}
-
-      {configured ? (
-        <Button variant="ghost" size="sm" onClick={onOpen}>
-          <SettingsIcon className="size-3.5" aria-hidden="true" /> Configure
-        </Button>
-      ) : (
-        <Button variant="outline" size="sm" onClick={onOpen}>
-          <Plug className="size-3.5" aria-hidden="true" /> Set up
-        </Button>
-      )}
     </div>
   );
 }

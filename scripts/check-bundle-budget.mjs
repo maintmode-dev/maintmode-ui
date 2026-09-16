@@ -118,6 +118,42 @@ const allowedRoutes = {
  * `marker` is a string that must appear in the minified chunk that ships the
  * dependency. It drives the reporting column and the zero-owner self-check only.
  */
+/**
+ * Strings that must NEVER appear in a browser-reachable chunk.
+ *
+ * A second, independent rule from the heavy-dep walk above. That one asks "is
+ * this npm package eagerly reachable"; this one asks "did a dev-only branch
+ * survive into the production bundle at all". Chunk membership is the right
+ * signal HERE — unlike rejected design 2, there is no partitioning question to
+ * get wrong: the string is either in the shipped JS or it is not.
+ *
+ * Why it exists: RUK-294 gates a sign-in provider section behind an inlined
+ * `NODE_ENV` check. The first implementation gated the section correctly and
+ * STILL leaked its field descriptors, because the metadata sat in a record the
+ * production row and dialog imported. Every test passed. Only a grep of the
+ * built chunks caught it, and nothing in `verify` ran that grep.
+ *
+ * Each `marker` must be user-visible copy or a data key — minification renames
+ * identifiers but preserves string literals, so a component or variable name
+ * would silently match nothing and pass forever. The self-check below cannot
+ * help here (absence is the expected result), which is why the choice of
+ * string matters more than usual.
+ */
+const forbiddenInClient = [
+  {
+    marker: "Sign-in providers",
+    why: "the dev-only sign-in providers section (RUK-294) reached a production chunk",
+  },
+  {
+    marker: "issuer_url",
+    why: "OIDC field descriptors reached a production chunk — check that auth-kinds.ts is not in the shared row/dialog import graph",
+  },
+  {
+    marker: "github_oauth",
+    why: "auth kind metadata reached a production chunk",
+  },
+];
+
 const heavyDeps = [
   {
     name: "@fullcalendar/*",
@@ -369,6 +405,7 @@ function findMarkerOwners() {
   collect(chunkDir);
 
   const owners = new Map(heavyDeps.map((dep) => [dep.name, []]));
+  const leaked = new Map();
   for (const file of files) {
     const content = readFileSync(file, "utf8");
     for (const dep of heavyDeps) {
@@ -376,8 +413,14 @@ function findMarkerOwners() {
         owners.get(dep.name).push(relative(nextDir, file));
       }
     }
+    for (const forbidden of forbiddenInClient) {
+      if (content.includes(forbidden.marker)) {
+        if (!leaked.has(forbidden.marker)) leaked.set(forbidden.marker, { forbidden, files: [] });
+        leaked.get(forbidden.marker).files.push(relative(nextDir, file));
+      }
+    }
   }
-  return owners;
+  return { owners, leaked };
 }
 
 // --- run ---------------------------------------------------------------------
@@ -399,7 +442,7 @@ if (manifestFiles.length === 0) {
 
 // Self-check first: if the markers have rotted, every result below is worthless,
 // so say so before reporting anything that might look reassuring.
-const markerOwners = findMarkerOwners();
+const { owners: markerOwners, leaked } = findMarkerOwners();
 const rotted = heavyDeps.filter((dep) => markerOwners.get(dep.name).length === 0);
 if (rotted.length > 0) {
   process.stderr.write("check-bundle-budget: marker no longer matches — update the pattern.\n\n");
@@ -515,6 +558,28 @@ if (violations.length > 0) {
       "`ssr: false` (see src/features/approvals/approvals-page.tsx for the in-repo\n" +
       "reference), or — if this is a deliberate exception — add the route to\n" +
       "`allowedRoutes` in scripts/check-bundle-budget.mjs with a reason.",
+  );
+  process.stdout.write(`${out.join("\n")}\n`);
+  process.exit(1);
+}
+
+if (leaked.size > 0) {
+  line();
+  line("FAIL — dev-only code reached a browser-reachable chunk:");
+  line();
+  for (const { forbidden, files } of leaked.values()) {
+    line(`  "${forbidden.marker}"`);
+    line(`      ${forbidden.why}`);
+    for (const file of files) line(`      -> ${file}`);
+    line();
+  }
+  line(
+    "A branch meant to be dropped from the production build survived into the client\n" +
+      "bundle. Usual cause: the gated component is fine, but something it references —\n" +
+      "metadata, copy, a constant — is also imported by a module that ships. Check that\n" +
+      "the inlined `process.env.NODE_ENV` check comes FIRST in the same file as the\n" +
+      "`await import()`, and that category-specific data lives with its category rather\n" +
+      "than in a record shared with production code.",
   );
   process.stdout.write(`${out.join("\n")}\n`);
   process.exit(1);

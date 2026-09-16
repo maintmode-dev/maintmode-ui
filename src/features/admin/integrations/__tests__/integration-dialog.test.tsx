@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Integration } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
+// Registers the sign-in provider metadata, exactly as the gated section does.
+import "../auth-kinds";
 import { IntegrationDialog } from "../integration-dialog";
 
 // The dialog renders through a Radix portal into document.body; this config
@@ -349,5 +351,141 @@ describe("IntegrationDialog — SMTP test config", () => {
 
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
     expect(String(bffFetchMock.mock.calls[0][0])).not.toContain("/test");
+  });
+});
+
+// A distinctive value so an assertion can search the whole outgoing payload
+// for it, rather than trusting one rendered attribute.
+const SECRET = "s3cret-from-the-idp-console";
+
+describe("sign-in provider kinds", () => {
+  function renderDialog(kind: "oidc" | "github_oauth") {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind={kind} integration={null} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("renders the OIDC fields", () => {
+    renderDialog("oidc");
+    expect(screen.getByLabelText(/Issuer URL/)).toBeTruthy();
+    expect(screen.getByLabelText(/Client ID/)).toBeTruthy();
+    expect(screen.getByLabelText(/Scopes/)).toBeTruthy();
+  });
+
+  /**
+   * The load-bearing test. A Save that fired and 400'd would still put a typed
+   * client_secret on the wire — it reaches the Next server process, and any
+   * request logging there, before the route's kind check rejects it. The
+   * backend cannot accept these kinds yet, so nothing may be sent at all.
+   */
+  it("disables Save and issues NO request carrying secrets", async () => {
+    renderDialog("oidc");
+
+    fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "https://idp.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
+    fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
+
+    const save = screen.getByRole("button", { name: /Connect|Save changes/ });
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(save);
+    // Let any save path settle before judging. `waitFor` cannot do this job: it
+    // retries until its callback stops throwing, so a negative assertion passes
+    // on the first synchronous attempt — before React has flushed the click —
+    // and can never fail. Draining the microtask and macrotask queues is what
+    // makes the assertion mean anything.
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(bffFetchMock).not.toHaveBeenCalled();
+    // Tied to the secret rather than to the button: a future save path that
+    // bypasses this button (form submit, Enter key, a "Save and test" control)
+    // keeps the disabled attribute intact but would still transmit. This is the
+    // assertion that survives the mechanism changing.
+    expect(JSON.stringify(bffFetchMock.mock.calls)).not.toContain(SECRET);
+  });
+
+  /**
+   * The control must follow the route whitelist, not the copy. If Save were
+   * derived from `unavailableNotice`, deleting that string would silently
+   * re-enable saving on a credentials form — a copy edit with a security
+   * consequence.
+   */
+  it("keeps Save disabled even with the explanatory notice stripped", async () => {
+    const { AUTH_KIND_META } = await import("../auth-kinds");
+    const original = AUTH_KIND_META.oidc.unavailableNotice;
+    AUTH_KIND_META.oidc.unavailableNotice = undefined;
+    try {
+      renderDialog("oidc");
+      // Fill every required field first: otherwise `missingRequired` disables
+      // Save on its own and the assertion cannot tell the two causes apart.
+      fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
+      fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+        target: { value: "https://idp.example.com" },
+      });
+      fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
+      fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
+
+      const save = screen.getByRole("button", { name: /Connect|Save changes/ });
+      expect(save.hasAttribute("disabled")).toBe(true);
+    } finally {
+      AUTH_KIND_META.oidc.unavailableNotice = original;
+    }
+  });
+
+  it("says why saving is unavailable", () => {
+    renderDialog("oidc");
+    expect(screen.getByText(/backend support/i)).toBeTruthy();
+  });
+
+  it("blocks a malformed issuer URL with a message naming the problem", () => {
+    renderDialog("oidc");
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), { target: { value: "not-a-url" } });
+    expect(screen.getByText(/absolute URL/i)).toBeTruthy();
+  });
+
+  it("warns about plain http without blocking", () => {
+    renderDialog("oidc");
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "http://keycloak.local" },
+    });
+    expect(screen.getByText(/Not encrypted/i)).toBeTruthy();
+  });
+
+  it("shows no notification-transport copy", () => {
+    renderDialog("oidc");
+    expect(screen.queryByText(/deliver notifications/i)).toBeNull();
+    expect(screen.queryByText(/through this transport/i)).toBeNull();
+  });
+});
+
+describe("transport status copy is preserved verbatim", () => {
+  function renderSlack() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind="slack" integration={SLACK_CONFIGURED} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+  }
+
+  // Both literals are quoted so a reword during the per-category refactor cannot
+  // pass as compliance. SPEC §7.9 requires both; only the enabled one was pinned
+  // until the ship review caught that rewording the other left every test green.
+  it("keeps the enabled sentence", () => {
+    renderSlack();
+    expect(screen.getByText("Channels using this transport will deliver notifications.")).toBeTruthy();
+  });
+
+  it("keeps the disabled sentence", () => {
+    renderSlack();
+    fireEvent.click(screen.getByLabelText("Integration enabled"));
+    expect(screen.getByText("Delivery through this transport is paused; settings are kept.")).toBeTruthy();
   });
 });
