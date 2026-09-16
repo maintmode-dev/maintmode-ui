@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { AUTH_INTEGRATION_KINDS, type IntegrationKind } from "@/domain/admin/integration";
+import { AUTH_INTEGRATION_KINDS, type AuthIntegrationKind } from "@/domain/admin/integration";
 
 // Importing this registers the auth kind metadata (see auth-kinds.ts).
 import "./auth-kinds";
@@ -24,7 +24,7 @@ import { IntegrationRow } from "./integration-row";
  * configured to toggle.
  */
 export function SignInProvidersSection() {
-  const [openKind, setOpenKind] = useState<IntegrationKind | null>(null);
+  const [openKind, setOpenKind] = useState<AuthIntegrationKind | null>(null);
 
   return (
     <section className="space-y-3">
@@ -37,7 +37,7 @@ export function SignInProvidersSection() {
         {AUTH_INTEGRATION_KINDS.map((kind) => (
           <IntegrationRow
             key={kind}
-            kind={kind}
+            name={kind}
             integration={null}
             toggleBusy={false}
             onToggle={() => {}}
@@ -47,7 +47,7 @@ export function SignInProvidersSection() {
       </div>
 
       <IntegrationDialog
-        kind={openKind}
+        name={openKind}
         integration={null}
         open={openKind !== null}
         onOpenChange={(open) => !open && setOpenKind(null)}

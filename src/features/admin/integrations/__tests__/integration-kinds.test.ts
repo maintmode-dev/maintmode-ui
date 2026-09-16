@@ -1,17 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { AUTH_INTEGRATION_KINDS, INTEGRATION_KINDS } from "@/domain/admin/integration";
+import { AUTH_INTEGRATION_KINDS, NOTIFICATION_INTEGRATION_NAMES } from "@/domain/admin/integration";
 
 import { AUTH_KIND_META } from "../auth-kinds";
 import { kindMeta, type ConfigFieldMeta } from "../integration-kinds";
+
+/**
+ * Everything `kindMeta` must resolve: the three transport systems plus the two
+ * dev-gated sign-in entries. Listed together here rather than read off one
+ * domain constant because the domain deliberately no longer has one — the auth
+ * identifiers name nothing in the backend's vocabulary and are frozen for
+ * RUK-302, so a union of the two would read as a contract it is not.
+ */
+const ALL_META_KEYS = [...NOTIFICATION_INTEGRATION_NAMES, ...AUTH_INTEGRATION_KINDS] as const;
 
 /**
  * `kindMeta` resolves across both records, and importing `auth-kinds` above is
  * what registers the auth half — in production that import only exists inside
  * the gated section, which is the point of the split.
  */
-const INTEGRATION_KIND_META = Object.fromEntries(INTEGRATION_KINDS.map((k) => [k, kindMeta(k)])) as Record<
-  (typeof INTEGRATION_KINDS)[number],
+const INTEGRATION_KIND_META = Object.fromEntries(ALL_META_KEYS.map((k) => [k, kindMeta(k)])) as Record<
+  (typeof ALL_META_KEYS)[number],
   NonNullable<ReturnType<typeof kindMeta>>
 >;
 
@@ -23,16 +32,26 @@ const INTEGRATION_KIND_META = Object.fromEntries(INTEGRATION_KINDS.map((k) => [k
  * back out of the metadata would survive any rename and prove nothing.
  */
 describe("INTEGRATION_KIND_META", () => {
-  it("covers every kind in the union", () => {
-    for (const kind of INTEGRATION_KINDS) {
-      expect(INTEGRATION_KIND_META[kind]).toBeDefined();
+  it("covers every system the UI renders", () => {
+    for (const key of ALL_META_KEYS) {
+      expect(INTEGRATION_KIND_META[key]).toBeDefined();
     }
   });
 
-  it("gives every kind a brand mark", () => {
-    for (const kind of INTEGRATION_KINDS) {
-      expect(INTEGRATION_KIND_META[kind].brand).toBeTruthy();
+  it("gives every system a brand mark", () => {
+    for (const key of ALL_META_KEYS) {
+      expect(INTEGRATION_KIND_META[key].brand).toBeTruthy();
     }
+  });
+
+  /**
+   * The registry is keyed by SYSTEM. A category resolving to metadata would mean
+   * a row could be rendered from one, and `kindMeta` returning null is what makes
+   * that a visibly empty row instead of a plausible wrong one.
+   */
+  it("resolves nothing for a category", () => {
+    expect(kindMeta("notify")).toBeNull();
+    expect(kindMeta("login")).toBeNull();
   });
 
   describe("oidc", () => {

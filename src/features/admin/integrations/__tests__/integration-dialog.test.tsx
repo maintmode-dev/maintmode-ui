@@ -27,7 +27,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const SLACK_CONFIGURED: Integration = {
   id: "i-1",
-  kind: "slack",
+  kind: "notify",
+  name: "slack",
   enabled: true,
   config: { api_url: "https://slack.com/api/" },
   secrets_set: { bot_token: true },
@@ -38,7 +39,8 @@ const SLACK_CONFIGURED: Integration = {
 
 const EMAIL_CONFIGURED = (tls_policy: string): Integration => ({
   id: "i-2",
-  kind: "email",
+  kind: "notify",
+  name: "email",
   enabled: true,
   config: { host: "smtp.example.com", from: "noc@example.com", tls_policy },
   secrets_set: { password: true },
@@ -54,7 +56,7 @@ function renderDialog(props: Partial<React.ComponentProps<typeof IntegrationDial
   });
   const element = (p: Partial<React.ComponentProps<typeof IntegrationDialog>>) => (
     <QueryClientProvider client={client}>
-      <IntegrationDialog kind="slack" integration={null} open onOpenChange={onOpenChange} {...p} />
+      <IntegrationDialog name="slack" integration={null} open onOpenChange={onOpenChange} {...p} />
     </QueryClientProvider>
   );
   const view = render(element(props));
@@ -79,10 +81,10 @@ describe("IntegrationDialog", () => {
     fireEvent.change(secretInput()!, { target: { value: "xoxb-super-secret-draft" } });
     expect(secretInput()!.value).toBe("xoxb-super-secret-draft");
 
-    view.rerender(element({ open: false, kind: null }));
+    view.rerender(element({ open: false, name: null }));
     expect(document.body.innerHTML).not.toContain("xoxb-super-secret-draft");
 
-    view.rerender(element({ open: true, kind: "slack" }));
+    view.rerender(element({ open: true, name: "slack" }));
     expect(secretInput()!.value).toBe("");
   });
 
@@ -111,7 +113,10 @@ describe("IntegrationDialog", () => {
     const [path, init] = bffFetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/api/admin/integrations");
     const body = JSON.parse(String(init.body));
-    expect(body.kind).toBe("slack");
+    // Both halves travel: `kind` is the category, `name` the system. Sending
+    // the system in `kind` — the pre-b74a4536 shape — is a 400 at the backend.
+    expect(body.kind).toBe("notify");
+    expect(body.name).toBe("slack");
     expect(body.enabled).toBe(true);
     expect(body.secrets).toEqual({ bot_token: "xoxb-token" });
   });
@@ -127,18 +132,18 @@ describe("IntegrationDialog", () => {
   it("shows the no-encryption danger warning only when tls_policy is 'none'", () => {
     const warning = "Mail will be sent unencrypted";
 
-    const { view } = renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+    const { view } = renderDialog({ name: "email", integration: EMAIL_CONFIGURED("mandatory") });
     expect(document.body.textContent).not.toContain(warning);
 
     view.unmount();
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("none") });
+    renderDialog({ name: "email", integration: EMAIL_CONFIGURED("none") });
     expect(document.body.textContent).toContain(warning);
   });
 
   it("surfaces a stored tls_policy set outside the option list as a '(current)' choice", () => {
     // A value from an older free-text UI (or a future backend) isn't in the
     // option set; it must stay visible so a later pick doesn't silently drop it.
-    renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("legacy_weird_value") });
+    renderDialog({ name: "email", integration: EMAIL_CONFIGURED("legacy_weird_value") });
     const trigger = document.getElementById("integration-config-tls_policy");
     expect(trigger?.textContent).toContain("legacy_weird_value (current)");
   });
@@ -157,7 +162,7 @@ describe("IntegrationDialog — SMTP test config", () => {
   const testButton = () => screen.queryByRole("button", { name: /Test config|Sending…/ });
 
   /** The subject of every case below: a configured SMTP integration in edit mode. */
-  const renderEmailDialog = () => renderDialog({ kind: "email", integration: EMAIL_CONFIGURED("mandatory") });
+  const renderEmailDialog = () => renderDialog({ name: "email", integration: EMAIL_CONFIGURED("mandatory") });
 
   /** Name a recipient and press the button — the two steps that precede a probe. */
   const pressTest = (to = "admin@example.test") => {
@@ -170,7 +175,7 @@ describe("IntegrationDialog — SMTP test config", () => {
     expect(testButton()).toBeTruthy();
 
     cleanup();
-    renderDialog({ kind: "slack", integration: SLACK_CONFIGURED });
+    renderDialog({ name: "slack", integration: SLACK_CONFIGURED });
     // Slack and Telegram have no equivalent endpoint on the backend.
     expect(testButton()).toBeNull();
   });
@@ -193,7 +198,7 @@ describe("IntegrationDialog — SMTP test config", () => {
 
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
     const [url, init] = bffFetchMock.mock.calls[0] as [string, { method: string; body: string }];
-    expect(url).toBe("/api/admin/integrations/email/test");
+    expect(url).toBe("/api/admin/integrations/notify/email/test");
     expect(init.method).toBe("POST");
     // A probe that issued a PATCH would persist settings the operator was only
     // trying out.
@@ -363,7 +368,7 @@ describe("sign-in provider kinds", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
-        <IntegrationDialog kind={kind} integration={null} open onOpenChange={() => {}} />
+        <IntegrationDialog name={kind} integration={null} open onOpenChange={() => {}} />
       </QueryClientProvider>,
     );
   }
@@ -470,7 +475,7 @@ describe("transport status copy is preserved verbatim", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
-        <IntegrationDialog kind="slack" integration={SLACK_CONFIGURED} open onOpenChange={() => {}} />
+        <IntegrationDialog name="slack" integration={SLACK_CONFIGURED} open onOpenChange={() => {}} />
       </QueryClientProvider>,
     );
   }

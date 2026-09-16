@@ -1,12 +1,16 @@
 /**
- * Per-kind UI metadata for the integrations registry — labels, config-field
+ * Per-system UI metadata for the integrations registry — labels, config-field
  * descriptors, and secret descriptors. Data, not branching: the sheet renders
- * whatever the active kind declares. Mirrors the backend kind registry
- * (`internal/services/integration/kinds/`) and the frozen decisions of the
+ * whatever the active system declares. Mirrors the backend registry
+ * (`internal/integrationkinds/`) and the frozen decisions of the
  * integrations-settings design snapshot.
+ *
+ * Keyed by SYSTEM (`slack`, `email`, …), never by category. `kindMeta("notify")`
+ * resolves to null, and a null renders an empty row rather than throwing — so
+ * passing a category here fails silently, which is why callers pass `name`.
  */
 
-import type { NotificationIntegrationKind } from "@/domain/admin/integration";
+import type { NotificationIntegrationName } from "@/domain/admin/integration";
 import type { IntegrationBrand } from "@/shared/ui/icons/brand-icons";
 
 /**
@@ -84,7 +88,7 @@ export interface IntegrationKindMeta {
   secrets: SecretMeta[];
 }
 
-export const NOTIFICATION_KIND_META: Record<NotificationIntegrationKind, IntegrationKindMeta> = {
+export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, IntegrationKindMeta> = {
   slack: {
     label: "Slack",
     statusHint: [
@@ -219,9 +223,9 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationKind, Integra
 };
 
 /**
- * Metadata for any kind the UI is currently rendering.
+ * Metadata for any system the UI is currently rendering.
  *
- * Deliberately NOT one eager `Record<IntegrationKind, …>`: the row and the
+ * Deliberately NOT one eager record over every known system: the row and the
  * dialog are shared by both sections and ship to every production browser, so a
  * single record would drag the sign-in provider descriptors into production
  * chunks along with them (RUK-294's gate is verified by grepping for exactly
@@ -234,6 +238,6 @@ export function registerKindMeta(entries: Record<string, IntegrationKindMeta>): 
   Object.assign(registered, entries);
 }
 
-export function kindMeta(kind: string): IntegrationKindMeta | null {
-  return (NOTIFICATION_KIND_META as Record<string, IntegrationKindMeta>)[kind] ?? registered[kind] ?? null;
+export function kindMeta(name: string): IntegrationKindMeta | null {
+  return (NOTIFICATION_KIND_META as Record<string, IntegrationKindMeta>)[name] ?? registered[name] ?? null;
 }
