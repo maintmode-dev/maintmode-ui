@@ -4,7 +4,7 @@ import { readWireFixture } from "./_harness";
 
 /**
  * Contract test — `POST /api/admin/integrations/{kind}/{name}/test` →
- * `POST /api/v1/integrations/email/test`. RUK-290, SPEC §4.1.
+ * `POST /api/v1/integrations/notify/email/test`. RUK-290, SPEC §4.1.
  *
  * **The response shapes are recorded, not written here.** They live in
  * `tests/fixtures/wire/integration-email-test.json`, captured from a locally

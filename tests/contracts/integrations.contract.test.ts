@@ -66,9 +66,15 @@ beforeEach(() => {
   requireAdminSession.mockResolvedValue(undefined);
 });
 
-/** Seed the list envelope for the collection GET. */
-function backendReturnsList() {
+/**
+ * Seed the recorded list envelope, call the collection GET and parse the
+ * answer — the three steps every case in that describe repeats verbatim.
+ */
+async function listedIntegrations(): Promise<Integration[]> {
   backendRequest.mockResolvedValue(wire);
+  const response = await collection.GET();
+  const body = (await response.json()) as { integrations: Integration[] };
+  return body.integrations;
 }
 
 /** The path the route asked the backend for, from its first call. */
@@ -82,16 +88,27 @@ function backendBody(): Record<string, unknown> {
   return JSON.parse(opts?.body ?? "{}") as Record<string, unknown>;
 }
 
+/**
+ * A JSON request to `url`. Only the three fields every route handler reads are
+ * fixed here; the URL, the method and the `params` stay at each call site,
+ * because those are what the cases are asserting about.
+ */
+function jsonRequest(url: string, method: string, body: unknown): Request {
+  return new Request(url, {
+    method,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 describe("GET /api/admin/integrations — the list that lied", () => {
   it("passes every recorded row through instead of dropping it", async () => {
-    backendReturnsList();
-    const response = await collection.GET();
-    const body = (await response.json()) as { integrations: Integration[] };
+    const integrations = await listedIntegrations();
 
     // The regression, stated as a count. Before the fix this was 0 — on a 200,
     // with no error anywhere for the screen to notice.
-    expect(body.integrations).toHaveLength(wire.integrations?.length ?? 0);
-    expect(body.integrations.length).toBeGreaterThan(0);
+    expect(integrations).toHaveLength(wire.integrations?.length ?? 0);
+    expect(integrations.length).toBeGreaterThan(0);
   });
 
   /**
@@ -107,10 +124,7 @@ describe("GET /api/admin/integrations — the list that lied", () => {
    * the claim about them; a capture that contradicts the claim now fails.
    */
   it("carries both halves of the pair, as recorded", async () => {
-    backendReturnsList();
-    const response = await collection.GET();
-    const body = (await response.json()) as { integrations: Integration[] };
-    const byName = Object.fromEntries(body.integrations.map((r) => [r.name, r]));
+    const byName = Object.fromEntries((await listedIntegrations()).map((r) => [r.name, r]));
 
     expect(byName.slack.kind).toBe("notify");
     expect(byName.email.kind).toBe("notify");
@@ -127,24 +141,19 @@ describe("GET /api/admin/integrations — the list that lied", () => {
    * notices if that regresses.
    */
   it("reports secrets as booleans, never as values", async () => {
-    backendReturnsList();
-    const response = await collection.GET();
-    const body = (await response.json()) as { integrations: Integration[] };
+    const integrations = await listedIntegrations();
 
-    for (const row of body.integrations) {
+    for (const row of integrations) {
       for (const [key, isSet] of Object.entries(row.secrets_set)) {
         expect(typeof isSet, `${row.name}.${key}`).toBe("boolean");
       }
     }
     // Vacuous if the rows carried no secrets at all.
-    expect(body.integrations.some((r) => Object.keys(r.secrets_set).length > 0)).toBe(true);
+    expect(integrations.some((r) => Object.keys(r.secrets_set).length > 0)).toBe(true);
   });
 
   it("carries health for the login row and leaves the transports without it", async () => {
-    backendReturnsList();
-    const response = await collection.GET();
-    const body = (await response.json()) as { integrations: Integration[] };
-    const byName = Object.fromEntries(body.integrations.map((r) => [r.name, r]));
+    const byName = Object.fromEntries((await listedIntegrations()).map((r) => [r.name, r]));
 
     // `undefined` means NOT APPLICABLE, and the backend omits the field for
     // notify rows entirely — verified on the wire, not assumed. A mapper
@@ -171,13 +180,7 @@ describe("GET /api/admin/integrations — the list that lied", () => {
 
 describe("POST /api/admin/integrations — create", () => {
   const create = (body: unknown) =>
-    collection.POST(
-      new Request("https://app.test/api/admin/integrations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-    );
+    collection.POST(jsonRequest("https://app.test/api/admin/integrations", "POST", body));
 
   const VALID = { kind: "notify", name: "slack", enabled: true, config: {}, secrets: {} };
 
@@ -252,11 +255,7 @@ describe("cross-origin requests are refused on the mutating routes", () => {
 
   it("refuses a cross-origin PATCH", async () => {
     const response = await item.PATCH(
-      new Request("https://evil.test/api/admin/integrations/notify/slack", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: false }),
-      }),
+      jsonRequest("https://evil.test/api/admin/integrations/notify/slack", "PATCH", { enabled: false }),
       { params: Promise.resolve({ kind: "notify", name: "slack" }) },
     );
 
@@ -266,10 +265,8 @@ describe("cross-origin requests are refused on the mutating routes", () => {
 
   it("refuses a cross-origin toggle", async () => {
     const response = await toggle.POST(
-      new Request("https://evil.test/api/admin/integrations/notify/slack/toggle", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: true }),
+      jsonRequest("https://evil.test/api/admin/integrations/notify/slack/toggle", "POST", {
+        enabled: true,
       }),
       { params: Promise.resolve({ kind: "notify", name: "slack" }) },
     );
@@ -280,10 +277,10 @@ describe("cross-origin requests are refused on the mutating routes", () => {
 
   it("refuses a cross-origin create", async () => {
     const response = await collection.POST(
-      new Request("https://evil.test/api/admin/integrations", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "notify", name: "slack", enabled: true }),
+      jsonRequest("https://evil.test/api/admin/integrations", "POST", {
+        kind: "notify",
+        name: "slack",
+        enabled: true,
       }),
     );
 
@@ -297,11 +294,7 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
 
   const patch = (kind: string, name: string, body: unknown = { enabled: false }) =>
     item.PATCH(
-      new Request(`https://app.test/api/admin/integrations/${kind}/${name}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
+      jsonRequest(`https://app.test/api/admin/integrations/${kind}/${name}`, "PATCH", body),
       params(kind, name),
     );
 
@@ -373,14 +366,9 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
    * silently become the default and the case would assert nothing.
    */
   const flip = (kind: string, name: string, body: unknown = { enabled: true }) =>
-    toggle.POST(
-      new Request(`https://app.test/api/admin/integrations/${kind}/${name}/toggle`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-      { params: Promise.resolve({ kind, name }) },
-    );
+    toggle.POST(jsonRequest(`https://app.test/api/admin/integrations/${kind}/${name}/toggle`, "POST", body), {
+      params: Promise.resolve({ kind, name }),
+    });
 
   it("puts the pair in the path, not the literal segment", async () => {
     backendRequest.mockResolvedValue(recorded.slack);

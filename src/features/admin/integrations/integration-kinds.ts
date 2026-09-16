@@ -80,8 +80,8 @@ export interface IntegrationKindMeta {
   unavailableNotice?: string;
   /**
    * Which mark `IntegrationBrandIcon` renders. A data field rather than a
-   * second hand-maintained union keyed by kind — the previous shape drifted out
-   * of sync with `IntegrationKind` the moment a kind was added.
+   * second hand-maintained union keyed by system — the previous shape drifted
+   * out of sync with the system union the moment an entry was added.
    */
   brand: IntegrationBrand;
   configFields: ConfigFieldMeta[];
