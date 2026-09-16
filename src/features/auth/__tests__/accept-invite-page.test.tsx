@@ -10,7 +10,11 @@ afterEach(() => cleanup());
 
 const noopAccept = vi.fn(async () => {});
 
-function renderPage(preview: InvitationPreviewResult, token?: string, extra: { signedInAs?: string } = {}) {
+function renderPage(
+  preview: InvitationPreviewResult,
+  token?: string,
+  extra: { signedInAs?: string; signInAvailable?: boolean } = {},
+) {
   render(<AcceptInvitePage token={token} preview={preview} acceptAction={noopAccept} {...extra} />);
 }
 
@@ -128,5 +132,67 @@ describe("AcceptInvitePage token states", () => {
     // truncating it to "you are signed in as X" leaves them blocked with
     // nothing to do — and the name-only assertion above would still pass.
     expect(screen.getByText(/sign out first/i)).toBeTruthy();
+  });
+});
+
+/**
+ * RUK-304. `b74a4536` moved sign-in providers into the registry and its
+ * migration deleted the existing rows, so a fresh deployment has no Google
+ * provider. This page hard-coded one and handed it to a server action that
+ * `redirect()`s, and the backend answers an unknown provider with a JSON error
+ * rather than a redirect — so the invitee landed on raw JSON on another origin.
+ *
+ * The provider is resolved on the server now and its availability arrives as a
+ * prop. It DEFAULTS to available, which keeps the existing assertion above —
+ * that a valid invite does not say "temporarily unavailable" — passing
+ * untouched.
+ */
+describe("RUK-304 — no button for a provider that is not there", () => {
+  it("offers the button when sign-in is available", () => {
+    renderPage({ status: "valid" }, "tok-1", { signInAvailable: true });
+
+    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
+  });
+
+  it("offers the button when availability is not stated, so today's callers are unaffected", () => {
+    renderPage({ status: "valid" }, "tok-1");
+
+    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
+  });
+
+  it("offers NO button when no sign-in provider is configured", () => {
+    renderPage({ status: "valid" }, "tok-1", { signInAvailable: false });
+
+    // A button that navigates to raw backend JSON is worse than no button.
+    expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
+  });
+
+  /**
+   * The invitation is NOT consumed on this path — the backend refuses before
+   * minting any state — so the link still works later. Someone who sees an
+   * explanation with no button will otherwise assume they burnt their invite.
+   */
+  it("says the invitation is still valid, so the invitee does not think it was spent", () => {
+    renderPage({ status: "valid" }, "tok-1", { signInAvailable: false });
+
+    const status = screen.getByRole("status").textContent ?? "";
+    expect(status).toMatch(/still (valid|works)/i);
+  });
+
+  it("explains that sign-in is unavailable rather than leaving the page mute", () => {
+    renderPage({ status: "valid" }, "tok-1", { signInAvailable: false });
+
+    expect(screen.getByRole("status").textContent).toMatch(/sign[- ]in/i);
+  });
+
+  /**
+   * An invalid invite must not gain a new way to say something: the absence of
+   * a provider is irrelevant when the token itself is no good.
+   */
+  it("still shows the invalid copy when the token is bad and no provider exists", () => {
+    renderPage({ status: "invalid" }, "tok-bad", { signInAvailable: false });
+
+    expect(screen.getByText("Invalid invitation link")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
   });
 });

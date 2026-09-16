@@ -1,6 +1,7 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { auth } from "@/server/auth/auth-config";
 import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
+import { resolveAuthProviders } from "@/server/backend/auth/resolve-auth-providers";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
@@ -13,6 +14,34 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * serving public routes without `QueryClientProvider`.
    */
   const preview = await resolveInvitationPreview(sp.token);
+
+  /**
+   * Is there a provider to dance with? (RUK-304)
+   *
+   * `b74a4536` moved sign-in providers into the integration registry and its
+   * migration deleted the existing rows, so a fresh deployment has none — while
+   * this page hard-codes "google" below. `startOAuthDanceAction` issues a
+   * `redirect()`, and the backend answers an unknown provider with a JSON error
+   * rather than a redirect (deliberately: it has no trusted frontend address at
+   * that point), so the invitee lands on raw backend JSON on another origin
+   * with only the back button to escape.
+   *
+   * This is a real added round-trip on a public route, not a free check — the
+   * resolver is not already called here the way it is on `/login`. It is worth
+   * one: the alternative is a button whose only outcome is that JSON.
+   *
+   * `{ ok: false }` (transport failure) is treated as AVAILABLE rather than
+   * unavailable. Unlike `/login` there is no break-glass path — an invitation
+   * can only be accepted through the dance — so hiding the button on a failed
+   * read would strand an invitee whose provider is fine. A dance that then
+   * fails is recoverable: the backend refuses before minting state, so the
+   * invitation is not spent.
+   *
+   * Only a RESOLVED list that lacks the provider suppresses the button, which
+   * is the deterministic post-migration case.
+   */
+  const providers = await resolveAuthProviders();
+  const signInAvailable = !providers.ok || providers.methods.some((m) => m.id === "google");
 
   /**
    * Accepting an invitation is now the ordinary OAuth dance with the invitation
@@ -56,6 +85,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       preview={preview}
       acceptAction={acceptAction}
       signedInAs={signedInAs}
+      signInAvailable={signInAvailable}
     />
   );
 }
