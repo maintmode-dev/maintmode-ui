@@ -29,7 +29,10 @@ import { resolveIntegrationParams } from "@/server/backend/contracts/integration
  * Guard order follows `toggle`: origin first, before any work is done, because
  * this handler sends mail; then the session; then the pair.
  */
-export async function POST(request: Request, { params }: { params: Promise<{ kind: string; name: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
   if (!isSameOriginRequest(request)) {
     return NextResponse.json(
       { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },

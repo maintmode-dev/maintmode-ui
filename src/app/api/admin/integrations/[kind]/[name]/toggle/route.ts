@@ -14,7 +14,10 @@ import { resolveIntegrationParams } from "@/server/backend/contracts/integration
  * `POST /api/v1/integrations/{kind}/{name}/toggle`. Flips the enabled flag
  * without touching config or secrets. 404 = the pair is not configured.
  */
-export async function POST(request: Request, { params }: { params: Promise<{ kind: string; name: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
   if (!isSameOriginRequest(request)) {
     return NextResponse.json(
       { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },

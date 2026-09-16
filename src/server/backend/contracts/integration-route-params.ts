@@ -38,9 +38,7 @@ export async function resolveIntegrationParams(
 ): Promise<IntegrationRouteParams> {
   const { kind, name } = await params;
   if (kind !== "notify") {
-    throw new BffValidationError([
-      { field: "kind", message: "Unknown integration category" },
-    ]);
+    throw new BffValidationError([{ field: "kind", message: "Unknown integration category" }]);
   }
   if (!isNotifyIntegrationName(name)) {
     throw new BffValidationError([{ field: "name", message: "Unknown integration" }]);

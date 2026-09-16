@@ -13,7 +13,10 @@ import { resolveIntegrationParams } from "@/server/backend/contracts/integration
  * GET /api/admin/integrations/{kind}/{name} — proxy to
  * `GET /api/v1/integrations/{kind}/{name}`. 404 = the pair is not configured yet.
  */
-export async function GET(_request: Request, { params }: { params: Promise<{ kind: string; name: string }> }) {
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
   try {
     await requireAdminSession();
     const { kind, name } = await resolveIntegrationParams(params);
@@ -38,7 +41,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ kin
  * carries per-key intents verbatim: key absent → keep, non-empty string →
  * replace, `null` → clear. Untouched secrets never appear in the payload.
  */
-export async function PATCH(request: Request, { params }: { params: Promise<{ kind: string; name: string }> }) {
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
   if (!isSameOriginRequest(request)) {
     return NextResponse.json(
       { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },
