@@ -10,15 +10,24 @@ import { IntegrationDialog } from "./integration-dialog";
 import { IntegrationRow } from "./integration-row";
 
 /**
- * Sign-in providers on /admin/integrations — dev-only until the backend can
- * accept these kinds (RUK-294).
+ * Sign-in providers on /admin/integrations — dev-only, pending RUK-302.
  *
  * Every row is unconfigured by design, which is why `integration` is a literal
- * `null` rather than a lookup: `mapIntegration` gates on `isIntegrationKind`,
- * which still rejects `oidc`/`github_oauth`, so no auth row can ever reach the
- * client. The section exists to review the forms, not to connect a provider —
- * the dialog says so and disables Save. When the backend learns these kinds,
- * the reconciliation pass restores the lookup along with the whitelist.
+ * `null` rather than a lookup. What keeps it that way is the BFF whitelist:
+ * `resolveIntegrationParams` admits the `notify` category only, so no login row
+ * is reachable through these routes and nothing typed into a form here can
+ * leave the browser. The section exists to review the forms, not to connect a
+ * provider — the dialog says so and disables Save.
+ *
+ * The identifiers below (`oidc`, `github_oauth`) name nothing in the backend's
+ * vocabulary. Since `b74a4536` a login provider is `(login, google)`,
+ * `(login, custom)` or `(login, github)`; these two are left exactly as they
+ * are because RUK-302 rewrites this section's descriptors wholesale, and
+ * correcting them here would collide with that for no gain (SPEC §1.1).
+ *
+ * The previous version of this paragraph credited `isIntegrationKind`, which no
+ * longer exists — the stale-comment failure the mapper's own docblock warns
+ * about, found in review.
  *
  * No enable/disable toggle is wired for the same reason: there is nothing
  * configured to toggle.

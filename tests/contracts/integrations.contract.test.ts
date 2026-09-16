@@ -221,6 +221,22 @@ describe("POST /api/admin/integrations — create", () => {
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
   });
+
+  /**
+   * The case that isolates the CATEGORY guard.
+   *
+   * `(login, google)` above is refused by either half — `google` is not a
+   * notify name — so it cannot tell which guard fired. `slack` IS a valid
+   * notify name, so only the category check stands between this request and
+   * `POST` with `kind: "login"`. Found in review: deleting that check left
+   * every other case green.
+   */
+  it("refuses a valid transport name submitted under the login category", async () => {
+    const response = await create({ ...VALID, kind: "login", name: "slack" });
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
 });
 
 /**
@@ -316,6 +332,14 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
     expect(backendRequest).not.toHaveBeenCalled();
   });
 
+  /** Isolates the category guard — see the create-route case for why. */
+  it("refuses a valid transport name under the login category", async () => {
+    const response = await patch("login", "slack");
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
   /**
    * The two guards keep separate messages (SPEC §3.3): "not a routable
    * category" and "not a routable system" are different facts, and collapsing
@@ -377,6 +401,14 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
 
   it("refuses a login pair without reaching the backend", async () => {
     const response = await flip("login", "google");
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /** Isolates the category guard — see the create-route case for why. */
+  it("refuses a valid transport name under the login category", async () => {
+    const response = await flip("login", "slack");
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
