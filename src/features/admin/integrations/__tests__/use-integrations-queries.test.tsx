@@ -261,3 +261,85 @@ describe("the remaining hooks address rows by the pair", () => {
     expect(bffFetchMock.mock.calls[0][0]).toBe("/api/admin/integrations/notify/email/test");
   });
 });
+
+/**
+ * Concurrency, which the hook's docblock claims to handle and nothing measured.
+ *
+ * Two toggles can be in flight at once — the screen has three switches and
+ * nothing serialises them. The settle-time refetch is therefore gated on
+ * `isMutating(...) > 1`, so that only the LAST mutation to settle reconciles
+ * with server truth; refetching while another flip is still pending would
+ * overwrite its optimistic state with a response that predates it.
+ */
+describe("concurrent toggles", () => {
+  it("holds both optimistic flips independently", async () => {
+    const client = seededClient();
+    bffFetchMock.mockReturnValue(new Promise(() => {}));
+    const wrapper = wrapperFor(client);
+    const first = renderHook(() => useToggleIntegration(), { wrapper });
+    const second = renderHook(() => useToggleIntegration(), { wrapper });
+
+    act(() => {
+      first.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+    act(() => {
+      second.result.current.mutate({ ref: { kind: "notify", name: "email" }, enabled: false });
+    });
+
+    await waitFor(() => {
+      expect(cachedByName(client).slack.enabled).toBe(false);
+      expect(cachedByName(client).email.enabled).toBe(false);
+    });
+    // The row nobody touched is untouched — the pair predicates hold under
+    // concurrency, not just one at a time.
+    expect(cachedByName(client).telegram.enabled).toBe(true);
+  });
+
+  it("tracks every in-flight system, not just the latest", async () => {
+    const client = seededClient();
+    bffFetchMock.mockReturnValue(new Promise(() => {}));
+    const wrapper = wrapperFor(client);
+    const first = renderHook(() => useToggleIntegration(), { wrapper });
+    const second = renderHook(() => useToggleIntegration(), { wrapper });
+    const pending = renderHook(() => usePendingToggleNames(), { wrapper });
+
+    act(() => {
+      first.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+    act(() => {
+      second.result.current.mutate({ ref: { kind: "notify", name: "email" }, enabled: false });
+    });
+
+    // Reading a single mutation's `variables` would report only the last one,
+    // which is why this comes from the mutation cache.
+    await waitFor(() => {
+      expect(pending.result.current.has("slack")).toBe(true);
+      expect(pending.result.current.has("email")).toBe(true);
+    });
+    expect(pending.result.current.has("telegram")).toBe(false);
+  });
+
+  it("rolls back only the failed row while the other stays flipped", async () => {
+    const client = seededClient();
+    const wrapper = wrapperFor(client);
+    const failing = renderHook(() => useToggleIntegration(), { wrapper });
+    const pendingForever = renderHook(() => useToggleIntegration(), { wrapper });
+
+    bffFetchMock.mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      pendingForever.result.current.mutate({
+        ref: { kind: "notify", name: "email" },
+        enabled: false,
+      });
+    });
+
+    bffFetchMock.mockRejectedValueOnce(new Error("backend said no"));
+    act(() => {
+      failing.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+
+    await waitFor(() => expect(cachedByName(client).slack.enabled).toBe(true));
+    // A whole-list snapshot rollback would have clobbered this one too.
+    expect(cachedByName(client).email.enabled).toBe(false);
+  });
+});

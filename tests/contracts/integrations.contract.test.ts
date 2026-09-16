@@ -314,8 +314,12 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
     const response = await patch("notify", "email");
     const body = (await response.json()) as Integration;
 
-    expect(body.name).toBe(recorded.email.name);
-    expect(body.kind).toBe(recorded.email.kind);
+    // Literals, not `recorded.email.name`: the fixture is also what the mock
+    // returned, so comparing the two asserts that the mapper copies a field
+    // rather than what the field holds. Same correction the list assertions
+    // already took.
+    expect(body.name).toBe("email");
+    expect(body.kind).toBe("notify");
   });
 
   it("refuses a login pair without reaching the backend", async () => {
@@ -354,6 +358,95 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
     backendRequest.mockRejectedValueOnce(new Error("nope"));
 
     const response = await patch("notify", "slack");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+  });
+
+  /**
+   * PATCH is uniform on the backend: an omitted field keeps its stored value.
+   * So the route must forward only what the caller sent — defaulting an absent
+   * `config` to `{}` replaces the stored config wholesale, because an explicit
+   * object is a replacement, not a merge.
+   *
+   * This is data loss that answers 200: toggling `enabled` from the dialog would
+   * erase the SMTP host and clear every secret, with no error anywhere. Same
+   * shape as the bug this ticket is about, so it gets its own case rather than
+   * riding on the path assertions above.
+   */
+  it("forwards only the fields the caller sent", async () => {
+    backendRequest.mockResolvedValue(recorded.email);
+
+    await patch("notify", "email", { enabled: false });
+
+    const sent = backendBody();
+    expect(sent.enabled).toBe(false);
+    expect("config" in sent).toBe(false);
+    expect("secrets" in sent).toBe(false);
+  });
+
+  it("forwards config and secrets when they ARE sent", async () => {
+    backendRequest.mockResolvedValue(recorded.email);
+
+    await patch("notify", "email", {
+      config: { host: "smtp.example.com" },
+      secrets: { password: "new-value" },
+    });
+
+    const sent = backendBody();
+    // Non-vacuous counterpart: without this, "never forwards them" would pass.
+    expect(sent.config).toEqual({ host: "smtp.example.com" });
+    expect(sent.secrets).toEqual({ password: "new-value" });
+    expect("enabled" in sent).toBe(false);
+  });
+
+  it("refuses a non-boolean enabled rather than forwarding it", async () => {
+    const response = await patch("notify", "slack", { enabled: "yes" });
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * No client calls this today — `integrationPath(ref)` without a suffix is used
+ * only by the PATCH hook. It is covered anyway: an unused route is exactly the
+ * one that survives the next contract move unnoticed, and AGENTS.md asks for a
+ * test per BFF route rather than per reachable route.
+ */
+describe("GET /api/admin/integrations/{kind}/{name} — single row", () => {
+  const get = (kind: string, name: string) =>
+    item.GET(new Request(`https://app.test/api/admin/integrations/${kind}/${name}`), {
+      params: Promise.resolve({ kind, name }),
+    });
+
+  it("addresses the row by the pair, in order", async () => {
+    backendRequest.mockResolvedValue(recorded.slack);
+
+    await get("notify", "slack");
+
+    expect(backendPath()).toBe("/api/v1/integrations/notify/slack");
+  });
+
+  it("returns the backend's row rather than inventing one", async () => {
+    backendRequest.mockResolvedValue(recorded.email);
+
+    const body = (await (await get("notify", "email")).json()) as Integration;
+
+    expect(body.name).toBe("email");
+    expect(body.kind).toBe("notify");
+  });
+
+  it("refuses a login pair without reaching the backend", async () => {
+    const response = await get("login", "slack");
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("keeps a backend failure a failure", async () => {
+    backendRequest.mockRejectedValueOnce(new Error("backend exploded"));
+
+    const response = await get("notify", "slack");
 
     expect(response.status).toBeGreaterThanOrEqual(400);
   });
@@ -400,5 +493,31 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The answer must be the backend's row, not an echo of the request. Toggle
+   * sits behind an optimistic update, so a route that replayed its own input
+   * would make a REFUSED flip look like a successful one — the optimistic state
+   * would stand instead of rolling back, and the switch would lie until the
+   * next refetch.
+   */
+  it("returns the backend's row rather than echoing the request", async () => {
+    // The backend disagrees with what was asked: enabled stays true.
+    backendRequest.mockResolvedValue({ ...recorded.slack, enabled: true });
+
+    const response = await flip("notify", "slack", { enabled: false });
+    const body = (await response.json()) as Integration;
+
+    expect(body.enabled).toBe(true);
+    expect(body.name).toBe("slack");
+  });
+
+  it("keeps a backend failure a failure", async () => {
+    backendRequest.mockRejectedValueOnce(new Error("backend exploded"));
+
+    const response = await flip("notify", "slack");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
   });
 });
