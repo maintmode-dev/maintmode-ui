@@ -13,7 +13,7 @@
       },
       "health": "ok",
       "secrets_set": {
-        "client_secret": "<redacted-client_secret>"
+        "client_secret": true
       },
       "created_at": "<ts-1>",
       "created_by": {
@@ -34,7 +34,7 @@
         "timeout": "10s"
       },
       "secrets_set": {
-        "bot_token": "<redacted-bot_token>"
+        "bot_token": true
       },
       "created_at": "<ts-2>",
       "created_by": {
@@ -58,7 +58,7 @@
         "tls_policy": "starttls"
       },
       "secrets_set": {
-        "password": "<redacted-password>"
+        "password": true
       },
       "created_at": "<ts-3>",
       "created_by": {

@@ -210,7 +210,7 @@
       "url": "http://localhost:9000/maintmode/api/v1/integrations",
       "method": "GET",
       "status": 200,
-      "capturedAt": "2026-09-16T21:43:18.797Z",
+      "capturedAt": "2026-09-16T22:03:01.169Z",
       "why": "RUK-304: `b74a4536` turned `kind` into a category and moved the system to `name`, so the mapper's kind whitelist matched nothing and dropped every row — on a 200, with no error, while the screen rendered its static list and reported nothing configured. This fixture is what makes the next move of this shape fail in CI instead of on an administrator's screen. It must keep carrying BOTH halves of the pair and a login row's `health`.",
       "handEdited": false
     }

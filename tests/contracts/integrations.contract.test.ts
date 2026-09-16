@@ -94,33 +94,64 @@ describe("GET /api/admin/integrations — the list that lied", () => {
     expect(body.integrations.length).toBeGreaterThan(0);
   });
 
-  it("carries both halves of the pair for every row", async () => {
+  /**
+   * Stated as LITERALS, deliberately.
+   *
+   * An earlier version of this test compared each row against the fixture entry
+   * it came from (`expect(row.kind).toBe(recorded[row.name].kind)`), reasoning
+   * that reading the fixture beat retyping it. That was backwards: the fixture
+   * is also what the mock returns, so the assertion reduced to "the mapper
+   * copies a field" and held no matter what the field contained. Proved by
+   * relabelling slack as a login row in the fixture — the whole file stayed
+   * green. Literals here mean the recorded bytes are the INPUT and this file is
+   * the claim about them; a capture that contradicts the claim now fails.
+   */
+  it("carries both halves of the pair, as recorded", async () => {
     backendReturnsList();
     const response = await collection.GET();
     const body = (await response.json()) as { integrations: Integration[] };
+    const byName = Object.fromEntries(body.integrations.map((r) => [r.name, r]));
 
-    // Read off the FIXTURE, not retyped: an expectation copied from the same
-    // file it checks survives any mutation of that file and proves nothing.
-    for (const row of body.integrations) {
-      const source = recorded[row.name];
-      expect(source).toBeDefined();
-      expect(row.kind).toBe(source.kind);
-      expect(row.name).toBe(source.name);
-    }
+    expect(byName.slack.kind).toBe("notify");
+    expect(byName.email.kind).toBe("notify");
+    expect(byName.google.kind).toBe("login");
   });
 
-  it("carries health for the login row and omits it for the transports", async () => {
+  /**
+   * `secrets_set` reports WHETHER a credential is configured, never its value —
+   * booleans by construction. Pinned on the type because the capture script
+   * masks by key name, and every key in this map ("bot_token", "client_secret")
+   * reads as sensitive: the first recording turned each `true` into
+   * `"<redacted-bot_token>"`, so the fixture described a string map the backend
+   * has never sent. Masking is now type-aware; this is the assertion that
+   * notices if that regresses.
+   */
+  it("reports secrets as booleans, never as values", async () => {
     backendReturnsList();
     const response = await collection.GET();
     const body = (await response.json()) as { integrations: Integration[] };
 
     for (const row of body.integrations) {
-      // `undefined` for a notify row means NOT APPLICABLE. A mapper writing
-      // `?? "ok"` here would report an inapplicable field as a healthy one.
-      expect(row.health).toBe(recorded[row.name].health);
+      for (const [key, isSet] of Object.entries(row.secrets_set)) {
+        expect(typeof isSet, `${row.name}.${key}`).toBe("boolean");
+      }
     }
-    expect(body.integrations.some((r) => r.health !== undefined)).toBe(true);
-    expect(body.integrations.some((r) => r.health === undefined)).toBe(true);
+    // Vacuous if the rows carried no secrets at all.
+    expect(body.integrations.some((r) => Object.keys(r.secrets_set).length > 0)).toBe(true);
+  });
+
+  it("carries health for the login row and leaves the transports without it", async () => {
+    backendReturnsList();
+    const response = await collection.GET();
+    const body = (await response.json()) as { integrations: Integration[] };
+    const byName = Object.fromEntries(body.integrations.map((r) => [r.name, r]));
+
+    // `undefined` means NOT APPLICABLE, and the backend omits the field for
+    // notify rows entirely — verified on the wire, not assumed. A mapper
+    // writing `?? "ok"` would report an inapplicable field as a healthy one.
+    expect(byName.google.health).toBe("ok");
+    expect(byName.slack.health).toBeUndefined();
+    expect(byName.email.health).toBeUndefined();
   });
 
   /**
@@ -192,6 +223,59 @@ describe("POST /api/admin/integrations — create", () => {
   });
 });
 
+/**
+ * These two routes mutate admin state, so origin is checked before anything
+ * else happens. Asserted because the guard is deletable without a single test
+ * noticing otherwise — measured, not assumed. `integration-test-send` already
+ * covers its own route this way; this carries the pattern to the siblings.
+ */
+describe("cross-origin requests are refused on the mutating routes", () => {
+  beforeEach(() => {
+    isSameOriginRequest.mockReturnValue(false);
+  });
+
+  it("refuses a cross-origin PATCH", async () => {
+    const response = await item.PATCH(
+      new Request("https://evil.test/api/admin/integrations/notify/slack", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      { params: Promise.resolve({ kind: "notify", name: "slack" }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-origin toggle", async () => {
+    const response = await toggle.POST(
+      new Request("https://evil.test/api/admin/integrations/notify/slack/toggle", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: true }),
+      }),
+      { params: Promise.resolve({ kind: "notify", name: "slack" }) },
+    );
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("refuses a cross-origin create", async () => {
+    const response = await collection.POST(
+      new Request("https://evil.test/api/admin/integrations", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: "notify", name: "slack", enabled: true }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
   const params = (kind: string, name: string) => ({ params: Promise.resolve({ kind, name }) });
 
@@ -230,6 +314,23 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The two guards keep separate messages (SPEC §3.3): "not a routable
+   * category" and "not a routable system" are different facts, and collapsing
+   * them tells an operator the wrong one. Asserted on the field, which is what
+   * distinguishes them in the envelope.
+   */
+  it("distinguishes a bad category from a bad system", async () => {
+    const badCategory = await patch("login", "google");
+    const badName = await patch("notify", "carrier-pigeon");
+
+    const categoryBody = (await badCategory.json()) as { fieldErrors?: { field: string }[] };
+    const nameBody = (await badName.json()) as { fieldErrors?: { field: string }[] };
+
+    expect(categoryBody.fieldErrors?.[0].field).toBe("kind");
+    expect(nameBody.fieldErrors?.[0].field).toBe("name");
   });
 
   it("keeps a backend failure a failure", async () => {

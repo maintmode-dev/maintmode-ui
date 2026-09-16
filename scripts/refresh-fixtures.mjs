@@ -390,9 +390,21 @@ function normalize(value, seen = new Map(), key = "", counters = new Map()) {
 
   // Key-based masking runs FIRST and ignores value shape entirely — that is the
   // whole point of having it (see SENSITIVE_KEY_RE).
+  //
+  // One exception, and it is about TYPE rather than sensitivity: a boolean
+  // cannot carry a secret. It carries "is this configured", which is exactly
+  // what an is-set map reports. `secrets_set` in the integrations contract is
+  // `{bot_token: true, client_secret: true, …}` — every key matches
+  // SENSITIVE_KEY_RE, so masking turned each `true` into
+  // `"<redacted-bot_token>"` and the fixture described a string map the wire
+  // has never sent. `NOT_SENSITIVE_KEYS` cannot fix that: the keys inside such
+  // a map are arbitrary and named by whatever the integration calls its
+  // credential, so there is no finite list to allow. Same failure
+  // `password_set` was carved out for, one level down.
   if (
     SENSITIVE_KEY_RE.test(key) &&
     !NOT_SENSITIVE_KEYS.has(key.toLowerCase()) &&
+    typeof value !== "boolean" &&
     value !== null &&
     value !== ""
   ) {
