@@ -3,7 +3,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 
 import { NOTIFICATION_INTEGRATION_NAMES, type Integration } from "@/domain/admin/integration";
-import { Switch } from "@/shared/ui/shadcn/switch";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 
 import { IntegrationDialog } from "./integration-dialog";

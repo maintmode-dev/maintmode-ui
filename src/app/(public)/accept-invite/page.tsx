@@ -8,15 +8,21 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const sp = await searchParams;
 
   /**
-   * Resolve the preview here rather than in a client `useQuery`. Two reasons:
-   * it removes a client round-trip and the loading skeleton, and it leaves
-   * `/accept-invite` with no React Query dependency at all — a precondition for
-   * serving public routes without `QueryClientProvider`.
-   */
-  const preview = await resolveInvitationPreview(sp.token);
-
-  /**
-   * Is there a provider to dance with? (RUK-304)
+   * Both reads happen server-side, and CONCURRENTLY.
+   *
+   * Server-side rather than in a client `useQuery`: it removes a client
+   * round-trip and the loading skeleton, and it leaves `/accept-invite` with no
+   * React Query dependency at all — a precondition for serving public routes
+   * without `QueryClientProvider`.
+   *
+   * Concurrently because they share nothing: awaiting them in sequence made
+   * this route's first byte wait for the SUM of two deadlines rather than the
+   * larger of them. `Promise.all` is safe here specifically because neither
+   * resolver throws — one answers `{ ok: false }`, the other
+   * `{ status: "unknown_error" }` — so there is no rejection for fail-fast to
+   * surface and `allSettled` would buy nothing.
+   *
+   * ## Why the provider read is here at all (RUK-304)
    *
    * `b74a4536` moved sign-in providers into the integration registry and its
    * migration deleted the existing rows, so a fresh deployment has none — while
@@ -26,9 +32,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * that point), so the invitee lands on raw backend JSON on another origin
    * with only the back button to escape.
    *
-   * This is a real added round-trip on a public route, not a free check — the
-   * resolver is not already called here the way it is on `/login`. It is worth
-   * one: the alternative is a button whose only outcome is that JSON.
+   * It is a genuinely added round-trip on a public route — the resolver is not
+   * already called here the way it is on `/login` — and worth one: the
+   * alternative is a button whose only outcome is that JSON. Running it
+   * alongside the preview is what keeps the cost to a shared wait rather than
+   * an added one.
    *
    * `{ ok: false }` (transport failure) is treated as AVAILABLE rather than
    * unavailable. Unlike `/login` there is no break-glass path — an invitation
@@ -40,7 +48,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * Only a RESOLVED list that lacks the provider suppresses the button, which
    * is the deterministic post-migration case.
    */
-  const providers = await resolveAuthProviders();
+  const [preview, providers] = await Promise.all([
+    resolveInvitationPreview(sp.token),
+    resolveAuthProviders(),
+  ]);
   const signInAvailable = !providers.ok || providers.methods.some((m) => m.id === "google");
 
   /**

@@ -26,6 +26,9 @@ export interface ResolvedInvitationPreview {
   suggested_provider?: string;
 }
 
+/** See the `signal` comment in the fetch below — mirrors `/login`'s budget. */
+const PREVIEW_TIMEOUT_MS = 2_000;
+
 const KNOWN_STATUSES: ReadonlySet<string> = new Set(["valid", "invalid", "expired", "accepted", "revoked"]);
 
 function isKnownStatus(value: string): value is ResolvedInviteStatus {
@@ -52,6 +55,15 @@ export async function resolveInvitationPreview(
       // Public route: never send credentials and never let a cached response
       // serve one invitee's preview to another.
       cache: "no-store",
+      // Tighter than the shared 10s default, for the reason
+      // `resolve-auth-providers.ts` gives about its own budget: this call
+      // blocks a cold-start public route's first byte, and holding a blank tab
+      // for ten seconds before rendering the retry state is indistinguishable
+      // from a dead site. The retry state below exists to be REACHED.
+      //
+      // `backendRequest` combines this with the shared deadline via
+      // `AbortSignal.any`, so it can only tighten the ceiling, never widen it.
+      signal: AbortSignal.timeout(PREVIEW_TIMEOUT_MS),
     });
   } catch {
     // The equivalent of the client's `skipAuthRedirect: true`: a failed preview
