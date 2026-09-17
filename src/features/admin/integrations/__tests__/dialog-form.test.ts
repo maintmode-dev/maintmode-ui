@@ -421,6 +421,51 @@ describe("normalizeIssuer", () => {
     );
   });
 
+  /**
+   * The browser's own URL serializer is NOT Go's. `URL.toString()` drops a
+   * default port, so an issuer written with `:443` and one written without it
+   * compare equal in the browser and UNEQUAL in Go — which means the form stays
+   * quiet about a rebind the backend then refuses. Caught in review; pinned
+   * here because nothing else would notice the day this is "simplified" back
+   * to `parsed.toString()`.
+   */
+  it("treats an explicit default port as a different issuer, as Go does", () => {
+    expect(normalizeIssuer("https://idp.example.com:443")).not.toBe(
+      normalizeIssuer("https://idp.example.com"),
+    );
+  });
+
+  it("keeps a non-default port", () => {
+    expect(normalizeIssuer("https://idp.example.com:8443")).toContain(":8443");
+  });
+
+  /** The same edit really does demand the secret again, end to end. */
+  it("demands the secret when only the explicit port is removed", () => {
+    const meta = {
+      label: "Custom",
+      description: "",
+      brand: "oidc",
+      statusHint: ["on", "off"],
+      configFields: [
+        { name: "issuer_url", label: "Issuer URL", optional: false, url: true },
+        { name: "client_id", label: "Client ID", optional: false },
+      ],
+      secrets: [
+        {
+          key: "client_secret",
+          label: "Client secret",
+          required: true,
+          clearable: false,
+          rebindsOn: ["issuer_url", "client_id"],
+        },
+      ],
+    } as unknown as Parameters<typeof secretsInvalidatedBy>[0];
+    const stored = { issuer_url: "https://idp.example.com:443", client_id: "maintmode" };
+    const drafts = { ...stored, issuer_url: "https://idp.example.com" };
+
+    expect(secretsInvalidatedBy(meta, drafts, stored, { client_secret: true })).toEqual(["client_secret"]);
+  });
+
   /** The branch an operator hits mid-edit. */
   it("lowercases an unparseable value whole", () => {
     expect(normalizeIssuer("Not A Url")).toBe("not a url");
@@ -428,6 +473,38 @@ describe("normalizeIssuer", () => {
     // throw: this is the state the field is in while someone is editing it.
     expect(normalizeIssuer("HTTPS://IDP")).toBe(normalizeIssuer("https://idp"));
   });
+});
+
+/**
+ * Golden values CAPTURED by running the backend's own `xurl.NormalizeIssuer`
+ * over the same inputs, not hand-reasoned from its source.
+ *
+ * This comparison is the point of the function: the two sides must agree
+ * exactly, and the ways they can silently diverge are not obvious. The
+ * browser's `URL` discards a default port during PARSING and appends a root
+ * slash when serializing — neither of which Go does — so an implementation
+ * that looks like a faithful port can still disagree on the very inputs an
+ * operator is most likely to type.
+ */
+describe("normalizeIssuer matches the backend byte for byte", () => {
+  const GOLDEN: [input: string, go: string][] = [
+    ["https://idp.example.com:443", "https://idp.example.com:443"],
+    ["https://idp.example.com", "https://idp.example.com"],
+    ["https://idp.example.com/", "https://idp.example.com"],
+    ["https://IDP.Example.com", "https://idp.example.com"],
+    ["https://idp.example.com:8443", "https://idp.example.com:8443"],
+    ["https://idp.example.com/Realms/Corp", "https://idp.example.com/Realms/Corp"],
+    ["https://idp.example.com/realms/corp", "https://idp.example.com/realms/corp"],
+    [" https://idp.example.com// ", "https://idp.example.com"],
+    ["not a url", "not a url"],
+    ["https://accounts.google.com", "https://accounts.google.com"],
+  ];
+
+  for (const [input, go] of GOLDEN) {
+    it(`normalizes ${JSON.stringify(input)} the way Go does`, () => {
+      expect(normalizeIssuer(input)).toBe(go);
+    });
+  }
 });
 
 describe("secretsInvalidatedBy", () => {

@@ -264,6 +264,14 @@ export function validateUrlFields(
  *    so folding path case would skip a rebind that is actually required;
  *  - a value that does not parse, or has no host, is lowercased WHOLE. A
  *    half-typed issuer hits this, which is exactly when an operator is editing.
+ *
+ * The result is assembled by hand rather than returned from `URL.toString()`,
+ * which is NOT Go's `url.String()` and differs in ways that matter here:
+ * WHATWG drops a default port (`:443` on https) and appends a root `/` to a
+ * host-only URL, so `https://idp.example.com:443` and `https://idp.example.com`
+ * compare EQUAL in the browser and unequal in Go. That combination is the worst
+ * one available — the form stays quiet, and the backend refuses the save,
+ * which is the late 400 this function exists to prevent.
  */
 export function normalizeIssuer(raw: string): string {
   const trimmed = raw.trim().replace(/\/+$/, "").trim();
@@ -274,9 +282,15 @@ export function normalizeIssuer(raw: string): string {
     return trimmed.toLowerCase();
   }
   if (!parsed.host) return trimmed.toLowerCase();
-  parsed.protocol = parsed.protocol.toLowerCase();
-  parsed.host = parsed.host.toLowerCase();
-  return parsed.toString();
+  // The port comes from the RAW string, not from `parsed`. WHATWG discards a
+  // default port during parsing — `new URL("https://h:443").port` is `""` — so
+  // reading it back from the parsed object cannot distinguish the two spellings
+  // that Go keeps distinct. Everything else is safe to take from `parsed`.
+  const authority = trimmed.slice(trimmed.indexOf("//") + 2).split(/[/?#]/)[0];
+  const explicitPort = /:(\d+)$/.exec(authority)?.[1] ?? "";
+  const host = parsed.hostname.toLowerCase() + (explicitPort ? `:${explicitPort}` : "");
+  const path = parsed.pathname.replace(/\/+$/, "");
+  return `${parsed.protocol.toLowerCase()}//${host}${path}${parsed.search}${parsed.hash}`;
 }
 
 /**
