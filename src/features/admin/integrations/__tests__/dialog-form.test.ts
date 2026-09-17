@@ -220,3 +220,164 @@ describe("validateUrlFields", () => {
     expect(result.issuer_url?.block).toBeDefined();
   });
 });
+
+/**
+ * Preset fields — supplied by the deployment's catalog, not by the operator.
+ *
+ * The backend refuses a create that carries one and refuses a PATCH that drops
+ * or changes one, so this projection has to get both directions right. The
+ * failure mode is silent: a field written by neither branch simply vanishes
+ * from the body and comes back as a 400 with nothing on screen to explain it.
+ */
+describe("buildConfig — preset fields", () => {
+  const presetMeta = {
+    label: "Google",
+    description: "",
+    brand: "oidc",
+    statusHint: ["on", "off"],
+    configFields: [
+      { name: "display_name", label: "Display name", optional: false, preset: true },
+      { name: "issuer_url", label: "Issuer URL", optional: false, url: true, preset: true },
+      { name: "client_id", label: "Client ID", optional: false },
+    ],
+    secrets: [],
+  } as unknown as Parameters<typeof buildConfig>[0];
+
+  const STORED = {
+    display_name: "Google",
+    issuer_url: "https://accounts.google.com",
+    client_id: "stored-id",
+  };
+
+  it("omits every preset field on create", () => {
+    const body = buildConfig(presetMeta, { client_id: "new-id" }, {}, "create");
+
+    expect(body).toEqual({ client_id: "new-id" });
+    expect(body.issuer_url).toBeUndefined();
+    expect(body.display_name).toBeUndefined();
+  });
+
+  it("echoes preset fields verbatim from the stored config on patch", () => {
+    const body = buildConfig(presetMeta, { client_id: "new-id" }, STORED, "patch");
+
+    expect(body.issuer_url).toBe("https://accounts.google.com");
+    expect(body.display_name).toBe("Google");
+    expect(body.client_id).toBe("new-id");
+  });
+
+  /**
+   * The subtle one. `config` replaces wholesale and the backend refuses a
+   * DROPPED preset field exactly as it refuses a changed one — so the echo has
+   * to happen even though the draft loop skips an empty draft, and even though
+   * the carry-through skips the field for being `known`.
+   */
+  it("echoes a preset field even when its draft is empty", () => {
+    const body = buildConfig(presetMeta, { client_id: "new-id", issuer_url: "" }, STORED, "patch");
+
+    expect(body.issuer_url).toBe("https://accounts.google.com");
+  });
+
+  /** The draft is display only: an edited one must never reach the wire. */
+  it("ignores an edited preset draft and sends what is stored", () => {
+    const body = buildConfig(
+      presetMeta,
+      { client_id: "new-id", issuer_url: "https://evil.example" },
+      STORED,
+      "patch",
+    );
+
+    expect(body.issuer_url).toBe("https://accounts.google.com");
+  });
+
+  /** An empty echo is refused either way; a made-up one is refused for being wrong. */
+  it("does not invent a preset value the stored config lacks", () => {
+    const body = buildConfig(presetMeta, { client_id: "new-id" }, { client_id: "x" }, "patch");
+
+    expect("issuer_url" in body).toBe(false);
+  });
+});
+
+/**
+ * `jwtverifier.allowed_hosted_domains` is nested on the wire. Only the two
+ * functions that cross that boundary know it — the form's own draft state stays
+ * flat and keyed by field name.
+ */
+describe("nested config paths", () => {
+  const nestedMeta = {
+    label: "Custom",
+    description: "",
+    brand: "oidc",
+    statusHint: ["on", "off"],
+    configFields: [
+      { name: "client_id", label: "Client ID", optional: false },
+      {
+        name: "allowed_hosted_domains",
+        path: ["jwtverifier", "allowed_hosted_domains"],
+        label: "Allowed hosted domains",
+        optional: true,
+        list: true,
+      },
+    ],
+    secrets: [],
+  } as unknown as Parameters<typeof buildConfig>[0];
+
+  it("writes the value at its nested path", () => {
+    const body = buildConfig(
+      nestedMeta,
+      { client_id: "id", allowed_hosted_domains: "corp.example" },
+      {},
+      "create",
+    );
+
+    expect(body).toEqual({
+      client_id: "id",
+      jwtverifier: { allowed_hosted_domains: ["corp.example"] },
+    });
+  });
+
+  it("hydrates a draft from the nested path", () => {
+    const drafts = buildDrafts(nestedMeta, {
+      client_id: "id",
+      jwtverifier: { allowed_hosted_domains: ["corp.example", "eu.corp.example"] },
+    });
+
+    expect(drafts.allowed_hosted_domains).toBe("corp.example, eu.corp.example");
+  });
+
+  /**
+   * The carry-through exists so a key the UI does not render survives a save.
+   * A nested write that REPLACED its parent would reintroduce exactly that loss
+   * one level down.
+   */
+  it("merges into the parent rather than replacing it", () => {
+    const body = buildConfig(
+      nestedMeta,
+      { client_id: "id", allowed_hosted_domains: "corp.example" },
+      { jwtverifier: { allowed_hosted_domains: ["old"], some_future_setting: true } },
+      "patch",
+    );
+
+    expect(body.jwtverifier).toEqual({
+      allowed_hosted_domains: ["corp.example"],
+      some_future_setting: true,
+    });
+  });
+
+  it("leaves a stored nested value alone when the draft is empty", () => {
+    const body = buildConfig(
+      nestedMeta,
+      { client_id: "id", allowed_hosted_domains: "" },
+      { jwtverifier: { some_future_setting: true } },
+      "patch",
+    );
+
+    expect(body.jwtverifier).toEqual({ some_future_setting: true });
+  });
+
+  /** A list the backend has never been given comes back as null, not []. */
+  it("hydrates an empty draft from a null list", () => {
+    const drafts = buildDrafts(nestedMeta, { jwtverifier: { allowed_hosted_domains: null } });
+
+    expect(drafts.allowed_hosted_domains).toBe("");
+  });
+});

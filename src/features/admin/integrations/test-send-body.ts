@@ -38,7 +38,11 @@ export function buildTestSendBody(
   to: string,
   storedConfig: Record<string, unknown> = {},
 ): TestIntegrationInput {
-  const config = buildConfig(meta, drafts, storedConfig);
+  // "patch", because this must build what SAVE would build: the probe exists to
+  // test the server the operator is about to store, so omitting a preset field
+  // here would test a different one. (Login providers have no probe at all
+  // today; this is pinned so the answer does not have to be re-derived.)
+  const config = buildConfig(meta, drafts, storedConfig, "patch");
   const plainSecrets = buildProbeSecrets(secrets);
 
   // The kind validates username and password as a pair, so a username with no

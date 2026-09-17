@@ -278,7 +278,7 @@ function IntegrationDialogBody({
           ref: { kind, name },
           body: {
             enabled,
-            config: buildConfig(meta, config, integration.config),
+            config: buildConfig(meta, config, integration.config, "patch"),
             secrets: buildSecretsPatch(secrets),
           },
         });
@@ -287,7 +287,7 @@ function IntegrationDialogBody({
           kind,
           name,
           enabled,
-          config: buildConfig(meta, config),
+          config: buildConfig(meta, config, {}, "create"),
           secrets: buildSecretsCreate(secrets),
         });
       }
@@ -501,7 +501,7 @@ function ConfigField({
   const isUnknownValue = !!field.options && value !== "" && !field.options.some((o) => o.value === value);
   return (
     <div className="space-y-1.5">
-      <FieldLabel required={!field.optional} htmlFor={inputId}>
+      <FieldLabel required={!field.optional && !field.preset} htmlFor={inputId}>
         {field.label}
       </FieldLabel>
       {field.options ? (
@@ -527,9 +527,15 @@ function ConfigField({
           id={inputId}
           value={value}
           placeholder={field.placeholder}
+          // A preset field is supplied by the deployment. `readOnly` rather than
+          // `disabled`: the value is the point — an operator needs to SEE which
+          // issuer they are pointed at — and a disabled input dims it out of
+          // legibility and drops it from the tab order.
+          readOnly={field.preset}
           disabled={disabled}
           inputMode={field.numeric ? "numeric" : undefined}
           onChange={(e) => onChange(e.target.value)}
+          className={field.preset ? "bg-bg-elev-2 text-fg-muted" : undefined}
         />
       )}
       {activeDanger ? <p className="text-xs text-destructive">{activeDanger}</p> : null}

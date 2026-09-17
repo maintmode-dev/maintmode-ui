@@ -4,7 +4,7 @@
  * projection are unit-testable data-in/data-out.
  */
 
-import type { IntegrationKindMeta } from "./integration-kinds";
+import type { ConfigFieldMeta, IntegrationKindMeta } from "./integration-kinds";
 import type { SecretFieldState } from "./secret-patch";
 
 /**
@@ -19,7 +19,11 @@ export function hasMissingRequired(
   config: Record<string, string>,
   secrets: Record<string, SecretFieldState>,
 ): boolean {
-  const configMissing = meta.configFields.some((f) => !f.optional && (config[f.name] ?? "").trim() === "");
+  // A preset field is never the operator's to fill — the server supplies it,
+  // and on create it must not be sent at all.
+  const configMissing = meta.configFields.some(
+    (f) => !f.optional && !f.preset && (config[f.name] ?? "").trim() === "",
+  );
   const secretMissing = meta.secrets.some((s) => {
     if (!s.required) return false;
     const state = secrets[s.key];
@@ -39,27 +43,101 @@ export function hasMissingRequired(
  * key (absent ≠ `""` to the backend), a `numeric` field's draft is coerced to
  * a number when it parses, and a non-numeric draft in a numeric field is sent
  * as a string on purpose — the server owns that validation and 400s inline.
+ *
+ * `mode` decides two things the shape of the arguments cannot: whether preset
+ * fields are echoed (patch) or omitted (create), and whether `storedConfig` is
+ * read at all. See `BuildConfigMode`.
  */
 export function buildConfig(
   meta: IntegrationKindMeta,
   drafts: Record<string, string>,
   storedConfig: Record<string, unknown> = {},
+  mode: BuildConfigMode = "patch",
 ): Record<string, unknown> {
-  const known = new Set(meta.configFields.map((f) => f.name));
+  // Only FLAT field names are "known" here. A nested field's parent key is
+  // carried through like any other stored key, and the nested write below
+  // merges into it — otherwise a sibling the UI does not render (another
+  // `jwtverifier` setting) is destroyed on every save, which is the loss this
+  // carry-through exists to prevent.
+  const known = new Set(meta.configFields.filter((f) => !f.path).map((f) => f.name));
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(storedConfig)) {
     if (!known.has(key)) out[key] = value;
   }
+
+  // Preset fields first, and unconditionally — before the draft loop, which
+  // skips an empty draft. A preset field is `known` (so the carry-through above
+  // passed it over) AND read-only (so its draft may be anything), and a field
+  // written by neither branch vanishes from the body. The backend refuses a
+  // DROPPED preset field exactly as it refuses a changed one, so that silence
+  // would be a 400 with nothing on screen to explain it.
+  //
+  // Never from the draft: the draft is display. Never on create: supplying a
+  // preset field at all is a 400 there.
+  if (mode === "patch") {
+    for (const f of meta.configFields) {
+      if (!f.preset) continue;
+      const stored = readPath(storedConfig, f);
+      // An absent stored value is NOT synthesised. An empty echo is refused
+      // either way, and a made-up one would be refused for being wrong.
+      if (stored !== undefined) writePath(out, f, stored);
+    }
+  }
+
   for (const f of meta.configFields) {
+    if (f.preset) continue;
     const raw = (drafts[f.name] ?? "").trim();
     if (raw === "") continue;
     if (f.list) {
-      out[f.name] = parseList(raw);
+      writePath(out, f, parseList(raw));
       continue;
     }
-    out[f.name] = f.numeric && !Number.isNaN(Number(raw)) ? Number(raw) : raw;
+    writePath(out, f, f.numeric && !Number.isNaN(Number(raw)) ? Number(raw) : raw);
   }
   return out;
+}
+
+/**
+ * Which call this is. Inferring it from `storedConfig` being empty would be a
+ * coincidence rather than a rule — an existing row with an empty config is
+ * indistinguishable from a create, and guessing wrong means a 400 on a form
+ * carrying a credential.
+ */
+export type BuildConfigMode = "create" | "patch";
+
+/** Read a field's stored value, following `path` when it has one. */
+function readPath(config: Record<string, unknown>, f: ConfigFieldMeta): unknown {
+  if (!f.path) return config[f.name];
+  let cursor: unknown = config;
+  for (const segment of f.path) {
+    if (typeof cursor !== "object" || cursor === null) return undefined;
+    cursor = (cursor as Record<string, unknown>)[segment];
+  }
+  return cursor;
+}
+
+/**
+ * Write a field's outgoing value, following `path` when it has one.
+ *
+ * MERGES into whatever the carry-through already seeded at the parent key
+ * rather than replacing it: a sibling the UI does not render (a future
+ * `jwtverifier` setting) would otherwise be destroyed on every save — the exact
+ * loss the carry-through exists to prevent, reintroduced one level down. On
+ * create there is nothing seeded and the parent is created here.
+ */
+function writePath(out: Record<string, unknown>, f: ConfigFieldMeta, value: unknown): void {
+  if (!f.path) {
+    out[f.name] = value;
+    return;
+  }
+  let cursor = out;
+  for (const segment of f.path.slice(0, -1)) {
+    const existing = cursor[segment];
+    const next = typeof existing === "object" && existing !== null ? { ...(existing as object) } : {};
+    cursor[segment] = next;
+    cursor = next as Record<string, unknown>;
+  }
+  cursor[f.path[f.path.length - 1]] = value;
 }
 
 /**
@@ -92,7 +170,10 @@ export function buildDrafts(
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const f of meta.configFields) {
-    const v = config[f.name];
+    const v = readPath(config, f);
+    // `null` as well as absent: a list the backend has never been given comes
+    // back as JSON null rather than `[]`, and `String(null)` would seed the
+    // input with the text "null".
     if (v == null) {
       out[f.name] = "";
       continue;
@@ -139,7 +220,9 @@ export function validateUrlFields(
 ): Record<string, FieldVerdict> {
   const out: Record<string, FieldVerdict> = {};
   for (const f of meta.configFields) {
-    if (!f.url) continue;
+    // Preset fields are server-owned and read-only: blocking a save over a value
+    // the operator cannot edit would be a dead end.
+    if (!f.url || f.preset) continue;
     const raw = (drafts[f.name] ?? "").trim();
     if (raw === "") continue;
 
@@ -155,7 +238,12 @@ export function validateUrlFields(
       continue;
     }
     if (parsed.protocol === "http:") {
-      out[f.name] = { warn: "Not encrypted. Use https:// outside local development." };
+      // The backend rejects plain http on these outright — no loopback escape
+      // hatch, because this is the field a client secret is bound to and sent
+      // to. Warning would promise a save that cannot succeed.
+      out[f.name] = f.httpsOnly
+        ? { block: "Must use https — the server refuses a plain-http issuer." }
+        : { warn: "Not encrypted. Use https:// outside local development." };
     }
   }
   return out;
