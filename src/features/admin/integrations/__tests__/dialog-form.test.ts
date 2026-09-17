@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { NOTIFICATION_KIND_META } from "../integration-kinds";
-import { buildConfig, buildDrafts, hasMissingRequired, validateUrlFields } from "../dialog-form";
+import {
+  buildConfig,
+  buildDrafts,
+  hasMissingRequired,
+  hostedDomainNotice,
+  normalizeIssuer,
+  secretsInvalidatedBy,
+  validateUrlFields,
+} from "../dialog-form";
 import type { SecretFieldState } from "../secret-patch";
 
 const slack = NOTIFICATION_KIND_META.slack;
@@ -379,5 +387,176 @@ describe("nested config paths", () => {
     const drafts = buildDrafts(nestedMeta, { jwtverifier: { allowed_hosted_domains: null } });
 
     expect(drafts.allowed_hosted_domains).toBe("");
+  });
+});
+
+/**
+ * Mirrors the backend's `xurl.NormalizeIssuer`. The point of copying it exactly
+ * is that both kinds of drift are harmful: looser demands a re-typed secret the
+ * backend would not ask for, stricter skips one it does.
+ */
+describe("normalizeIssuer", () => {
+  it("strips trailing slashes, including several", () => {
+    expect(normalizeIssuer("https://idp.example/")).toBe(normalizeIssuer("https://idp.example"));
+    expect(normalizeIssuer("https://idp.example///")).toBe(normalizeIssuer("https://idp.example"));
+  });
+
+  /** The backend trims on BOTH sides of the slash removal, and so must this. */
+  it("trims around the slashes it strips", () => {
+    expect(normalizeIssuer(" https://idp.example/ ")).toBe(normalizeIssuer("https://idp.example"));
+  });
+
+  it("lowercases scheme and host", () => {
+    expect(normalizeIssuer("HTTPS://IDP.Example")).toBe(normalizeIssuer("https://idp.example"));
+  });
+
+  /**
+   * An issuer's path is case-sensitive per RFC 3986, and the backend says so:
+   * a provider serving /Realms/Corp is a different issuer. Folding it would
+   * SKIP a rebind the backend requires — the dangerous direction.
+   */
+  it("leaves path case alone", () => {
+    expect(normalizeIssuer("https://idp.example/Realms/Corp")).not.toBe(
+      normalizeIssuer("https://idp.example/realms/corp"),
+    );
+  });
+
+  /** The branch an operator hits mid-edit. */
+  it("lowercases an unparseable value whole", () => {
+    expect(normalizeIssuer("Not A Url")).toBe("not a url");
+    // Half-typed, and it must still normalize deterministically rather than
+    // throw: this is the state the field is in while someone is editing it.
+    expect(normalizeIssuer("HTTPS://IDP")).toBe(normalizeIssuer("https://idp"));
+  });
+});
+
+describe("secretsInvalidatedBy", () => {
+  const meta = {
+    label: "Custom",
+    description: "",
+    brand: "oidc",
+    statusHint: ["on", "off"],
+    configFields: [
+      { name: "issuer_url", label: "Issuer URL", optional: false, url: true },
+      { name: "client_id", label: "Client ID", optional: false },
+      { name: "display_name", label: "Display name", optional: false },
+    ],
+    secrets: [
+      {
+        key: "client_secret",
+        label: "Client secret",
+        required: true,
+        clearable: false,
+        rebindsOn: ["issuer_url", "client_id"],
+      },
+    ],
+  } as unknown as Parameters<typeof secretsInvalidatedBy>[0];
+
+  const STORED = { issuer_url: "https://idp.example", client_id: "maintmode", display_name: "Corp" };
+  const SET = { client_secret: true };
+
+  it("says nothing while the bound fields are untouched", () => {
+    expect(secretsInvalidatedBy(meta, { ...STORED }, STORED, SET)).toEqual([]);
+  });
+
+  it("names the secret when a bound field changes", () => {
+    expect(secretsInvalidatedBy(meta, { ...STORED, client_id: "other" }, STORED, SET)).toEqual([
+      "client_secret",
+    ]);
+  });
+
+  /**
+   * The case that decides whether operators trust the prompt: the backend
+   * normalizes before comparing, so this is not a change to it either.
+   */
+  it("does NOT demand the secret for a re-pasted issuer with a trailing slash", () => {
+    const drafts = { ...STORED, issuer_url: "https://idp.example/" };
+    expect(secretsInvalidatedBy(meta, drafts, STORED, SET)).toEqual([]);
+  });
+
+  it("does not demand the secret for a case-only host edit", () => {
+    const drafts = { ...STORED, issuer_url: "https://IDP.example" };
+    expect(secretsInvalidatedBy(meta, drafts, STORED, SET)).toEqual([]);
+  });
+
+  /** Path case IS a change — the backend treats it as a different issuer. */
+  it("demands the secret when only the issuer path case differs", () => {
+    const stored = { ...STORED, issuer_url: "https://idp.example/realms/corp" };
+    const drafts = { ...stored, issuer_url: "https://idp.example/Realms/Corp" };
+    expect(secretsInvalidatedBy(meta, drafts, stored, SET)).toEqual(["client_secret"]);
+  });
+
+  /** Nothing stored, nothing to strand — demanding a re-type would be invented. */
+  it("stays quiet when no secret is stored", () => {
+    const drafts = { ...STORED, client_id: "other" };
+    expect(secretsInvalidatedBy(meta, drafts, STORED, { client_secret: false })).toEqual([]);
+  });
+
+  it("ignores a field the secret is not bound to", () => {
+    const drafts = { ...STORED, display_name: "Renamed" };
+    expect(secretsInvalidatedBy(meta, drafts, STORED, SET)).toEqual([]);
+  });
+});
+
+describe("validateUrlFields — httpsOnly", () => {
+  const meta = {
+    label: "Custom",
+    description: "",
+    brand: "oidc",
+    statusHint: ["on", "off"],
+    configFields: [
+      { name: "issuer_url", label: "Issuer URL", optional: false, url: true, httpsOnly: true },
+      { name: "redirect_uri", label: "Redirect URI", optional: false, url: true },
+      { name: "preset_url", label: "Preset", optional: false, url: true, httpsOnly: true, preset: true },
+    ],
+    secrets: [],
+  } as unknown as Parameters<typeof validateUrlFields>[0];
+
+  /** The backend refuses a plain-http issuer outright — no loopback exception. */
+  it("blocks http on a httpsOnly field instead of warning", () => {
+    const result = validateUrlFields(meta, { issuer_url: "http://keycloak.local" });
+    expect(result.issuer_url?.block).toBeDefined();
+    expect(result.issuer_url?.warn).toBeUndefined();
+  });
+
+  /** `redirect_uri` carries `is.URL` alone, so a local callback is valid. */
+  it("still only warns on a field without the flag", () => {
+    const result = validateUrlFields(meta, { redirect_uri: "http://localhost:3000/cb" });
+    expect(result.redirect_uri?.warn).toBeDefined();
+    expect(result.redirect_uri?.block).toBeUndefined();
+  });
+
+  /** Blocking a save over a value the operator cannot edit is a dead end. */
+  it("says nothing about a preset field", () => {
+    expect(validateUrlFields(meta, { preset_url: "http://whatever" })).toEqual({});
+  });
+});
+
+/**
+ * Empty means NO restriction — the backend's choice, because `hd` is a
+ * Google-specific claim and requiring a list would break every other IdP. So
+ * the UI warns, and the warning has to name the right situation: telling a
+ * Keycloak operator their domain list is empty invites them to fill in a field
+ * that will never be consulted.
+ */
+describe("hostedDomainNotice", () => {
+  const GOOGLE = "https://accounts.google.com";
+
+  it("warns that any Google account gets in when the list is empty", () => {
+    expect(hostedDomainNotice(GOOGLE, "")).toMatch(/any Google account/i);
+  });
+
+  it("says the restriction does not apply for another provider", () => {
+    expect(hostedDomainNotice("https://idp.example/realms/corp", "")).toMatch(/does not report/i);
+  });
+
+  it("says nothing once a domain is listed", () => {
+    expect(hostedDomainNotice(GOOGLE, "corp.example")).toBeNull();
+    expect(hostedDomainNotice("https://idp.example", "corp.example")).toBeNull();
+  });
+
+  /** Applicability is computed, so it must survive the same spellings. */
+  it("recognises the Google issuer with a trailing slash", () => {
+    expect(hostedDomainNotice(`${GOOGLE}/`, "")).toMatch(/any Google account/i);
   });
 });

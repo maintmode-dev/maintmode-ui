@@ -30,6 +30,8 @@ import {
   buildConfig,
   buildDrafts,
   hasMissingRequired,
+  hostedDomainNotice,
+  secretsInvalidatedBy,
   validateUrlFields,
   type FieldVerdict,
 } from "./dialog-form";
@@ -208,6 +210,14 @@ function IntegrationDialogBody({
     invalidateTest();
   };
 
+  // Which stored secrets the current drafts have invalidated. Derived rather
+  // than remembered: an operator who edits a bound field and puts the old value
+  // back has not invalidated anything, and a latch would keep insisting.
+  const rebound = useMemo(
+    () => secretsInvalidatedBy(meta, config, integration?.config ?? {}, integration?.secrets_set ?? {}),
+    [meta, config, integration],
+  );
+
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
   const fieldVerdicts = useMemo(() => validateUrlFields(meta, config), [meta, config]);
   const hasBlockingField = useMemo(
@@ -338,6 +348,7 @@ function IntegrationDialogBody({
             secret={secret}
             state={secrets[secret.key]}
             disabled={submitting}
+            rebound={rebound.includes(secret.key)}
             onModeChange={(mode) => setSecret(secret.key, { mode, value: "" })}
             onValueChange={(value) => setSecret(secret.key, { value })}
           />
@@ -350,10 +361,30 @@ function IntegrationDialogBody({
             key={field.name}
             field={field}
             verdict={fieldVerdicts[field.name]}
+            notice={
+              field.name === "allowed_hosted_domains"
+                ? hostedDomainNotice(config.issuer_url ?? "", config[field.name] ?? "")
+                : null
+            }
             value={config[field.name]}
             disabled={submitting}
             onChange={(value) => {
-              setConfig((cur) => ({ ...cur, [field.name]: value }));
+              const next = { ...config, [field.name]: value };
+              setConfig(next);
+              // A stored secret is cryptographically bound to some of these
+              // values. Editing one invalidates it, so unlock it here — while
+              // the operator is still looking at the field they changed —
+              // rather than letting the backend refuse the save afterwards.
+              for (const key of secretsInvalidatedBy(
+                meta,
+                next,
+                integration?.config ?? {},
+                integration?.secrets_set ?? {},
+              )) {
+                setSecrets((cur) =>
+                  cur[key]?.mode === "locked" ? { ...cur, [key]: { mode: "editing", value: "" } } : cur,
+                );
+              }
               invalidateTest();
             }}
           />
@@ -479,11 +510,14 @@ function ConfigField({
   value,
   disabled,
   verdict,
+  notice,
   onChange,
 }: {
   field: ConfigFieldMeta;
   value: string;
   disabled: boolean;
+  /** Advisory copy that depends on other fields, not on this one's format. */
+  notice?: string | null;
   /** Format verdict for a `url` field — blocks submit, or warns and lets it through. */
   verdict?: FieldVerdict;
   onChange: (value: string) => void;
@@ -541,6 +575,7 @@ function ConfigField({
       {activeDanger ? <p className="text-xs text-destructive">{activeDanger}</p> : null}
       {verdict?.block ? <p className="text-xs text-destructive">{verdict.block}</p> : null}
       {verdict?.warn ? <p className="text-xs text-[var(--status-in_progress-fg)]">{verdict.warn}</p> : null}
+      {notice ? <p className="text-xs text-[var(--status-in_progress-fg)]">{notice}</p> : null}
       {field.help ? <p className="text-xs text-fg-dim">{field.help}</p> : null}
     </div>
   );
@@ -556,9 +591,17 @@ function SecretField({
   secret,
   state,
   disabled,
+  rebound,
   onModeChange,
   onValueChange,
 }: {
+  /**
+   * The stored value is no longer usable: a field it is bound to has been
+   * edited, so the backend will refuse a save that does not carry a
+   * replacement. "Keep current" is hidden while this holds — it would put the
+   * field back into a state the server rejects.
+   */
+  rebound?: boolean;
   secret: SecretMeta;
   state: SecretFieldState;
   disabled: boolean;
@@ -636,7 +679,7 @@ function SecretField({
           disabled={disabled}
           onChange={(e) => onValueChange(e.target.value)}
         />
-        {state.mode === "editing" ? (
+        {state.mode === "editing" && !rebound ? (
           <Button
             variant="ghost"
             size="sm"
@@ -649,7 +692,11 @@ function SecretField({
         ) : null}
       </div>
       <p className="text-xs text-fg-dim">
-        {state.mode === "editing" ? "Entering a new value replaces the stored one on save." : secret.help}
+        {rebound
+          ? "You changed a value this secret is tied to, so the stored one no longer works — enter it again to save."
+          : state.mode === "editing"
+            ? "Entering a new value replaces the stored one on save."
+            : secret.help}
       </p>
     </div>
   );

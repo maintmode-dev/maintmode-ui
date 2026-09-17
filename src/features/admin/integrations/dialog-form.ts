@@ -248,3 +248,100 @@ export function validateUrlFields(
   }
   return out;
 }
+
+/**
+ * Normalize an issuer URL the way the backend does before comparing two.
+ *
+ * Mirrors `xurl.NormalizeIssuer` branch for branch, because anything looser
+ * demands a re-typed secret the backend would not have asked for, and anything
+ * stricter skips one it does:
+ *
+ *  - trim, strip ALL trailing slashes, trim again (the backend does both sides
+ *    of the slash removal: " https://idp/ " leaves a space behind otherwise);
+ *  - lowercase scheme and host only;
+ *  - leave path, query and fragment ALONE, case included — the backend is
+ *    explicit that `/Realms/Corp` is a different issuer from `/realms/corp`,
+ *    so folding path case would skip a rebind that is actually required;
+ *  - a value that does not parse, or has no host, is lowercased WHOLE. A
+ *    half-typed issuer hits this, which is exactly when an operator is editing.
+ */
+export function normalizeIssuer(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "").trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return trimmed.toLowerCase();
+  }
+  if (!parsed.host) return trimmed.toLowerCase();
+  parsed.protocol = parsed.protocol.toLowerCase();
+  parsed.host = parsed.host.toLowerCase();
+  return parsed.toString();
+}
+
+/**
+ * Which stored secrets an edit has just invalidated.
+ *
+ * The backend binds a secret cryptographically to the values it was sealed
+ * against, so changing one of them without sending a replacement is refused —
+ * with a message that arrives after the operator has filled in everything else.
+ * The form pushes the secret out of `locked` instead, while they are still
+ * looking at the field they changed.
+ *
+ * Two preconditions the metadata cannot express, and both matter:
+ *
+ *  - only when a secret is actually STORED (`secrets_set`). On a row with
+ *    nothing stored there is nothing to strand, and demanding a re-type would
+ *    be an invention.
+ *  - only when the value really differs under the backend's own normalization.
+ *    Re-pasting the same issuer with a trailing slash is not a change, and
+ *    treating it as one teaches operators to ignore the prompt.
+ */
+export function secretsInvalidatedBy(
+  meta: IntegrationKindMeta,
+  drafts: Record<string, string>,
+  storedConfig: Record<string, unknown>,
+  secretsSet: Record<string, boolean>,
+): string[] {
+  const out: string[] = [];
+  for (const secret of meta.secrets) {
+    if (!secret.rebindsOn?.length) continue;
+    if (!secretsSet[secret.key]) continue;
+    const changed = secret.rebindsOn.some((fieldName) => {
+      const field = meta.configFields.find((f) => f.name === fieldName);
+      if (!field) return false;
+      const draft = (drafts[fieldName] ?? "").trim();
+      const stored = readPath(storedConfig, field);
+      const storedText = stored == null ? "" : String(stored);
+      return fieldName === "issuer_url"
+        ? normalizeIssuer(draft) !== normalizeIssuer(storedText)
+        : draft !== storedText.trim();
+    });
+    if (changed) out.push(secret.key);
+  }
+  return out;
+}
+
+/** The one issuer whose provider reports a hosted domain. */
+const GOOGLE_ISSUER = "https://accounts.google.com";
+
+/**
+ * What to say under an empty `allowed_hosted_domains`.
+ *
+ * Empty means NO restriction, and the backend chose that deliberately: `hd` is
+ * a Google-specific claim, so requiring a non-empty list would break sign-in
+ * through every other IdP — the scenario the field exists to serve. The UI
+ * warns instead, and the warning has to be provider-specific or it is noise:
+ * telling a Keycloak operator their domain list is empty invites them to fill
+ * in a field that will never be consulted.
+ *
+ * Applicability is computed from the issuer already in the form. There is no
+ * field for it in the response, deliberately — a derived value stored server
+ * side would be a second source of truth.
+ */
+export function hostedDomainNotice(issuerDraft: string, currentValue: string): string | null {
+  if (currentValue.trim() !== "") return null;
+  return normalizeIssuer(issuerDraft) === normalizeIssuer(GOOGLE_ISSUER)
+    ? "Empty means any Google account can sign in, not only your organisation's."
+    : "This provider does not report a hosted domain, so a domain restriction will not apply.";
+}

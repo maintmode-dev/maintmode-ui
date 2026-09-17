@@ -422,9 +422,7 @@ describe("sign-in provider kinds", () => {
    * hatch, because this is the field the client secret is bound to and sent to.
    * Warning instead of blocking would promise a save that cannot succeed.
    */
-  // Unskipped by the commit that teaches `validateUrlFields` about `httpsOnly`.
-  // The metadata declares it already; nothing reads it yet.
-  it.todo("BLOCKS plain http on the issuer, rather than warning", () => {
+  it("BLOCKS plain http on the issuer, rather than warning", () => {
     renderDialog("custom");
     fireEvent.change(screen.getByLabelText(/Issuer URL/), {
       target: { value: "http://keycloak.local" },
