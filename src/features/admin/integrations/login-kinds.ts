@@ -22,6 +22,20 @@ import type { ConfigFieldMeta, IntegrationKindMeta, SecretMeta } from "./integra
  *
  * `github` is absent: it is a real registry entry only on an unmerged backend
  * branch. See `LOGIN_INTEGRATION_NAMES`.
+ *
+ * ## The preset flags mirror a backend deployment file
+ *
+ * Which fields carry `preset: true` is not something the API reports — it comes
+ * from the backend's own catalogue — `app.config.yaml` under `login.presets`,
+ * one per deployment — verified identical across all four environments. So
+ * this is a registry the frontend mirrors rather than reads, and it goes stale
+ * the way every mirrored registry does: silently, and only on the environment
+ * whose catalogue changed.
+ *
+ * What makes that survivable is that BOTH directions fail loudly at the
+ * backend rather than corrupting anything — supplying a preset field is a 400,
+ * and dropping one is a 400. A drift here costs an operator a failed save with
+ * a server message that names the field, not a wrong provider configuration.
  */
 
 /** Shared by both providers — same struct, same wire validation. */
