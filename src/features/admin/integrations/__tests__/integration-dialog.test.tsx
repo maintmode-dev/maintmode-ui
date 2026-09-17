@@ -462,6 +462,181 @@ describe("sign-in provider kinds", () => {
     expect(clientId?.textContent).toContain("*");
   });
 
+  /**
+   * The credential gate, asserted against its own deletion.
+   *
+   * `savingUnavailable` is the control the routes' docblock calls "what keeps
+   * the credential in the browser": an unroutable pair must not put a typed
+   * `client_secret` on the wire, not even to be refused by the BFF afterwards,
+   * because it reaches the Next server process on the way. Until this test
+   * existed the whole control — the flag AND the early return in `save()` —
+   * could be deleted with the suite staying green.
+   *
+   * `github` is the realistic unroutable pair: a real backend name that this
+   * deployment's registry does not serve.
+   */
+  it("sends NOTHING for a pair this frontend must not route", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    // A descriptor EXISTS for `google` (so the form renders and can be filled
+    // in), but `(notify, google)` is not a pair the registry serves. That is
+    // the shape of the hazard: a complete, submittable credentials form whose
+    // pair must never reach the wire. Pointing this at a name with no
+    // descriptor would prove nothing — the body would not render at all.
+    render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind="notify" name="google" integration={null} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
+    fireEvent.change(screen.getByLabelText(/Redirect URI/), {
+      target: { value: "https://maintmode.example.com/auth/callback" },
+    });
+    fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
+
+    const save = screen.getByRole("button", { name: /Connect|Save changes/ });
+    expect(save.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(save);
+    // `waitFor` cannot do this job: it retries until its callback stops
+    // throwing, so a negative assertion passes on the first synchronous
+    // attempt — before React has flushed the click.
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(bffFetchMock).not.toHaveBeenCalled();
+    // Tied to the secret rather than to the button: a future save path that
+    // bypasses this button keeps the disabled attribute intact and would still
+    // transmit.
+    expect(JSON.stringify(bffFetchMock.mock.calls)).not.toContain(SECRET);
+  });
+
+  /**
+   * The same guard from the other side: a routable login pair MUST reach the
+   * wire once the form is complete. Without this, "send nothing, ever" would
+   * pass the test above and ship a form that silently does nothing.
+   */
+  it("does send for a routable login pair", async () => {
+    bffFetchMock.mockResolvedValueOnce({});
+    renderDialog("custom");
+
+    fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "https://idp.example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
+    fireEvent.change(screen.getByLabelText(/Redirect URI/), {
+      target: { value: "https://maintmode.example.com/auth/callback" },
+    });
+    fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
+
+    fireEvent.click(screen.getByRole("button", { name: /Connect|Save changes/ }));
+
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    expect(bffFetchMock.mock.calls[0][0]).toBe("/api/admin/integrations");
+  });
+
+  /**
+   * The hosted-domain warning is security-relevant copy: empty means NO
+   * restriction, which on a Google issuer lets in every Google account. It has
+   * unit tests for the computation; this is the one that proves it reaches the
+   * screen.
+   */
+  it("shows the Google-specific hosted-domain warning, and only for Google", () => {
+    renderDialog("google");
+    expect(screen.getByText(/any Google account/i)).toBeTruthy();
+
+    cleanup();
+
+    renderDialog("custom");
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "https://idp.example.com/realms/corp" },
+    });
+    expect(screen.queryByText(/any Google account/i)).toBeNull();
+    expect(screen.getByText(/does not report a hosted domain/i)).toBeTruthy();
+  });
+
+  /**
+   * The rebinding rule, asserted as BEHAVIOUR rather than as a pure function.
+   *
+   * `secretsInvalidatedBy` has thorough unit tests; none of them proved the
+   * result reaches the screen. With the wiring removed the operator is told
+   * nothing, fills in the rest of the form, and meets the backend's 400 — the
+   * exact failure the rule exists to prevent.
+   */
+  it("unlocks a stored secret when a field it is bound to changes", () => {
+    const configured: Integration = {
+      id: "i-custom",
+      kind: "login",
+      name: "custom",
+      enabled: true,
+      config: {
+        display_name: "Corp SSO",
+        issuer_url: "https://idp.example.com",
+        client_id: "maintmode",
+        redirect_uri: "https://maintmode.example.com/auth/callback",
+      },
+      secrets_set: { client_secret: true },
+      created_at: "2026-07-01T10:00:00Z",
+      updated_at: "2026-07-02T14:21:00Z",
+    };
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind="login" name="custom" integration={configured} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+
+    // Stored and untouched: the secret stands in for itself.
+    expect(screen.getByText("Configured")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "a-different-id" } });
+
+    expect(screen.getByText(/no longer works/i)).toBeTruthy();
+    // "Keep current" would put the field back into the state the server
+    // rejects, so it must not be offered while the binding is broken.
+    expect(screen.queryByRole("button", { name: /Keep current/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Save changes/ }).hasAttribute("disabled")).toBe(true);
+  });
+
+  /** Re-typing the same issuer with a trailing slash is not a change. */
+  it("does not demand the secret for a cosmetically different issuer", () => {
+    const configured: Integration = {
+      id: "i-custom",
+      kind: "login",
+      name: "custom",
+      enabled: true,
+      config: {
+        display_name: "Corp SSO",
+        issuer_url: "https://idp.example.com",
+        client_id: "maintmode",
+        redirect_uri: "https://maintmode.example.com/auth/callback",
+      },
+      secrets_set: { client_secret: true },
+      created_at: "2026-07-01T10:00:00Z",
+      updated_at: "2026-07-02T14:21:00Z",
+    };
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <IntegrationDialog kind="login" name="custom" integration={configured} open onOpenChange={() => {}} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText(/Issuer URL/), {
+      target: { value: "https://idp.example.com/" },
+    });
+
+    expect(screen.queryByText(/no longer works/i)).toBeNull();
+    expect(screen.getByText("Configured")).toBeTruthy();
+  });
+
   it("shows no notification-transport copy", () => {
     renderDialog("custom");
     expect(screen.queryByText(/deliver notifications/i)).toBeNull();

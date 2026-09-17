@@ -354,6 +354,17 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
     expect(body.kind).toBe("notify");
   });
 
+  /**
+   * The cap is not a create-only concern: this is the route an operator hits
+   * on every edit, and the one that carries a re-typed `client_secret`.
+   */
+  it("refuses a body over the backend's cap without forwarding it", async () => {
+    const response = await patch("notify", "slack", { config: { note: "x".repeat(64 * 1024) } });
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
   it("forwards a login pair to the backend", async () => {
     backendRequest.mockResolvedValue(recorded.google);
 
@@ -622,6 +633,23 @@ describe("DELETE /api/admin/integrations/[kind]/[name]", () => {
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(response.status).not.toBe(204);
+  });
+
+  /**
+   * The cascade is irreversible, so "who may reach it" is not a formality.
+   * Without this, deleting the session check from the handler left every
+   * contract test green.
+   */
+  it("requires an admin session", async () => {
+    requireAdminSession.mockRejectedValueOnce(
+      Object.assign(new Error("forbidden"), { status: 403, responseBody: "{}" }),
+    );
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).not.toBe(204);
+    expect(backendRequest).not.toHaveBeenCalled();
   });
 
   it("refuses an unroutable pair without reaching the backend", async () => {
