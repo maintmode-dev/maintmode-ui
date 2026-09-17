@@ -7,7 +7,6 @@ import type { Integration } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
 // Registers the sign-in provider metadata, exactly as the gated section does.
-import "../auth-kinds";
 import { IntegrationDialog } from "../integration-dialog";
 
 // The dialog renders through a Radix portal into document.body; this config
@@ -364,31 +363,34 @@ describe("IntegrationDialog — SMTP test config", () => {
 const SECRET = "s3cret-from-the-idp-console";
 
 describe("sign-in provider kinds", () => {
-  function renderDialog(kind: "oidc" | "github_oauth") {
+  function renderDialog(name: "google" | "custom") {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
-        <IntegrationDialog name={kind} integration={null} open onOpenChange={() => {}} />
+        <IntegrationDialog name={name} integration={null} open onOpenChange={() => {}} />
       </QueryClientProvider>,
     );
   }
 
   it("renders the OIDC fields", () => {
-    renderDialog("oidc");
+    renderDialog("custom");
     expect(screen.getByLabelText(/Issuer URL/)).toBeTruthy();
     expect(screen.getByLabelText(/Client ID/)).toBeTruthy();
     expect(screen.getByLabelText(/Scopes/)).toBeTruthy();
+    expect(screen.getByLabelText(/Redirect URI/)).toBeTruthy();
   });
 
   /**
-   * The load-bearing test. A Save that fired and 400'd would still put a typed
-   * client_secret on the wire — it reaches the Next server process, and any
-   * request logging there, before the route's kind check rejects it. The
-   * backend cannot accept these kinds yet, so nothing may be sent at all.
+   * `redirect_uri` is required by the backend, which refuses a half-configured
+   * provider at the edge rather than at someone's first sign-in attempt. The
+   * previous descriptor called it optional and promised a default callback that
+   * does not exist, so a form built from it invited a guaranteed 400.
    */
-  it("disables Save and issues NO request carrying secrets", async () => {
-    renderDialog("oidc");
-
+  // Unskipped by the commit that widens the save guard: `savingUnavailable`
+  // still requires a notify name, so Save stays disabled here for a reason that
+  // has nothing to do with the redirect URI.
+  it.todo("keeps Save disabled until the redirect URI is filled in", () => {
+    renderDialog("custom");
     fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
     fireEvent.change(screen.getByLabelText(/Issuer URL/), {
       target: { value: "https://idp.example.com" },
@@ -396,75 +398,52 @@ describe("sign-in provider kinds", () => {
     fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
     fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
 
-    const save = screen.getByRole("button", { name: /Connect|Save changes/ });
-    expect(save.hasAttribute("disabled")).toBe(true);
+    const save = () => screen.getByRole("button", { name: /Connect|Save changes/ });
+    expect(save().hasAttribute("disabled")).toBe(true);
 
-    fireEvent.click(save);
-    // Let any save path settle before judging. `waitFor` cannot do this job: it
-    // retries until its callback stops throwing, so a negative assertion passes
-    // on the first synchronous attempt — before React has flushed the click —
-    // and can never fail. Draining the microtask and macrotask queues is what
-    // makes the assertion mean anything.
-    await Promise.resolve();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(bffFetchMock).not.toHaveBeenCalled();
-    // Tied to the secret rather than to the button: a future save path that
-    // bypasses this button (form submit, Enter key, a "Save and test" control)
-    // keeps the disabled attribute intact but would still transmit. This is the
-    // assertion that survives the mechanism changing.
-    expect(JSON.stringify(bffFetchMock.mock.calls)).not.toContain(SECRET);
-  });
-
-  /**
-   * The control must follow the route whitelist, not the copy. If Save were
-   * derived from `unavailableNotice`, deleting that string would silently
-   * re-enable saving on a credentials form — a copy edit with a security
-   * consequence.
-   */
-  it("keeps Save disabled even with the explanatory notice stripped", async () => {
-    const { AUTH_KIND_META } = await import("../auth-kinds");
-    const original = AUTH_KIND_META.oidc.unavailableNotice;
-    AUTH_KIND_META.oidc.unavailableNotice = undefined;
-    try {
-      renderDialog("oidc");
-      // Fill every required field first: otherwise `missingRequired` disables
-      // Save on its own and the assertion cannot tell the two causes apart.
-      fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
-      fireEvent.change(screen.getByLabelText(/Issuer URL/), {
-        target: { value: "https://idp.example.com" },
-      });
-      fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "maintmode" } });
-      fireEvent.change(screen.getByLabelText(/Client secret/), { target: { value: SECRET } });
-
-      const save = screen.getByRole("button", { name: /Connect|Save changes/ });
-      expect(save.hasAttribute("disabled")).toBe(true);
-    } finally {
-      AUTH_KIND_META.oidc.unavailableNotice = original;
-    }
-  });
-
-  it("says why saving is unavailable", () => {
-    renderDialog("oidc");
-    expect(screen.getByText(/backend support/i)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Redirect URI/), {
+      target: { value: "https://maintmode.example.com/auth/callback" },
+    });
+    expect(save().hasAttribute("disabled")).toBe(false);
   });
 
   it("blocks a malformed issuer URL with a message naming the problem", () => {
-    renderDialog("oidc");
+    renderDialog("custom");
     fireEvent.change(screen.getByLabelText(/Issuer URL/), { target: { value: "not-a-url" } });
     expect(screen.getByText(/absolute URL/i)).toBeTruthy();
   });
 
-  it("warns about plain http without blocking", () => {
-    renderDialog("oidc");
+  /**
+   * The backend rejects a plain-http issuer outright — no loopback escape
+   * hatch, because this is the field the client secret is bound to and sent to.
+   * Warning instead of blocking would promise a save that cannot succeed.
+   */
+  // Unskipped by the commit that teaches `validateUrlFields` about `httpsOnly`.
+  // The metadata declares it already; nothing reads it yet.
+  it.todo("BLOCKS plain http on the issuer, rather than warning", () => {
+    renderDialog("custom");
     fireEvent.change(screen.getByLabelText(/Issuer URL/), {
       target: { value: "http://keycloak.local" },
     });
-    expect(screen.getByText(/Not encrypted/i)).toBeTruthy();
+    expect(screen.getByText(/must use https/i)).toBeTruthy();
+    expect(screen.queryByText(/Not encrypted/i)).toBeNull();
+  });
+
+  /**
+   * `redirect_uri` carries `is.URL` alone on the backend — no HTTPSURL — so a
+   * local callback is legitimate and blocking it would refuse a save the
+   * backend accepts.
+   */
+  it("allows a plain-http redirect URI, which the backend permits", () => {
+    renderDialog("custom");
+    fireEvent.change(screen.getByLabelText(/Redirect URI/), {
+      target: { value: "http://localhost:3000/auth/callback" },
+    });
+    expect(screen.queryByText(/must use https/i)).toBeNull();
   });
 
   it("shows no notification-transport copy", () => {
-    renderDialog("oidc");
+    renderDialog("custom");
     expect(screen.queryByText(/deliver notifications/i)).toBeNull();
     expect(screen.queryByText(/through this transport/i)).toBeNull();
   });

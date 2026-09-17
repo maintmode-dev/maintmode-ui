@@ -37,10 +37,16 @@ describe("SignInProvidersSection", () => {
     expect(screen.getByText("Sign-in providers")).toBeTruthy();
   });
 
-  it("lists both provider kinds", () => {
+  /**
+   * The two names the backend registry actually serves. `github` is NOT among
+   * them: it exists only on an unmerged backend branch, so a row for it would
+   * address a pair the deployed backend answers with a 400.
+   */
+  it("lists the two providers the backend serves", () => {
     renderSection();
-    expect(screen.getByText("OpenID Connect")).toBeTruthy();
-    expect(screen.getByText("GitHub")).toBeTruthy();
+    expect(screen.getByText("Google")).toBeTruthy();
+    expect(screen.getByText("Custom OIDC")).toBeTruthy();
+    expect(screen.queryByText("GitHub")).toBeNull();
   });
 
   it("says changes apply without a restart", () => {

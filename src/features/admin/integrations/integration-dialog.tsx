@@ -295,12 +295,6 @@ function IntegrationDialogBody({
           </div>
         ) : null}
 
-        {meta.unavailableNotice ? (
-          <p className="rounded-md border border-border-subtle bg-bg-elev-2 px-3 py-2.5 text-xs text-fg-muted">
-            {meta.unavailableNotice}
-          </p>
-        ) : null}
-
         {/* Enabled is part of the form: the backend rejects a create without
             an explicit flag, so the choice must be visible, not implied. */}
         <div className="space-y-1.5">
