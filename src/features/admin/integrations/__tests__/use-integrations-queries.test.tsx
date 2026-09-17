@@ -22,7 +22,8 @@ import type { Integration } from "@/domain/admin/integration";
 import {
   integrationsKey,
   useCreateIntegration,
-  usePendingToggleNames,
+  integrationRefKey,
+  usePendingToggleRefs,
   useTestIntegration,
   useToggleIntegration,
   useUpdateIntegration,
@@ -164,24 +165,31 @@ describe("useToggleIntegration — optimistic update targets ONE row", () => {
   });
 });
 
-describe("usePendingToggleNames — busy state targets ONE row", () => {
+describe("usePendingToggleRefs — busy state targets ONE row", () => {
   it("reports the system in flight, so other switches stay usable", async () => {
     const client = seededClient();
     bffFetchMock.mockReturnValue(new Promise(() => {}));
     const wrapper = wrapperFor(client);
     const toggle = renderHook(() => useToggleIntegration(), { wrapper });
-    const pending = renderHook(() => usePendingToggleNames(), { wrapper });
+    const pending = renderHook(() => usePendingToggleRefs(), { wrapper });
 
     act(() => {
       toggle.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
     });
 
-    await waitFor(() => expect(pending.result.current.has("slack")).toBe(true));
-    // Keyed by category, this set would contain "notify" and the page — which
-    // asks `has(name)` — would grey out every transport's switch at once.
-    expect(pending.result.current.has("telegram")).toBe(false);
-    expect(pending.result.current.has("email")).toBe(false);
+    const key = (kind: "notify" | "login", name: string) => integrationRefKey({ kind, name });
+
+    await waitFor(() => expect(pending.result.current.has(key("notify", "slack"))).toBe(true));
+    // Keyed by category, this set would contain "notify" and the page would
+    // grey out every transport's switch at once.
+    expect(pending.result.current.has(key("notify", "telegram"))).toBe(false);
+    expect(pending.result.current.has(key("notify", "email"))).toBe(false);
     expect(pending.result.current.has("notify")).toBe(false);
+    // Keyed by NAME, a login provider sharing a transport's name would spin
+    // the wrong switch. Nothing collides today; this pins the key shape so
+    // adding one to the registry cannot quietly start it.
+    expect(pending.result.current.has(key("login", "slack"))).toBe(false);
+    expect(pending.result.current.has("slack")).toBe(false);
   });
 });
 
@@ -301,7 +309,7 @@ describe("concurrent toggles", () => {
     const wrapper = wrapperFor(client);
     const first = renderHook(() => useToggleIntegration(), { wrapper });
     const second = renderHook(() => useToggleIntegration(), { wrapper });
-    const pending = renderHook(() => usePendingToggleNames(), { wrapper });
+    const pending = renderHook(() => usePendingToggleRefs(), { wrapper });
 
     act(() => {
       first.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
@@ -313,10 +321,10 @@ describe("concurrent toggles", () => {
     // Reading a single mutation's `variables` would report only the last one,
     // which is why this comes from the mutation cache.
     await waitFor(() => {
-      expect(pending.result.current.has("slack")).toBe(true);
-      expect(pending.result.current.has("email")).toBe(true);
+      expect(pending.result.current.has(integrationRefKey({ kind: "notify", name: "slack" }))).toBe(true);
+      expect(pending.result.current.has(integrationRefKey({ kind: "notify", name: "email" }))).toBe(true);
     });
-    expect(pending.result.current.has("telegram")).toBe(false);
+    expect(pending.result.current.has(integrationRefKey({ kind: "notify", name: "telegram" }))).toBe(false);
   });
 
   it("rolls back only the failed row while the other stays flipped", async () => {

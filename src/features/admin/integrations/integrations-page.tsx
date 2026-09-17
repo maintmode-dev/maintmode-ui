@@ -17,14 +17,13 @@ import { kindMeta } from "./integration-kinds";
 import { IntegrationRow } from "./integration-row";
 import {
   useIntegrationsQuery,
-  usePendingToggleNames,
+  integrationRefKey as refKey,
+  usePendingToggleRefs,
   useToggleIntegration,
 } from "./queries/use-integrations-queries";
 
 /** A row's identity, and the only safe key now that one screen holds both halves. */
 type Ref = { kind: IntegrationCategory; name: string };
-
-const refKey = ({ kind, name }: Ref) => `${kind}/${name}`;
 
 /**
  * Admin-only integrations registry at /admin/integrations (screen 19,
@@ -39,7 +38,7 @@ const refKey = ({ kind, name }: Ref) => `${kind}/${name}`;
 export function IntegrationsPage() {
   const integrationsQuery = useIntegrationsQuery();
   const toggleMutation = useToggleIntegration();
-  const pendingToggles = usePendingToggleNames();
+  const pendingToggles = usePendingToggleRefs();
   const [openRef, setOpenRef] = useState<Ref | null>(null);
   const [deleting, setDeleting] = useState<Integration | null>(null);
 
@@ -77,7 +76,7 @@ export function IntegrationsPage() {
             key={name}
             name={name}
             integration={integration}
-            toggleBusy={pendingToggles.has(name)}
+            toggleBusy={pendingToggles.has(refKey({ kind, name }))}
             onToggle={(enabled) => toggleMutation.mutate({ ref: { kind, name }, enabled })}
             onOpen={() => setOpenRef({ kind, name })}
             onDelete={integration ? () => setDeleting(integration) : undefined}

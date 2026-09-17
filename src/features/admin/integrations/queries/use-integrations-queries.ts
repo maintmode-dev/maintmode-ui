@@ -29,6 +29,11 @@ function integrationPath({ kind, name }: IntegrationRef, suffix = ""): string {
   return `/api/admin/integrations/${kind}/${name}${suffix}`;
 }
 
+/** A row's identity as a map/set key — one spelling, so callers cannot drift. */
+export function integrationRefKey({ kind, name }: IntegrationRef): string {
+  return `${kind}/${name}`;
+}
+
 /** Identity is the pair; matching on `kind` alone now matches every transport. */
 function isSameRow(row: Integration, ref: IntegrationRef): boolean {
   return row.kind === ref.kind && row.name === ref.name;
@@ -210,14 +215,19 @@ export function useToggleIntegration() {
  * A single mutation instance's `variables` only reflects its latest call, so
  * concurrent toggles need the mutation cache as the source of truth.
  *
- * Keyed by `name`, not `kind`: keying by category would disable every
- * transport's switch while any one of them was in flight. Callers hold one
- * category, so the name alone is unambiguous here.
+ * Keyed by the PAIR, not by `kind` and no longer by `name` alone. Keying by
+ * category would disable every transport's switch while any one of them was in
+ * flight; keying by name rested on "callers hold one category", which was true
+ * while each section had its own screen and false since both share one. Two
+ * rows answering to one key would spin a switch nobody touched. No name
+ * collides across the categories today, so this is a latent hazard rather than
+ * a live bug — fixed rather than documented because the row map beside it was
+ * already fixed the same way.
  */
-export function usePendingToggleNames(): Set<string> {
+export function usePendingToggleRefs(): Set<string> {
   const pending = useMutationState({
     filters: { mutationKey: TOGGLE_MUTATION_KEY, status: "pending" },
-    select: (mutation) => (mutation.state.variables as { ref: IntegrationRef }).ref.name,
+    select: (mutation) => integrationRefKey((mutation.state.variables as { ref: IntegrationRef }).ref),
   });
   return new Set(pending);
 }
