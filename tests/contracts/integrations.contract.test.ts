@@ -246,11 +246,11 @@ describe("POST /api/admin/integrations — create", () => {
   });
 
   /**
-   * `github` is a real backend name — on an unmerged branch. Until it ships,
-   * this frontend must not address a pair the deployed registry answers with a
-   * 400, and it must fail here rather than after a round trip.
+   * `github` IS served by the backend. This frontend has no descriptor for it,
+   * so the pair is refused here — failing closed, before a round trip, rather
+   * than forwarding a credential toward a provider it cannot render.
    */
-  it("refuses a login name the deployed backend does not serve", async () => {
+  it("refuses a login name this frontend has no descriptor for", async () => {
     const response = await create({ ...VALID, kind: "login", name: "github" });
 
     expect(response.status).toBe(400);

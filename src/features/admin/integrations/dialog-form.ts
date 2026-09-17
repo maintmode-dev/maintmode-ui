@@ -87,7 +87,19 @@ export function buildConfig(
   for (const f of meta.configFields) {
     if (f.preset) continue;
     const raw = (drafts[f.name] ?? "").trim();
-    if (raw === "") continue;
+    if (raw === "") {
+      // A cleared field must LEAVE the body — absent is how the backend is told
+      // "unset", and an empty string is not the same thing.
+      //
+      // A flat field is already absent: it was excluded from the carry-through
+      // for being `known`, so skipping is enough. A NESTED one is not, because
+      // its parent key was carried through whole, taking the stored value with
+      // it. Skipping there re-sends what the operator just deleted — on
+      // `allowed_hosted_domains` that means a sign-in restriction they removed
+      // silently survives a successful save.
+      if (f.path) deletePath(out, f);
+      continue;
+    }
     if (f.list) {
       writePath(out, f, parseList(raw));
       continue;
@@ -138,6 +150,28 @@ function writePath(out: Record<string, unknown>, f: ConfigFieldMeta, value: unkn
     cursor = next as Record<string, unknown>;
   }
   cursor[f.path[f.path.length - 1]] = value;
+}
+
+/**
+ * Remove a nested field's key, leaving its parent and the parent's other keys
+ * in place — the same reason `writePath` merges rather than replaces.
+ *
+ * The parent is NOT removed when it empties out. An empty `jwtverifier: {}` and
+ * an absent one mean the same thing to the backend, and keeping it makes this
+ * the exact inverse of the write, which is easier to reason about than a rule
+ * that sometimes prunes.
+ */
+function deletePath(out: Record<string, unknown>, f: ConfigFieldMeta): void {
+  if (!f.path) return;
+  let cursor: Record<string, unknown> = out;
+  for (const segment of f.path.slice(0, -1)) {
+    const existing = cursor[segment];
+    if (typeof existing !== "object" || existing === null) return;
+    const next = { ...(existing as Record<string, unknown>) };
+    cursor[segment] = next;
+    cursor = next;
+  }
+  delete cursor[f.path[f.path.length - 1]];
 }
 
 /**

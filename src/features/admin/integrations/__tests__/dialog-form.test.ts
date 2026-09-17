@@ -371,15 +371,53 @@ describe("nested config paths", () => {
     });
   });
 
-  it("leaves a stored nested value alone when the draft is empty", () => {
+  /**
+   * Clearing the field must actually clear it.
+   *
+   * This is the case a previous version of this test could not see: it stored
+   * a `jwtverifier` that did not CONTAIN `allowed_hosted_domains`, so the field
+   * under test was already absent and the assertion held whatever the code
+   * did. With a real stored value it bites — and it caught a live bug, because
+   * the parent key is carried through whole, so skipping an empty draft
+   * re-sent the value the operator had just deleted.
+   *
+   * On this field that is not a cosmetic loss: an empty list means NO domain
+   * restriction, so a silently surviving one keeps out accounts the operator
+   * decided to let in, and a successful save reports otherwise.
+   */
+  it("CLEARS a stored nested value when the draft is emptied", () => {
     const body = buildConfig(
       nestedMeta,
       { client_id: "id", allowed_hosted_domains: "" },
-      { jwtverifier: { some_future_setting: true } },
+      { jwtverifier: { allowed_hosted_domains: ["corp.example"], some_future_setting: true } },
       "patch",
     );
 
     expect(body.jwtverifier).toEqual({ some_future_setting: true });
+  });
+
+  /** Clearing one key must not take the parent's other keys with it. */
+  it("keeps an unrendered sibling when the field is cleared", () => {
+    const body = buildConfig(
+      nestedMeta,
+      { client_id: "id", allowed_hosted_domains: "" },
+      { jwtverifier: { allowed_hosted_domains: ["corp.example"], some_future_setting: true } },
+      "patch",
+    );
+
+    expect((body.jwtverifier as Record<string, unknown>).some_future_setting).toBe(true);
+  });
+
+  /** A flat optional field already cleared correctly; pinned as the control. */
+  it("clears a flat optional field the same way", () => {
+    const body = buildConfig(
+      nestedMeta,
+      { client_id: "id", allowed_hosted_domains: "" },
+      { client_id: "id", jwtverifier: { allowed_hosted_domains: ["corp.example"] } },
+      "patch",
+    );
+
+    expect(body.jwtverifier).toEqual({});
   });
 
   /** A list the backend has never been given comes back as null, not []. */

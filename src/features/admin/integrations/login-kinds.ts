@@ -20,8 +20,8 @@ import type { ConfigFieldMeta, IntegrationKindMeta, SecretMeta } from "./integra
  *    form blocks `http://` instead of warning;
  *  - `allowed_hosted_domains` is nested under `jwtverifier`.
  *
- * `github` is absent: it is a real registry entry only on an unmerged backend
- * branch. See `LOGIN_INTEGRATION_NAMES`.
+ * `github` is absent. The backend serves it as of `7a6565d`; this frontend has
+ * no descriptor for it, which fails closed — see `LOGIN_INTEGRATION_NAMES`.
  *
  * ## The preset flags mirror a backend deployment file
  *

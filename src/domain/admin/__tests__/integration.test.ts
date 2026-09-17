@@ -29,7 +29,8 @@ describe("integration vocabulary", () => {
   /**
    * The replacements for `oidc`/`github_oauth`, which named nothing. These are
    * the backend's own names. `github` is absent because it lives only on an
-   * unmerged backend branch — see the constant's docblock.
+   * backend registry entry this frontend has no descriptor for — see the
+   * constant's docblock.
    */
   it("names the two sign-in providers the backend serves", () => {
     expect([...LOGIN_INTEGRATION_NAMES]).toEqual(["google", "custom"]);
@@ -71,11 +72,11 @@ describe("isLoginIntegrationName", () => {
   });
 
   /**
-   * `github` is a real backend name — on an UNMERGED branch. Against the
-   * deployed registry `(login, github)` is a 400, so admitting it here would
-   * build a form for a pair the backend refuses.
+   * `github` IS served by the backend now. It is refused here because this
+   * frontend has no descriptor for it, and failing closed — invisible rather
+   * than half-configured — is the right side to err on until one exists.
    */
-  it("rejects github, which the deployed backend does not serve", () => {
+  it("rejects github, which this frontend has no descriptor for", () => {
     expect(isLoginIntegrationName("github")).toBe(false);
   });
 
