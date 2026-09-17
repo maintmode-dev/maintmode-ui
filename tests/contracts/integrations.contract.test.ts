@@ -564,3 +564,84 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
     expect(response.status).toBeGreaterThanOrEqual(400);
   });
 });
+
+/**
+ * DELETE — the destructive one.
+ *
+ * For a login provider the backend unlinks every identity bound to it in the
+ * same transaction and answers 204 with no body. It never refuses over linked
+ * accounts, and it reports no count: the number exists only in a server log
+ * line. These assertions pin the two things the UI depends on — that a success
+ * really is a 204 passthrough, and that a failure never reads as one.
+ */
+describe("DELETE /api/admin/integrations/[kind]/[name]", () => {
+  const del = (kind: string, name: string) =>
+    item.DELETE(
+      new Request(`https://app.test/api/admin/integrations/${kind}/${name}`, { method: "DELETE" }),
+      {
+        params: Promise.resolve({ kind, name }),
+      },
+    );
+
+  it("addresses the row by the pair, in order", async () => {
+    backendRequest.mockResolvedValue(undefined);
+
+    await del("login", "google");
+
+    expect(backendPath()).toBe("/api/v1/integrations/login/google");
+    expect(backendRequest.mock.calls[0][0].method).toBe("DELETE");
+  });
+
+  it("passes the 204 through with no body", async () => {
+    backendRequest.mockResolvedValue(undefined);
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+  });
+
+  it("deletes a transport too", async () => {
+    backendRequest.mockResolvedValue(undefined);
+
+    const response = await del("notify", "slack");
+
+    expect(response.status).toBe(204);
+    expect(backendPath()).toBe("/api/v1/integrations/notify/slack");
+  });
+
+  /**
+   * The rule this repo keeps relearning: an error must stay an error. A delete
+   * that reported success on a failure would take the row off the screen while
+   * the provider still signs people in.
+   */
+  it("keeps a backend failure a failure", async () => {
+    backendRequest.mockRejectedValueOnce(new Error("backend exploded"));
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).not.toBe(204);
+  });
+
+  it("refuses an unroutable pair without reaching the backend", async () => {
+    const response = await del("login", "slack");
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Origin is checked FIRST, before the session and before the pair — the same
+   * order every other mutating route here uses. A destructive proxy reachable
+   * from another origin is the one worth getting right.
+   */
+  it("refuses a cross-origin request before doing any work", async () => {
+    isSameOriginRequest.mockReturnValueOnce(false);
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+});

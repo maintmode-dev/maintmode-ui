@@ -118,6 +118,40 @@ export function useUpdateIntegration() {
   });
 }
 
+/**
+ * Remove a row. 204, no body, and for a login provider it is irreversible:
+ * the backend unlinks every identity bound to that provider in the same
+ * transaction, reports no count, and offers no way to ask for one first.
+ *
+ * NOT optimistic, unlike the toggle. A row removed from the screen before the
+ * server agreed is a claim that people have lost access when they may not
+ * have; and unlike a flipped switch, there is nothing to roll back TO that the
+ * operator could verify. The row stays until the 204 arrives.
+ */
+export function useDeleteIntegration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ref: IntegrationRef): Promise<void> => {
+      await bffFetch<void>(integrationPath(ref), { method: "DELETE" });
+    },
+    onSuccess: (_data, ref) => {
+      toast.success(`${ref.name} integration deleted`);
+      invalidate(queryClient);
+    },
+    onError: (error: unknown, ref) => {
+      if (error instanceof BffError && error.status === 404) {
+        // Already gone. Refetch rather than insist: the screen is what is
+        // stale, and saying "couldn't delete" about a row that no longer
+        // exists sends the operator looking for a problem that is not there.
+        toast.success(`${ref.name} integration deleted`);
+        invalidate(queryClient);
+        return;
+      }
+      toast.error(`Couldn't delete ${ref.name}. Try again.`);
+    },
+  });
+}
+
 const TOGGLE_MUTATION_KEY = ["integrations-toggle"] as const;
 
 /**

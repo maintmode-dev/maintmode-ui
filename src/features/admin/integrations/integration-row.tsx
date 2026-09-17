@@ -1,6 +1,6 @@
 "use client";
 
-import { Plug, Settings as SettingsIcon } from "lucide-react";
+import { Plug, Settings as SettingsIcon, Trash2 } from "lucide-react";
 
 import type { Integration } from "@/domain/admin/integration";
 import { Button } from "@/shared/ui/shadcn/button";
@@ -29,12 +29,15 @@ export function IntegrationRow({
   toggleBusy,
   onToggle,
   onOpen,
+  onDelete,
 }: {
   name: string;
   integration: Integration | null;
   toggleBusy: boolean;
   onToggle: (enabled: boolean) => void;
   onOpen: () => void;
+  /** Absent where deletion is not offered. */
+  onDelete?: () => void;
 }) {
   const meta = kindMeta(name);
   if (!meta) return null;
@@ -98,6 +101,20 @@ export function IntegrationRow({
           <Plug className="size-3.5" aria-hidden="true" /> Set up
         </Button>
       )}
+
+      {/* Only a configured row can be deleted — there is nothing to remove
+          otherwise, and an always-present control would invite the question. */}
+      {configured && onDelete ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          aria-label={`Delete ${meta.label}`}
+          className="text-fg-muted hover:text-[var(--destructive-fg)]"
+        >
+          <Trash2 className="size-3.5" aria-hidden="true" />
+        </Button>
+      ) : null}
     </div>
   );
 }

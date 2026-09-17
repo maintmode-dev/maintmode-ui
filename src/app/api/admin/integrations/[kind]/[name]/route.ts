@@ -81,3 +81,43 @@ export async function PATCH(
     return routeErrorResponse(error);
   }
 }
+
+/**
+ * DELETE /api/admin/integrations/{kind}/{name} — proxy to
+ * `DELETE /api/v1/integrations/{kind}/{name}`. 204, no body.
+ *
+ * For a login provider this is IRREVERSIBLE and wider than it looks: the
+ * backend unlinks every identity bound to that provider in the same
+ * transaction and proceeds. It never refuses over linked accounts, it reports
+ * no count — the number exists only in a server log line — and there is no
+ * endpoint to ask for it beforehand. The confirmation the UI shows is
+ * therefore countless by necessity, not by choice.
+ *
+ * Guard order follows the other mutating routes: origin first, then the
+ * session, then the pair.
+ */
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
+  if (!isSameOriginRequest(request)) {
+    return NextResponse.json(
+      { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },
+      { status: 403 },
+    );
+  }
+
+  try {
+    await requireAdminSession();
+    const { kind, name } = await resolveIntegrationParams(params);
+    await authenticatedBackendRequest<void>({
+      path: `/api/v1/integrations/${kind}/${name}`,
+      method: "DELETE",
+    });
+    // Passed through as-is. Inventing a body here would be inventing a fact:
+    // the backend deliberately reports nothing about what the cascade removed.
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    return routeErrorResponse(error);
+  }
+}
