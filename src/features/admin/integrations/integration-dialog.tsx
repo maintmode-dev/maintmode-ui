@@ -25,6 +25,7 @@ import {
   type IntegrationKindMeta,
   type SecretMeta,
 } from "./integration-kinds";
+import { IntegrationHealthBadge } from "./integration-health";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
 import {
   buildConfig,
@@ -319,6 +320,17 @@ function IntegrationDialogBody({
           >
             <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span className="min-w-0 break-words">{error}</span>
+          </div>
+        ) : null}
+
+        {/* Sign-in health, in the body rather than the header: the header's
+            description slot already carries the updated-at line. Only for a
+            configured login row — there is nothing to report about a provider
+            that does not exist yet. */}
+        {isEdit && integration.kind === "login" ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-fg-muted">Sign-in status:</span>
+            <IntegrationHealthBadge health={integration.health} />
           </div>
         ) : null}
 

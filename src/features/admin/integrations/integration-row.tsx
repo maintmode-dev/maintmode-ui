@@ -5,6 +5,8 @@ import { Plug, Settings as SettingsIcon, Trash2 } from "lucide-react";
 import type { Integration } from "@/domain/admin/integration";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Switch } from "@/shared/ui/shadcn/switch";
+
+import { IntegrationHealthBadge } from "./integration-health";
 import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
@@ -73,6 +75,17 @@ export function IntegrationRow({
               )}
             />
             <span className="font-medium">{integration.enabled ? "Enabled" : "Disabled"}</span>
+            {/* Login rows only. Keyed on the CATEGORY, not on `health` being
+                truthy: the backend returns an empty value both for a transport
+                (which has no such concept) and for a login row whose state it
+                could not read, so a truthiness check would make "transports
+                show nothing" an accident of the same empty string. */}
+            {integration.kind === "login" ? (
+              <>
+                <span className="text-fg-dim">·</span>
+                <IntegrationHealthBadge health={integration.health} />
+              </>
+            ) : null}
             <span className="text-fg-dim truncate">
               · updated {formatUtc(integration.updated_at)}
               {integration.updated_by ? ` by ${integration.updated_by}` : ""}
