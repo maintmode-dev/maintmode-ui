@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Integration } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
-// Registers the sign-in provider metadata, exactly as the gated section does.
 import { IntegrationDialog } from "../integration-dialog";
 
 // The dialog renders through a Radix portal into document.body; this config

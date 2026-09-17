@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
 import {
@@ -211,13 +211,22 @@ function IntegrationDialogBody({
     invalidateTest();
   };
 
-  // Which stored secrets the current drafts have invalidated. Derived rather
-  // than remembered: an operator who edits a bound field and puts the old value
-  // back has not invalidated anything, and a latch would keep insisting.
-  const rebound = useMemo(
-    () => secretsInvalidatedBy(meta, config, integration?.config ?? {}, integration?.secrets_set ?? {}),
-    [meta, config, integration],
+  // Which stored secrets a given set of drafts has invalidated.
+  //
+  // Takes the drafts as an argument rather than closing over `config`: the
+  // change handler must ask about the NEXT drafts, and `config` is still the
+  // pre-change state there. Both callers otherwise thread the same three
+  // arguments, which is the duplication this collapses.
+  const reboundBy = useCallback(
+    (drafts: Record<string, string>) =>
+      secretsInvalidatedBy(meta, drafts, integration?.config ?? {}, integration?.secrets_set ?? {}),
+    [meta, integration],
   );
+
+  // Derived rather than remembered: an operator who edits a bound field and
+  // puts the old value back has not invalidated anything, and a latch would
+  // keep insisting.
+  const rebound = useMemo(() => reboundBy(config), [reboundBy, config]);
 
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
   const fieldVerdicts = useMemo(() => validateUrlFields(meta, config), [meta, config]);
@@ -387,12 +396,7 @@ function IntegrationDialogBody({
               // values. Editing one invalidates it, so unlock it here — while
               // the operator is still looking at the field they changed —
               // rather than letting the backend refuse the save afterwards.
-              for (const key of secretsInvalidatedBy(
-                meta,
-                next,
-                integration?.config ?? {},
-                integration?.secrets_set ?? {},
-              )) {
+              for (const key of reboundBy(next)) {
                 setSecrets((cur) =>
                   cur[key]?.mode === "locked" ? { ...cur, [key]: { mode: "editing", value: "" } } : cur,
                 );

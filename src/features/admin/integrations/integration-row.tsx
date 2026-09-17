@@ -17,9 +17,7 @@ import { kindMeta } from "./integration-kinds";
  * One registry row, shared by both sections (transports and sign-in providers).
  * Everything system-specific comes from `kindMeta(name)` — the label, the
  * description and the brand mark — so the row itself stays system-blind. A
- * system whose metadata is not registered renders nothing rather than throwing;
- * that is the production state for the auth entries, whose metadata ships only
- * with the dev-only section.
+ * system with no descriptor renders nothing rather than throwing.
  *
  * Takes the SYSTEM name, not the category: the metadata registry is keyed by
  * system, and a category would resolve to null and render an empty row without

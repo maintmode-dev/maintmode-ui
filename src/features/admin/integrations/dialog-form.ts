@@ -202,6 +202,23 @@ export interface FieldVerdict {
 }
 
 /**
+ * One message for both ways a URL field can be unusable — see the call site for
+ * why unparseable and wrong-scheme are not told apart.
+ */
+const NOT_AN_ABSOLUTE_URL = "Enter an absolute URL, including https://";
+
+/** Parse `raw` as an absolute http(s) URL, or null if it is neither. */
+function parseHttpUrl(raw: string): URL | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed : null;
+}
+
+/**
  * Judge the format of every `url: true` field.
  *
  * Blankness is not this function's business — `hasMissingRequired` owns that,
@@ -226,15 +243,12 @@ export function validateUrlFields(
     const raw = (drafts[f.name] ?? "").trim();
     if (raw === "") continue;
 
-    let parsed: URL;
-    try {
-      parsed = new URL(raw);
-    } catch {
-      out[f.name] = { block: "Enter an absolute URL, including https://" };
-      continue;
-    }
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-      out[f.name] = { block: "Enter an absolute URL, including https://" };
+    // Unparseable and non-http(s) are one verdict on purpose: both mean "this
+    // is not an absolute web URL", and telling an operator that `ftp://` parsed
+    // fine but was the wrong scheme helps nobody fix it.
+    const parsed = parseHttpUrl(raw);
+    if (!parsed) {
+      out[f.name] = { block: NOT_AN_ABSOLUTE_URL };
       continue;
     }
     if (parsed.protocol === "http:") {
