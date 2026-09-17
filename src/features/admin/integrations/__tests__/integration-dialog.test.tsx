@@ -444,6 +444,24 @@ describe("sign-in provider kinds", () => {
     expect(screen.queryByText(/must use https/i)).toBeNull();
   });
 
+  /**
+   * A preset field is required by the server AND supplied by it. Marking it
+   * "optional" tells an operator they may leave it out — of a field they
+   * cannot edit — and marking it required asks them for something they cannot
+   * give. Caught in a browser check: the first version said "· optional".
+   */
+  it("marks a preset field neither required nor optional", () => {
+    renderDialog("google");
+
+    const issuer = screen.getByText("Issuer URL").closest("label");
+    expect(issuer?.textContent).not.toMatch(/optional/i);
+    expect(issuer?.textContent).not.toContain("*");
+
+    // Control: a field the operator really does fill in still says so.
+    const clientId = screen.getByText("Client ID").closest("label");
+    expect(clientId?.textContent).toContain("*");
+  });
+
   it("shows no notification-transport copy", () => {
     renderDialog("custom");
     expect(screen.queryByText(/deliver notifications/i)).toBeNull();

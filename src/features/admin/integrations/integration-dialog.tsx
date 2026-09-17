@@ -493,7 +493,8 @@ function FieldLabel({
   htmlFor,
 }: {
   children: React.ReactNode;
-  required: boolean;
+  /** `undefined` marks it neither required nor optional — see below. */
+  required: boolean | undefined;
   secret?: boolean;
   htmlFor?: string;
 }) {
@@ -503,7 +504,10 @@ function FieldLabel({
       className="text-xs uppercase tracking-wide text-fg-muted flex items-baseline gap-1.5"
     >
       {children}
-      {required ? (
+      {/* A preset field is neither: the value is required by the server and
+          supplied by it, so "*" would ask the operator for something they
+          cannot give and "· optional" would claim it can be left out. */}
+      {required === undefined ? null : required ? (
         <span className="text-[var(--destructive-fg)]">*</span>
       ) : (
         <span className="normal-case tracking-normal text-fg-dim">· optional</span>
@@ -547,7 +551,7 @@ function ConfigField({
   const isUnknownValue = !!field.options && value !== "" && !field.options.some((o) => o.value === value);
   return (
     <div className="space-y-1.5">
-      <FieldLabel required={!field.optional && !field.preset} htmlFor={inputId}>
+      <FieldLabel required={field.preset ? undefined : !field.optional} htmlFor={inputId}>
         {field.label}
       </FieldLabel>
       {field.options ? (
