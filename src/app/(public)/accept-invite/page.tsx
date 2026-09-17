@@ -1,18 +1,58 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { auth } from "@/server/auth/auth-config";
 import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
+import { resolveAuthProviders } from "@/server/backend/auth/resolve-auth-providers";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
   const sp = await searchParams;
 
   /**
-   * Resolve the preview here rather than in a client `useQuery`. Two reasons:
-   * it removes a client round-trip and the loading skeleton, and it leaves
-   * `/accept-invite` with no React Query dependency at all — a precondition for
-   * serving public routes without `QueryClientProvider`.
+   * Both reads happen server-side, and CONCURRENTLY.
+   *
+   * Server-side rather than in a client `useQuery`: it removes a client
+   * round-trip and the loading skeleton, and it leaves `/accept-invite` with no
+   * React Query dependency at all — a precondition for serving public routes
+   * without `QueryClientProvider`.
+   *
+   * Concurrently because they share nothing: awaiting them in sequence made
+   * this route's first byte wait for the SUM of two deadlines rather than the
+   * larger of them. `Promise.all` is safe here specifically because neither
+   * resolver throws — one answers `{ ok: false }`, the other
+   * `{ status: "unknown_error" }` — so there is no rejection for fail-fast to
+   * surface and `allSettled` would buy nothing.
+   *
+   * ## Why the provider read is here at all (RUK-304)
+   *
+   * `b74a4536` moved sign-in providers into the integration registry and its
+   * migration deleted the existing rows, so a fresh deployment has none — while
+   * this page hard-codes "google" below. `startOAuthDanceAction` issues a
+   * `redirect()`, and the backend answers an unknown provider with a JSON error
+   * rather than a redirect (deliberately: it has no trusted frontend address at
+   * that point), so the invitee lands on raw backend JSON on another origin
+   * with only the back button to escape.
+   *
+   * It is a genuinely added round-trip on a public route — the resolver is not
+   * already called here the way it is on `/login` — and worth one: the
+   * alternative is a button whose only outcome is that JSON. Running it
+   * alongside the preview is what keeps the cost to a shared wait rather than
+   * an added one.
+   *
+   * `{ ok: false }` (transport failure) is treated as AVAILABLE rather than
+   * unavailable. Unlike `/login` there is no break-glass path — an invitation
+   * can only be accepted through the dance — so hiding the button on a failed
+   * read would strand an invitee whose provider is fine. A dance that then
+   * fails is recoverable: the backend refuses before minting state, so the
+   * invitation is not spent.
+   *
+   * Only a RESOLVED list that lacks the provider suppresses the button, which
+   * is the deterministic post-migration case.
    */
-  const preview = await resolveInvitationPreview(sp.token);
+  const [preview, providers] = await Promise.all([
+    resolveInvitationPreview(sp.token),
+    resolveAuthProviders(),
+  ]);
+  const signInAvailable = !providers.ok || providers.methods.some((m) => m.id === "google");
 
   /**
    * Accepting an invitation is now the ordinary OAuth dance with the invitation
@@ -56,6 +96,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       preview={preview}
       acceptAction={acceptAction}
       signedInAs={signedInAs}
+      signInAvailable={signInAvailable}
     />
   );
 }

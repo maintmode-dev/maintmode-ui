@@ -26,6 +26,7 @@ function codeOf(path: string): string {
 
 const page = codeOf("src/app/(public)/accept-invite/page.tsx");
 const component = codeOf("src/features/auth/accept-invite-page.tsx");
+const preview = codeOf("src/server/backend/invitations/resolve-invitation-preview.ts");
 
 describe("the invitation page starts the dance with the invitation", () => {
   it("passes the token from the query, not a literal", () => {
@@ -90,5 +91,36 @@ describe("the invitation page starts the dance with the invitation", () => {
     // The component must not reintroduce a label that can disagree with the
     // action's provider.
     expect(component).not.toMatch(/github/i);
+  });
+
+  /**
+   * RUK-304. The page decides availability from the backend's list, and the two
+   * halves of that decision pull in opposite directions:
+   *
+   *  - a RESOLVED list without the provider means it is not configured, so the
+   *    button must go — it would lead to raw backend JSON on another origin;
+   *  - an UNRESOLVED list (`ok: false`) means the list could not be READ, which
+   *    is no evidence at all. Hiding the button there would strand an invitee
+   *    whose provider is fine, and unlike `/login` there is no password form to
+   *    fall back to.
+   *
+   * The asymmetry is deliberate and easy to "simplify" into `providers.ok &&
+   * …`, which reads more natural and silently inverts the second case. Asserted
+   * on the source because a server page has no harness here — same reason as the
+   * assertions above.
+   */
+  it("treats an unreadable provider list as available, not as absent", () => {
+    expect(page).toMatch(/!providers\.ok\s*\|\|/);
+    expect(page).toMatch(/methods\.some\(\(m\)\s*=>\s*m\.id === "google"\)/);
+    expect(page).toMatch(/signInAvailable=\{signInAvailable\}/);
+  });
+
+  /**
+   * The budget exists so the retry state is REACHABLE: this call blocks a
+   * cold-start public route, and the shared default is 10s.
+   */
+  it("bounds both public reads and runs them concurrently", () => {
+    expect(page).toMatch(/await Promise\.all\(/);
+    expect(preview).toMatch(/signal:\s*AbortSignal\.timeout\(/);
   });
 });

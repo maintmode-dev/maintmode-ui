@@ -2,19 +2,14 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 
-import {
-  NOTIFICATION_INTEGRATION_KINDS,
-  type Integration,
-  type IntegrationKind,
-} from "@/domain/admin/integration";
-import { Switch } from "@/shared/ui/shadcn/switch";
+import { NOTIFICATION_INTEGRATION_NAMES, type Integration } from "@/domain/admin/integration";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 
 import { IntegrationDialog } from "./integration-dialog";
 import { IntegrationRow } from "./integration-row";
 import {
   useIntegrationsQuery,
-  usePendingToggleKinds,
+  usePendingToggleNames,
   useToggleIntegration,
 } from "./queries/use-integrations-queries";
 
@@ -31,13 +26,19 @@ import {
 export function IntegrationsPage({ signInProviders }: { signInProviders?: ReactNode }) {
   const integrationsQuery = useIntegrationsQuery();
   const toggleMutation = useToggleIntegration();
-  const pendingToggles = usePendingToggleKinds();
-  const [openKind, setOpenKind] = useState<IntegrationKind | null>(null);
+  const pendingToggles = usePendingToggleNames();
+  const [openName, setOpenName] = useState<string | null>(null);
 
-  const byKind = useMemo(() => {
-    const map = new Map<IntegrationKind, Integration>();
+  /**
+   * Keyed by SYSTEM, and filtered to this section's category first. `kind` now
+   * holds the category, so keying by it would collapse all three transports
+   * onto one entry — the last row in the response would win and the other two
+   * would render as unconfigured.
+   */
+  const byName = useMemo(() => {
+    const map = new Map<string, Integration>();
     for (const integration of integrationsQuery.data ?? []) {
-      map.set(integration.kind, integration);
+      if (integration.kind === "notify") map.set(integration.name, integration);
     }
     return map;
   }, [integrationsQuery.data]);
@@ -68,14 +69,14 @@ export function IntegrationsPage({ signInProviders }: { signInProviders?: ReactN
           </p>
         ) : (
           <div className="rounded-lg border border-border bg-bg-elev-1 p-3 space-y-2">
-            {NOTIFICATION_INTEGRATION_KINDS.map((kind) => (
+            {NOTIFICATION_INTEGRATION_NAMES.map((name) => (
               <IntegrationRow
-                key={kind}
-                kind={kind}
-                integration={byKind.get(kind) ?? null}
-                toggleBusy={pendingToggles.has(kind)}
-                onToggle={(enabled) => toggleMutation.mutate({ kind, enabled })}
-                onOpen={() => setOpenKind(kind)}
+                key={name}
+                name={name}
+                integration={byName.get(name) ?? null}
+                toggleBusy={pendingToggles.has(name)}
+                onToggle={(enabled) => toggleMutation.mutate({ ref: { kind: "notify", name }, enabled })}
+                onOpen={() => setOpenName(name)}
               />
             ))}
           </div>
@@ -85,10 +86,10 @@ export function IntegrationsPage({ signInProviders }: { signInProviders?: ReactN
       {signInProviders}
 
       <IntegrationDialog
-        kind={openKind}
-        integration={openKind ? (byKind.get(openKind) ?? null) : null}
-        open={openKind !== null}
-        onOpenChange={(open) => !open && setOpenKind(null)}
+        name={openName}
+        integration={openName ? (byName.get(openName) ?? null) : null}
+        open={openName !== null}
+        onOpenChange={(open) => !open && setOpenName(null)}
       />
     </div>
   );

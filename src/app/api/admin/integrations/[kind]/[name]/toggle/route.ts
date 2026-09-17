@@ -7,14 +7,17 @@ import { isSameOriginRequest } from "@/server/backend/security/csrf";
 import { readJsonBody } from "@/server/backend/http/read-json-body";
 import { mustMapIntegration } from "@/server/backend/contracts/integrations-mapper";
 import type { IntegrationDto } from "@/server/backend/contracts/integrations-dto";
-import { isIntegrationKind } from "@/domain/admin/integration";
+import { resolveIntegrationParams } from "@/server/backend/contracts/integration-route-params";
 
 /**
- * POST /api/admin/integrations/{kind}/toggle — proxy to
- * `POST /api/v1/integrations/{kind}/toggle`. Flips the enabled flag without
- * touching config or secrets. 404 = the kind is not configured.
+ * POST /api/admin/integrations/{kind}/{name}/toggle — proxy to
+ * `POST /api/v1/integrations/{kind}/{name}/toggle`. Flips the enabled flag
+ * without touching config or secrets. 404 = the pair is not configured.
  */
-export async function POST(request: Request, { params }: { params: Promise<{ kind: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
   if (!isSameOriginRequest(request)) {
     return NextResponse.json(
       { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },
@@ -24,16 +27,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ kin
 
   try {
     await requireAdminSession();
-    const { kind } = await params;
-    if (!isIntegrationKind(kind)) {
-      throw new BffValidationError([{ field: "kind", message: "Unknown integration kind" }]);
-    }
+    const { kind, name } = await resolveIntegrationParams(params);
     const body = await readJsonBody<{ enabled?: unknown }>(request);
     if (typeof body.enabled !== "boolean") {
       throw new BffValidationError([{ field: "enabled", message: "enabled must be an explicit boolean" }]);
     }
     const dto = await authenticatedBackendRequest<IntegrationDto>({
-      path: `/api/v1/integrations/${kind}/toggle`,
+      path: `/api/v1/integrations/${kind}/${name}/toggle`,
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ enabled: body.enabled }),

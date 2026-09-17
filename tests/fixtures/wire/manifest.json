@@ -198,13 +198,21 @@
       }
     },
     "integration-email-test": {
-      "url": "http://maintmode-maintmode-1:8000/api/v1/integrations/email/test",
+      "url": "http://maintmode-maintmode-1:8000/api/v1/integrations/notify/email/test",
       "method": "POST",
       "status": "204 / 502 / 400 (five shapes, see the file)",
       "capturedAt": "2026-09-08",
-      "why": "RUK-290 §4. Three of this endpoint's four interesting shapes are failures, and an invented failure envelope records the author's belief about the backend rather than the backend.",
+      "why": "RUK-290 §4. Three of this endpoint's four interesting shapes are failures, and an invented failure envelope records the author's belief about the backend rather than the backend. The path moved to /notify/email/test in b74a4536 (RUK-304); the recorded bodies are unchanged, because the route moved and the envelopes did not.",
       "handEdited": true,
       "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, so it cannot capture a POST whose success is an empty 204 and whose useful shapes are error envelopes. Taken off the wire by hand against a locally built backend (main @ a814a01) and recorded verbatim, except the resolver IP inside probe_failed.message, masked as <IP> because no-pii.test.ts refuses a committed fixture carrying a raw IPv4 — the file documents that substitution in its own _masked field."
+    },
+    "integrations": {
+      "url": "http://localhost:9000/maintmode/api/v1/integrations",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-09-16T22:03:01.169Z",
+      "why": "RUK-304: `b74a4536` turned `kind` into a category and moved the system to `name`, so the mapper's kind whitelist matched nothing and dropped every row — on a 200, with no error, while the screen rendered its static list and reported nothing configured. This fixture is what makes the next move of this shape fail in CI instead of on an administrator's screen. It must keep carrying BOTH halves of the pair and a login row's `health`.",
+      "handEdited": false
     }
   },
   "gateway": "http://localhost:9000"

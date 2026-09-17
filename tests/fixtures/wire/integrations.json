@@ -1,0 +1,73 @@
+{
+  "integrations": [
+    {
+      "id": "<uuid-1>",
+      "kind": "login",
+      "name": "google",
+      "enabled": true,
+      "config": {
+        "client_id": "fixture-client-id.apps.googleusercontent.com",
+        "issuer_url": "https://accounts.google.com",
+        "display_name": "Google",
+        "redirect_uri": "https://maintmode.example.com/auth/callback"
+      },
+      "health": "ok",
+      "secrets_set": {
+        "client_secret": true
+      },
+      "created_at": "<ts-1>",
+      "created_by": {
+        "id": "<uuid-2>",
+        "display_name": "User Name[<uuid-3>]",
+        "email": "<email-1>"
+      },
+      "updated_at": "<ts-1>",
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-4>",
+      "kind": "notify",
+      "name": "slack",
+      "enabled": true,
+      "config": {
+        "api_url": "https://slack.com/api/",
+        "timeout": "10s"
+      },
+      "secrets_set": {
+        "bot_token": true
+      },
+      "created_at": "<ts-2>",
+      "created_by": {
+        "id": "<uuid-2>",
+        "display_name": "User Name[<uuid-3>]",
+        "email": "<email-1>"
+      },
+      "updated_at": "<ts-2>",
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-5>",
+      "kind": "notify",
+      "name": "email",
+      "enabled": true,
+      "config": {
+        "from": "<email-2>",
+        "host": "smtp.example.com",
+        "port": 587,
+        "username": "noc",
+        "tls_policy": "starttls"
+      },
+      "secrets_set": {
+        "password": true
+      },
+      "created_at": "<ts-3>",
+      "created_by": {
+        "id": "<uuid-2>",
+        "display_name": "User Name[<uuid-3>]",
+        "email": "<email-1>"
+      },
+      "updated_at": "<ts-3>",
+      "updated_by": null
+    }
+  ]
+}

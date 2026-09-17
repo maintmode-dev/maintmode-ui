@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readWireFixture } from "./_harness";
 
 /**
- * Contract test — `POST /api/admin/integrations/{kind}/test` →
- * `POST /api/v1/integrations/email/test`. RUK-290, SPEC §4.1.
+ * Contract test — `POST /api/admin/integrations/{kind}/{name}/test` →
+ * `POST /api/v1/integrations/notify/email/test`. RUK-290, SPEC §4.1.
  *
  * **The response shapes are recorded, not written here.** They live in
  * `tests/fixtures/wire/integration-email-test.json`, captured from a locally
@@ -63,7 +63,7 @@ vi.mock("@/server/backend/client/authenticated-backend-request", () => ({
 }));
 
 const { BackendRequestError } = await import("@/server/backend/errors/backend-request-error");
-const { POST } = await import("@/app/api/admin/integrations/[kind]/test/route");
+const { POST } = await import("@/app/api/admin/integrations/[kind]/[name]/test/route");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -80,14 +80,14 @@ const BODY = {
   to: "admin@example.test",
 };
 
-function post(body: unknown, kind = "email") {
+function post(body: unknown, name = "email", kind = "notify") {
   return POST(
-    new Request(`https://app.test/api/admin/integrations/${kind}/test`, {
+    new Request(`https://app.test/api/admin/integrations/${kind}/${name}/test`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     }),
-    { params: Promise.resolve({ kind }) },
+    { params: Promise.resolve({ kind, name }) },
   );
 }
 
@@ -102,7 +102,7 @@ describe("test-send — the request reaches the backend intact", () => {
     await post(BODY);
 
     const { path, method } = wireRequest();
-    expect(path).toBe("/api/v1/integrations/email/test");
+    expect(path).toBe("/api/v1/integrations/notify/email/test");
     expect(method).toBe("POST");
   });
 
@@ -165,7 +165,7 @@ describe("test-send — the answer reaches the client intact", () => {
 });
 
 describe("test-send — guards", () => {
-  it("refuses a kind that has no live probe", async () => {
+  it("refuses a transport that has no live probe", async () => {
     // Slack and Telegram have no equivalent endpoint; reaching the backend with
     // one would be a 404 there rather than a clear answer here.
     const response = await post(BODY, "slack");
@@ -174,8 +174,20 @@ describe("test-send — guards", () => {
     expect(backendRequest).not.toHaveBeenCalled();
   });
 
-  it("refuses an unknown kind before touching the backend", async () => {
+  it("refuses an unknown name before touching the backend", async () => {
     const response = await post(BODY, "carrier-pigeon");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The whitelist is narrower than the backend on purpose: this BFF proxies no
+   * login routes, so a request for one must die here rather than carry a typed
+   * client_secret toward a path that does not exist.
+   */
+  it("refuses the login category outright", async () => {
+    const response = await post(BODY, "google", "login");
 
     expect(response.status).toBeGreaterThanOrEqual(400);
     expect(backendRequest).not.toHaveBeenCalled();

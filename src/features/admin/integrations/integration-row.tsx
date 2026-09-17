@@ -2,7 +2,7 @@
 
 import { Plug, Settings as SettingsIcon } from "lucide-react";
 
-import type { Integration, IntegrationKind } from "@/domain/admin/integration";
+import type { Integration } from "@/domain/admin/integration";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Switch } from "@/shared/ui/shadcn/switch";
 import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
@@ -13,26 +13,30 @@ import { kindMeta } from "./integration-kinds";
 
 /**
  * One registry row, shared by both sections (transports and sign-in providers).
- * Everything category-specific comes from `kindMeta(kind)` — the label, the
- * description and the brand mark — so the row itself stays category-blind. A
- * kind whose metadata is not registered renders nothing rather than throwing;
- * that is the production state for the auth kinds, whose metadata ships only
+ * Everything system-specific comes from `kindMeta(name)` — the label, the
+ * description and the brand mark — so the row itself stays system-blind. A
+ * system whose metadata is not registered renders nothing rather than throwing;
+ * that is the production state for the auth entries, whose metadata ships only
  * with the dev-only section.
+ *
+ * Takes the SYSTEM name, not the category: the metadata registry is keyed by
+ * system, and a category would resolve to null and render an empty row without
+ * an error.
  */
 export function IntegrationRow({
-  kind,
+  name,
   integration,
   toggleBusy,
   onToggle,
   onOpen,
 }: {
-  kind: IntegrationKind;
+  name: string;
   integration: Integration | null;
   toggleBusy: boolean;
   onToggle: (enabled: boolean) => void;
   onOpen: () => void;
 }) {
-  const meta = kindMeta(kind);
+  const meta = kindMeta(name);
   if (!meta) return null;
   const configured = integration !== null;
 

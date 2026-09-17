@@ -10,7 +10,7 @@ import type {
   ListIntegrationsResponseDto,
 } from "@/server/backend/contracts/integrations-dto";
 import { readJsonBody } from "@/server/backend/http/read-json-body";
-import { isIntegrationKind } from "@/domain/admin/integration";
+import { isNotifyIntegrationName } from "@/domain/admin/integration";
 
 /**
  * GET /api/admin/integrations — proxy to `GET /api/v1/integrations`
@@ -34,10 +34,19 @@ export async function GET() {
 /**
  * POST /api/admin/integrations — proxy to `POST /api/v1/integrations`.
  *
- * Body: `{ kind, enabled, config, secrets }`. `enabled` must be an explicit
- * boolean (the backend rejects an omitted flag — on/off is a deliberate
- * choice); `secrets` values are plaintext and are forwarded verbatim for the
- * backend to encrypt. 409 = the kind is already configured.
+ * Body: `{ kind, name, enabled, config, secrets }`.
+ *
+ * `kind` is the CATEGORY and `name` the system — both travel, and the
+ * distinction is the trap this route walked into. Before `b74a4536` the system
+ * name lived in `kind`, so "just add `name`" leaves a body the backend rejects;
+ * conversely, gating the request on `isNotifyIntegrationName(kind)` would reject
+ * `"notify"` and kill create for every transport. The pair is validated as a
+ * pair.
+ *
+ * `enabled` must be an explicit boolean (the backend rejects an omitted flag —
+ * on/off is a deliberate choice); `secrets` values are plaintext and are
+ * forwarded verbatim for the backend to encrypt. 409 = the pair is already
+ * configured.
  */
 export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) {
@@ -51,12 +60,16 @@ export async function POST(request: Request) {
     await requireAdminSession();
     const body = await readJsonBody<{
       kind?: string;
+      name?: string;
       enabled?: unknown;
       config?: unknown;
       secrets?: unknown;
     }>(request);
-    if (!body.kind || !isIntegrationKind(body.kind)) {
-      throw new BffValidationError([{ field: "kind", message: "Unknown integration kind" }]);
+    if (body.kind !== "notify") {
+      throw new BffValidationError([{ field: "kind", message: "Unknown integration category" }]);
+    }
+    if (!body.name || !isNotifyIntegrationName(body.name)) {
+      throw new BffValidationError([{ field: "name", message: "Unknown integration" }]);
     }
     if (typeof body.enabled !== "boolean") {
       throw new BffValidationError([{ field: "enabled", message: "enabled must be an explicit boolean" }]);
@@ -67,6 +80,7 @@ export async function POST(request: Request) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         kind: body.kind,
+        name: body.name,
         enabled: body.enabled,
         config: body.config ?? {},
         secrets: body.secrets ?? {},

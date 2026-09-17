@@ -72,20 +72,65 @@ type BuiltInMethodActions = Pick<
 >;
 
 /**
- * Google is rendered unconditionally, never from `methods`.
+ * The branded provider buttons, drawn from the backend's list — with one
+ * exception for a failed fetch (see `visibleOAuthProviders`).
  *
- * It is not in the backend's list at all — it lives entirely in NextAuth — so
- * deriving the button list purely from `methods` would delete the Google button
- * exactly when the auth service is unreachable, i.e. remove the one method that
- * still works. (SPEC §4.2.)
+ * ## The comment that used to live here was wrong (RUK-304)
+ *
+ * It said Google "is not in the backend's list at all — it lives entirely in
+ * NextAuth". That stopped being true with `b74a4536`, which moved sign-in
+ * providers into the integration registry: `resolveAuthProviders()` now returns
+ * one `methods[]` entry per live login row, so a configured Google appears there
+ * as `{ id: "google", type: "redirect" }`.
+ *
+ * Rendering it unconditionally became a trap. The migration that shipped with
+ * that change deletes the old provider rows, so a fresh deployment advertises
+ * no Google at all — and the button leads to `startOAuthDanceAction`, which
+ * `redirect()`s. The backend answers an unknown provider with a JSON error
+ * rather than a redirect (deliberately: it has no trusted frontend address at
+ * that point), so the user lands on raw JSON on another origin.
+ *
+ * ## Match on `id`, never on `type`
+ *
+ * `providers_list.go` stamps EVERY login row `type: "redirect"`, and this file
+ * already overloads `redirect` twice more: as the coercion for an unrecognised
+ * type (`resolve-auth-providers.ts`) and as the `ComingSoonButton` placeholder.
+ * Only `id` tells a configured provider from those.
  */
 const OAUTH_PROVIDERS: { id: BrandProvider; label: string; enabled: boolean }[] = [
   { id: "google", label: "Continue with Google", enabled: true },
   { id: "github", label: "Continue with GitHub", enabled: false },
 ];
 
-/** Provider ids owned by NextAuth above; a backend method repeating one is skipped. */
+/**
+ * Provider ids drawn as branded buttons above; a backend method repeating one is
+ * skipped, so an advertised provider is never drawn twice — once branded and
+ * once as a generic disabled row.
+ */
 const OAUTH_IDS: ReadonlySet<string> = new Set(OAUTH_PROVIDERS.map((p) => p.id));
+
+/**
+ * Which branded buttons to draw.
+ *
+ * An empty list and a failed fetch are different answers and must not collapse:
+ *
+ *  - `methods` resolved → draw a provider only if the backend advertises it.
+ *    Nothing configured means no button, because a button to nowhere is worse.
+ *  - `methods` undefined (transport failure) → draw them all. The list could
+ *    not be READ, which is no evidence that a provider is missing; suppressing
+ *    the button here would remove a working way in precisely when the auth
+ *    service is already degraded. That is the break-glass case, and the only
+ *    one that keeps the old unconditional behaviour.
+ *
+ * Disabled providers (GitHub today) stay as placeholders either way: sign-in
+ * through them is not implemented on this frontend, so an advertised row must
+ * not become a live button. RUK-302 wires that up.
+ */
+function visibleOAuthProviders(methods: SignInMethod[] | undefined) {
+  if (methods === undefined) return OAUTH_PROVIDERS;
+  const advertised = new Set(methods.map((m) => m.id));
+  return OAUTH_PROVIDERS.filter((p) => !p.enabled || advertised.has(p.id));
+}
 
 /**
  * What `/login` offers when the providers fetch fails at the transport level.
@@ -174,7 +219,7 @@ export function LoginPage({
             />
           ) : (
             <div className="flex flex-col gap-2.5">
-              {OAUTH_PROVIDERS.map((p) =>
+              {visibleOAuthProviders(methods).map((p) =>
                 p.enabled ? (
                   <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
                     <Button type="submit" className="w-full justify-start gap-2.5 px-3">

@@ -5,11 +5,11 @@ import { requireAdminSession } from "@/server/auth/require-admin";
 import { routeErrorResponse, BffValidationError } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
 import { readJsonBody } from "@/server/backend/http/read-json-body";
-import { isIntegrationKind } from "@/domain/admin/integration";
+import { resolveIntegrationParams } from "@/server/backend/contracts/integration-route-params";
 
 /**
- * POST /api/admin/integrations/{kind}/test — proxy to
- * `POST /api/v1/integrations/email/test`.
+ * POST /api/admin/integrations/{kind}/{name}/test — proxy to
+ * `POST /api/v1/integrations/notify/email/test`.
  *
  * Sends a real message using the settings in the body, saving nothing and
  * recording nothing. That is what separates it from the create/update routes,
@@ -17,15 +17,22 @@ import { isIntegrationKind } from "@/domain/admin/integration";
  * makes the backend open an outbound connection to a host the caller chose, and
  * send mail to an address the caller chose.
  *
- * Parameterised by `[kind]` like its siblings even though the backend pins its
- * own route to `email`: a literal segment here would sit beside the existing
- * dynamic one, and the kind whitelist — the cheapest of the three guards — would
- * have nothing to check.
+ * Parameterised by `[kind]/[name]` like its siblings even though the backend
+ * pins its own route to `notify/email`: a literal segment here would sit beside
+ * the existing dynamic ones, and the pair whitelist — the cheapest of the three
+ * guards — would have nothing to check.
+ *
+ * The OUTGOING path is a literal for the same reason it must be: interpolating
+ * the segments produced `/notify/test` when the route moved, which is a
+ * well-formed string and therefore a runtime 404 rather than a build error.
  *
  * Guard order follows `toggle`: origin first, before any work is done, because
- * this handler sends mail; then the session; then the kind.
+ * this handler sends mail; then the session; then the pair.
  */
-export async function POST(request: Request, { params }: { params: Promise<{ kind: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ kind: string; name: string }> },
+) {
   if (!isSameOriginRequest(request)) {
     return NextResponse.json(
       { error: "Cross-origin requests are not allowed", code: "FORBIDDEN" },
@@ -35,14 +42,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ kin
 
   try {
     await requireAdminSession();
-    const { kind } = await params;
-    if (!isIntegrationKind(kind)) {
-      throw new BffValidationError([{ field: "kind", message: "Unknown integration kind" }]);
-    }
-    // A live probe is defined for SMTP only; the other kinds have no equivalent
-    // and the backend exposes no route for them.
-    if (kind !== "email") {
-      throw new BffValidationError([{ field: "kind", message: "Test send is only available for email" }]);
+    // Two guards, two messages, deliberately not collapsed into one condition:
+    // "not a routable integration" and "this one has no probe" are different
+    // facts, and an operator reading the second should not be told the first.
+    const { name } = await resolveIntegrationParams(params);
+    // A live probe is defined for SMTP only; the other transports have no
+    // equivalent and the backend exposes no route for them.
+    if (name !== "email") {
+      throw new BffValidationError([{ field: "name", message: "Test send is only available for email" }]);
     }
 
     const body = await readJsonBody<{ config?: unknown; secrets?: unknown; to?: unknown }>(request);
@@ -54,7 +61,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ kin
     // operator is looking at, so anything reshaped here would test something
     // else. The backend validates the config and rejects unknown secret keys.
     await authenticatedBackendRequest<void>({
-      path: `/api/v1/integrations/${kind}/test`,
+      path: "/api/v1/integrations/notify/email/test",
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ config: body.config ?? {}, secrets: body.secrets ?? {}, to: body.to }),

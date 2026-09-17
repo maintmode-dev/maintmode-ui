@@ -26,6 +26,21 @@ export interface AcceptInvitePageProps {
    */
   acceptAction: () => Promise<void>;
   /**
+   * Whether the backend advertises a sign-in provider, resolved on the server.
+   *
+   * Its own prop rather than a widened `preview.status`: "your invitation is
+   * bad" and "our sign-in is down" are different messages to a person holding a
+   * valid invite, and folding them together would tell the wrong one. And it
+   * cannot be resolved here — this component is `"use client"` and may not
+   * import from `src/server/**`.
+   *
+   * DEFAULTS to available, so a caller that does not pass it behaves exactly as
+   * before. Unlike `/login` there is no break-glass to fall back to: an
+   * invitation is only acceptable through the dance, so a page that cannot name
+   * a provider has nothing else to offer.
+   */
+  signInAvailable?: boolean;
+  /**
    * The signed-in visitor's own email, when there is a session. Not the invited
    * address — the frozen tone forbids surfacing that, and this is a fact about
    * whoever is holding the browser.
@@ -43,12 +58,22 @@ export interface InvitationPreviewResult {
  * only `status` and (when valid) `suggested_provider`; everything else is a
  * single recovery-first explanation.
  */
-export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: AcceptInvitePageProps) {
+export function AcceptInvitePage({
+  token,
+  preview,
+  acceptAction,
+  signedInAs,
+  signInAvailable,
+}: AcceptInvitePageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
       <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
         {preview.status === "valid" ? (
-          <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} />
+          <ValidInvite
+            acceptAction={acceptAction}
+            signedInAs={signedInAs}
+            signInAvailable={signInAvailable}
+          />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
         )}
@@ -60,7 +85,8 @@ export function AcceptInvitePage({ token, preview, acceptAction, signedInAs }: A
 function ValidInvite({
   acceptAction,
   signedInAs,
-}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs">) {
+  signInAvailable = true,
+}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs" | "signInAvailable">) {
   // ONE provider, named in one place.
   //
   // There used to be a label branch on `suggested_provider`, while the action
@@ -85,28 +111,65 @@ function ValidInvite({
         <h1 className="h2">You&apos;ve been invited</h1>
       </header>
       <p className="body-sm">Sign in with the email this invitation was sent to.</p>
-      {/*
-        Signing in here means BECOMING the invited person, so an existing session
-        has to go first — and the stake is higher than a wrong identity. The
-        backend claims the invitation inside the dance, before this app sees the
-        result, so a signed-in click would spend the invitation and leave the
-        next visitor reading "already claimed". An admin opening the link to
-        check it is the ordinary way that happens.
-
-        The action refuses this case too; this is what stops the click.
-      */}
-      {signedInAs ? (
-        <p role="status" className="caption">
-          You are signed in as {signedInAs}. Sign out first, then open this invitation again.
-        </p>
-      ) : (
-        <form action={acceptAction} className="w-full">
-          <Button type="submit" className="w-full">
-            Continue with Google
-          </Button>
-        </form>
-      )}
+      <InviteCallToAction
+        acceptAction={acceptAction}
+        signedInAs={signedInAs}
+        signInAvailable={signInAvailable}
+      />
     </div>
+  );
+}
+
+/**
+ * The one interactive slot on a valid invite: the accept button, or the reason
+ * there isn't one. Three mutually exclusive states, read top to bottom in
+ * order of precedence — a session blocks the dance outright, and a missing
+ * provider blocks it even without one.
+ */
+function InviteCallToAction({
+  acceptAction,
+  signedInAs,
+  signInAvailable,
+}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs"> & { signInAvailable: boolean }) {
+  // Signing in here means BECOMING the invited person, so an existing session
+  // has to go first — and the stake is higher than a wrong identity. The
+  // backend claims the invitation inside the dance, before this app sees the
+  // result, so a signed-in click would spend the invitation and leave the next
+  // visitor reading "already claimed". An admin opening the link to check it is
+  // the ordinary way that happens.
+  //
+  // The action refuses this case too; this is what stops the click.
+  if (signedInAs) {
+    return (
+      <p role="status" className="caption">
+        You are signed in as {signedInAs}. Sign out first, then open this invitation again.
+      </p>
+    );
+  }
+
+  // No provider is configured, so the dance would answer a JSON error instead
+  // of a redirect and drop the invitee on raw backend output on another origin.
+  // A button is worse than no button here.
+  //
+  // The reassurance is not padding: the backend refuses before minting any
+  // state, so the invitation is untouched and the link still works. Shown an
+  // explanation with no button, an invitee would otherwise reasonably conclude
+  // they had just spent it.
+  if (!signInAvailable) {
+    return (
+      <p role="status" className="caption">
+        Sign-in isn&apos;t set up on this instance yet, so this invitation can&apos;t be accepted right now.
+        Your invitation is still valid — ask an administrator to finish setup, then open this link again.
+      </p>
+    );
+  }
+
+  return (
+    <form action={acceptAction} className="w-full">
+      <Button type="submit" className="w-full">
+        Continue with Google
+      </Button>
+    </form>
   );
 }
 

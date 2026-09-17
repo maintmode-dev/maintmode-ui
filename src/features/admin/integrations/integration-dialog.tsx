@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
-import { isIntegrationKind, type Integration, type IntegrationKind } from "@/domain/admin/integration";
+import { isNotifyIntegrationName, type Integration } from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -37,7 +37,7 @@ import {
 } from "./queries/use-integrations-queries";
 
 /**
- * Create ↔ edit dialog for one integration kind (Grafana-OAuth-style form,
+ * Create ↔ edit dialog for one integration system (Grafana-OAuth-style form,
  * frozen in the integrations-settings design snapshot).
  *
  * Secrets are write-only: a stored secret renders as a locked "Configured"
@@ -45,18 +45,19 @@ import {
  * secrets never enter the payload — see `secret-patch.ts` for the intent map.
  */
 export function IntegrationDialog({
-  kind,
+  name,
   integration,
   open,
   onOpenChange,
 }: {
-  kind: IntegrationKind | null;
+  /** The SYSTEM being configured — `kindMeta` and the whitelist both key on it. */
+  name: string | null;
   /** Existing integration → edit mode; null → create mode. */
   integration: Integration | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const meta = kind ? kindMeta(kind) : null;
+  const meta = name ? kindMeta(name) : null;
   const isEdit = integration !== null;
 
   return (
@@ -77,10 +78,10 @@ export function IntegrationDialog({
       {/* The body unmounts the moment the dialog closes (before the exit
           animation finishes) — deliberate: typed secret drafts must be
           destroyed on close, and that outweighs the brief empty flash. */}
-      {kind && meta ? (
+      {name && meta ? (
         <IntegrationDialogBody
-          key={`${kind}-${integration?.updated_at ?? "create"}`}
-          kind={kind}
+          key={`${name}-${integration?.updated_at ?? "create"}`}
+          name={name}
           meta={meta}
           integration={integration}
           onClose={() => onOpenChange(false)}
@@ -101,13 +102,13 @@ const TEST_PLATE = {
 } as const;
 
 function IntegrationDialogBody({
-  kind,
+  name,
   meta,
   integration,
   onClose,
 }: {
-  kind: IntegrationKind;
-  /** Resolved by the parent — a kind whose metadata is absent renders nothing. */
+  name: string;
+  /** Resolved by the parent — a system whose metadata is absent renders nothing. */
   meta: IntegrationKindMeta;
   integration: Integration | null;
   onClose: () => void;
@@ -198,7 +199,7 @@ function IntegrationDialogBody({
     [fieldVerdicts],
   );
 
-  // Derived from the ROUTE WHITELIST, not from copy. A kind the BFF rejects
+  // Derived from the ROUTE WHITELIST, not from copy. A system the BFF rejects
   // cannot be saved, so Save must be disabled rather than allowed to fire: a
   // save that 400'd would still put a typed client_secret on the wire, reaching
   // the Next server process and any request logging there. Blocking the button
@@ -206,12 +207,14 @@ function IntegrationDialogBody({
   //
   // Reading this from `unavailableNotice` would tie a security control to a
   // string — deleting the notice would silently re-enable saving on a
-  // credentials form. `isIntegrationKind` is the same predicate the routes gate
-  // on, so the button and the route can never disagree.
-  const savingUnavailable = !isIntegrationKind(kind);
+  // credentials form. `isNotifyIntegrationName` is the same predicate the routes
+  // gate on, so the button and the route can never disagree. The category half
+  // of the pair is a constant there, so the name alone carries the same answer;
+  // the dialog never needs to know a category.
+  const savingUnavailable = !isNotifyIntegrationName(name);
 
-  // A live probe exists for SMTP only; the other kinds have no equivalent.
-  const canTest = kind === "email";
+  // A live probe exists for SMTP only; the other transports have no equivalent.
+  const canTest = name === "email";
   const warnMissingSecret = canTest && shouldWarnAboutMissingSecret(secrets);
 
   const runTest = async () => {
@@ -227,7 +230,7 @@ function IntegrationDialogBody({
     setTestResult(null);
     try {
       await testMutation.mutateAsync({
-        kind,
+        ref: { kind: "notify", name },
         body: buildTestSendBody(meta, config, secrets, sentTo, integration?.config ?? {}),
       });
       if (testRunRef.current === run) setTestResult({ ok: true, to: sentTo });
@@ -255,7 +258,7 @@ function IntegrationDialogBody({
     try {
       if (isEdit) {
         await updateMutation.mutateAsync({
-          kind,
+          ref: { kind: "notify", name },
           body: {
             enabled,
             config: buildConfig(meta, config, integration.config),
@@ -264,7 +267,8 @@ function IntegrationDialogBody({
         });
       } else {
         await createMutation.mutateAsync({
-          kind,
+          kind: "notify",
+          name,
           enabled,
           config: buildConfig(meta, config),
           secrets: buildSecretsCreate(secrets),
