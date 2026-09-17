@@ -4,8 +4,11 @@ import { authenticatedBackendRequest } from "@/server/backend/client/authenticat
 import { requireAdminSession } from "@/server/auth/require-admin";
 import { routeErrorResponse, BffValidationError } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
-import { readJsonBody } from "@/server/backend/http/read-json-body";
-import { resolveIntegrationParams } from "@/server/backend/contracts/integration-route-params";
+import { readCappedJsonBody } from "@/server/backend/http/read-json-body";
+import {
+  INTEGRATION_MAX_BODY_BYTES,
+  resolveIntegrationParams,
+} from "@/server/backend/contracts/integration-route-params";
 
 /**
  * POST /api/admin/integrations/{kind}/{name}/test — proxy to
@@ -52,7 +55,11 @@ export async function POST(
       throw new BffValidationError([{ field: "name", message: "Test send is only available for email" }]);
     }
 
-    const body = await readJsonBody<{ config?: unknown; secrets?: unknown; to?: unknown }>(request);
+    const body = await readCappedJsonBody<{
+      config?: unknown;
+      secrets?: unknown;
+      to?: unknown;
+    }>(request, INTEGRATION_MAX_BODY_BYTES);
     if (typeof body.to !== "string" || body.to.trim() === "") {
       throw new BffValidationError([{ field: "to", message: "A recipient address is required" }]);
     }

@@ -175,3 +175,94 @@ describe("IntegrationsPage — what the administrator actually sees", () => {
     expect(screen.queryByText("Configure")).toBeNull();
   });
 });
+
+/**
+ * The sign-in half, which this screen renders for the first time.
+ *
+ * The transport cases above were written for the incident where configured
+ * rows showed "Set up". Nothing asserted the same thing about login rows until
+ * now — and pointing the login section at the wrong category left every test
+ * green while every configured provider rendered as unconfigured. Same defect,
+ * same screen, one section over.
+ */
+const GOOGLE_CONFIGURED: Integration = {
+  id: "i-google",
+  kind: "login",
+  name: "google",
+  enabled: true,
+  config: { issuer_url: "https://accounts.google.com" },
+  secrets_set: { client_secret: true },
+  health: "ok",
+  created_at: "2026-07-01T10:00:00Z",
+  updated_at: "2026-07-02T14:21:00Z",
+};
+
+describe("IntegrationsPage — the sign-in providers section", () => {
+  it("shows a configured provider as configured, not as 'Set up'", async () => {
+    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).queryByText("Set up")).toBeNull();
+    expect(within(rowFor("Google")).getByText("Enabled")).toBeTruthy();
+  });
+
+  it("still lists a provider the backend has no row for", async () => {
+    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
+    await screen.findByText("Google");
+
+    // `custom` is unconfigured here, and must be offered rather than hidden —
+    // a registry name with no row is "not set up yet", not "does not exist".
+    expect(within(rowFor("Custom OIDC")).getByText("Set up")).toBeTruthy();
+  });
+
+  /**
+   * Health is reported for login rows only. Rendering it off truthiness rather
+   * than off the category would make "transports show nothing" an accident of
+   * the backend's empty string — and would hide the badge on a login row whose
+   * state the backend could not read, which is the case that matters most.
+   */
+  it("shows health on a login row and never on a transport", async () => {
+    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).getByText("Active")).toBeTruthy();
+    expect(within(rowFor("Slack")).queryByText("Active")).toBeNull();
+    expect(within(rowFor("Slack")).queryByText(/unknown/i)).toBeNull();
+  });
+
+  it("shows a login row with no health as unknown, never as active", async () => {
+    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, health: undefined }]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).getByText(/unknown/i)).toBeTruthy();
+    expect(within(rowFor("Google")).queryByText("Active")).toBeNull();
+  });
+
+  /**
+   * A row this build has no descriptor for must not reach the screen — but it
+   * must be announced, because a row that vanishes in silence is the shape of
+   * the incident this whole feature already had once.
+   */
+  it("drops an unknown login provider and says so", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, id: "i-gh", name: "github" }]);
+      await screen.findByText("Google");
+
+      expect(screen.queryByText("github")).toBeNull();
+      expect(spy).toHaveBeenCalled();
+      expect(JSON.stringify(spy.mock.calls)).toContain("github");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  /** Only a configured row can be deleted — there is nothing to remove otherwise. */
+  it("offers delete on a configured row and not on an empty one", async () => {
+    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).getByRole("button", { name: /Delete/ })).toBeTruthy();
+    expect(within(rowFor("Custom OIDC")).queryByRole("button", { name: /Delete/ })).toBeNull();
+  });
+});

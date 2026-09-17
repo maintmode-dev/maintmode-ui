@@ -206,6 +206,22 @@ describe("POST /api/admin/integrations — create", () => {
     expect(backendRequest).toHaveBeenCalled();
   });
 
+  /**
+   * The backend caps this group at 64 KiB and answers a larger body from
+   * middleware, BEFORE its handler — so what comes back is not the JSON error
+   * envelope this frontend knows how to read. Refusing the same size here turns
+   * an opaque failure into a field error, and stops an unbounded buffered read
+   * on a path that now carries a real `client_secret`.
+   */
+  it("refuses a body over the backend's cap without forwarding it", async () => {
+    const huge = { ...VALID, config: { note: "x".repeat(64 * 1024) } };
+
+    const response = await create(huge);
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing name here rather than paying for a backend round trip", async () => {
     const response = await create({ kind: "notify", enabled: true, config: {}, secrets: {} });
 
@@ -214,25 +230,41 @@ describe("POST /api/admin/integrations — create", () => {
   });
 
   /**
-   * The whitelist is a security control, not tidiness: this BFF proxies no
-   * login routes, so a request for one must die here rather than carry a typed
-   * client_secret toward a path that does not exist.
+   * The widening, asserted from the side that used to be refused. A login
+   * provider is a real row now, and its create carries a real `client_secret`
+   * — so this is also the case that proves the credential reaches the backend
+   * rather than dying in the BFF.
    */
-  it("refuses the login category before touching the backend", async () => {
+  it("forwards a login pair to the backend", async () => {
+    backendRequest.mockResolvedValue(recorded.google);
+
     const response = await create({ ...VALID, kind: "login", name: "google" });
+
+    expect(response.status).toBe(200);
+    expect(backendBody().kind).toBe("login");
+    expect(backendBody().name).toBe("google");
+  });
+
+  /**
+   * `github` IS served by the backend. This frontend has no descriptor for it,
+   * so the pair is refused here — failing closed, before a round trip, rather
+   * than forwarding a credential toward a provider it cannot render.
+   */
+  it("refuses a login name this frontend has no descriptor for", async () => {
+    const response = await create({ ...VALID, kind: "login", name: "github" });
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
   });
 
   /**
-   * The case that isolates the CATEGORY guard.
+   * The case that proves widening did not become "allow anything".
    *
-   * `(login, google)` above is refused by either half — `google` is not a
-   * notify name — so it cannot tell which guard fired. `slack` IS a valid
-   * notify name, so only the category check stands between this request and
-   * `POST` with `kind: "login"`. Found in review: deleting that check left
-   * every other case green.
+   * `slack` IS a valid notify name and `login` IS a valid category, so only the
+   * PAIR check stands between this request and a `POST` the backend refuses.
+   * Found in review the first time; it keeps its job now for the opposite
+   * reason — the gate is wider, so the cross-product case is the one that can
+   * silently open.
    */
   it("refuses a valid transport name submitted under the login category", async () => {
     const response = await create({ ...VALID, kind: "login", name: "slack" });
@@ -322,11 +354,24 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
     expect(body.kind).toBe("notify");
   });
 
-  it("refuses a login pair without reaching the backend", async () => {
-    const response = await patch("login", "google");
+  /**
+   * The cap is not a create-only concern: this is the route an operator hits
+   * on every edit, and the one that carries a re-typed `client_secret`.
+   */
+  it("refuses a body over the backend's cap without forwarding it", async () => {
+    const response = await patch("notify", "slack", { config: { note: "x".repeat(64 * 1024) } });
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("forwards a login pair to the backend", async () => {
+    backendRequest.mockResolvedValue(recorded.google);
+
+    const response = await patch("login", "google");
+
+    expect(response.status).toBe(200);
+    expect(backendRequest).toHaveBeenCalled();
   });
 
   /** Isolates the category guard — see the create-route case for why. */
@@ -338,20 +383,27 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
   });
 
   /**
-   * The two guards keep separate messages (SPEC §3.3): "not a routable
-   * category" and "not a routable system" are different facts, and collapsing
-   * them tells an operator the wrong one. Asserted on the field, which is what
-   * distinguishes them in the envelope.
+   * One message for every unroutable pair, which is a change from the two this
+   * route used to give.
+   *
+   * The old pair of messages distinguished "bad category" from "bad system",
+   * and that distinction stopped existing when the gate became a pair check:
+   * `(login, google)` is now valid and `(login, slack)` is not, so neither half
+   * is wrong on its own — only their combination is. Naming which half failed
+   * would also tell an unauthenticated prober which categories and names the
+   * registry holds, for no operator benefit: the UI only ever sends pairs it
+   * rendered, so nobody reaching this from the screen can produce it.
    */
-  it("distinguishes a bad category from a bad system", async () => {
-    const badCategory = await patch("login", "google");
-    const badName = await patch("notify", "carrier-pigeon");
+  it("answers every unroutable pair the same way, naming no half", async () => {
+    const crossCategory = await patch("login", "slack");
+    const unknownName = await patch("notify", "carrier-pigeon");
 
-    const categoryBody = (await badCategory.json()) as { fieldErrors?: { field: string }[] };
-    const nameBody = (await badName.json()) as { fieldErrors?: { field: string }[] };
-
-    expect(categoryBody.fieldErrors?.[0].field).toBe("kind");
-    expect(nameBody.fieldErrors?.[0].field).toBe("name");
+    for (const response of [crossCategory, unknownName]) {
+      const body = (await response.json()) as { fieldErrors?: { field: string }[] };
+      expect(response.status).toBe(400);
+      expect(body.fieldErrors?.[0].field).toBe("name");
+    }
+    expect(backendRequest).not.toHaveBeenCalled();
   });
 
   it("keeps a backend failure a failure", async () => {
@@ -436,7 +488,7 @@ describe("GET /api/admin/integrations/{kind}/{name} — single row", () => {
     expect(body.kind).toBe("notify");
   });
 
-  it("refuses a login pair without reaching the backend", async () => {
+  it("refuses a valid transport name under the login category", async () => {
     const response = await get("login", "slack");
 
     expect(response.status).toBe(400);
@@ -480,11 +532,13 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
     expect(backendRequest).not.toHaveBeenCalled();
   });
 
-  it("refuses a login pair without reaching the backend", async () => {
+  it("forwards a login pair to the backend", async () => {
+    backendRequest.mockResolvedValue(recorded.google);
+
     const response = await flip("login", "google");
 
-    expect(response.status).toBe(400);
-    expect(backendRequest).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(backendRequest).toHaveBeenCalled();
   });
 
   /** Isolates the category guard — see the create-route case for why. */
@@ -519,5 +573,103 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
     const response = await flip("notify", "slack");
 
     expect(response.status).toBeGreaterThanOrEqual(400);
+  });
+});
+
+/**
+ * DELETE — the destructive one.
+ *
+ * For a login provider the backend unlinks every identity bound to it in the
+ * same transaction and answers 204 with no body. It never refuses over linked
+ * accounts, and it reports no count: the number exists only in a server log
+ * line. These assertions pin the two things the UI depends on — that a success
+ * really is a 204 passthrough, and that a failure never reads as one.
+ */
+describe("DELETE /api/admin/integrations/[kind]/[name]", () => {
+  const del = (kind: string, name: string) =>
+    item.DELETE(
+      new Request(`https://app.test/api/admin/integrations/${kind}/${name}`, { method: "DELETE" }),
+      {
+        params: Promise.resolve({ kind, name }),
+      },
+    );
+
+  it("addresses the row by the pair, in order", async () => {
+    backendRequest.mockResolvedValue(undefined);
+
+    await del("login", "google");
+
+    expect(backendPath()).toBe("/api/v1/integrations/login/google");
+    expect(backendRequest.mock.calls[0][0].method).toBe("DELETE");
+  });
+
+  it("passes the 204 through with no body", async () => {
+    backendRequest.mockResolvedValue(undefined);
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+  });
+
+  it("deletes a transport too", async () => {
+    backendRequest.mockResolvedValue(undefined);
+
+    const response = await del("notify", "slack");
+
+    expect(response.status).toBe(204);
+    expect(backendPath()).toBe("/api/v1/integrations/notify/slack");
+  });
+
+  /**
+   * The rule this repo keeps relearning: an error must stay an error. A delete
+   * that reported success on a failure would take the row off the screen while
+   * the provider still signs people in.
+   */
+  it("keeps a backend failure a failure", async () => {
+    backendRequest.mockRejectedValueOnce(new Error("backend exploded"));
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).not.toBe(204);
+  });
+
+  /**
+   * The cascade is irreversible, so "who may reach it" is not a formality.
+   * Without this, deleting the session check from the handler left every
+   * contract test green.
+   */
+  it("requires an admin session", async () => {
+    requireAdminSession.mockRejectedValueOnce(
+      Object.assign(new Error("forbidden"), { status: 403, responseBody: "{}" }),
+    );
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(response.status).not.toBe(204);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unroutable pair without reaching the backend", async () => {
+    const response = await del("login", "slack");
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Origin is checked FIRST, before the session and before the pair — the same
+   * order every other mutating route here uses. A destructive proxy reachable
+   * from another origin is the one worth getting right.
+   */
+  it("refuses a cross-origin request before doing any work", async () => {
+    isSameOriginRequest.mockReturnValueOnce(false);
+
+    const response = await del("login", "google");
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
   });
 });

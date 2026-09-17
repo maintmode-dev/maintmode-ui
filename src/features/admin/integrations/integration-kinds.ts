@@ -5,13 +5,15 @@
  * (`internal/integrationkinds/`) and the frozen decisions of the
  * integrations-settings design snapshot.
  *
- * Keyed by SYSTEM (`slack`, `email`, …), never by category. `kindMeta("notify")`
- * resolves to null, and a null renders an empty row rather than throwing — so
+ * Keyed by SYSTEM (`slack`, `email`, `google`, …), never by category.
+ * `kindMeta("notify")` resolves to null and a null renders no row at all — so
  * passing a category here fails silently, which is why callers pass `name`.
  */
 
 import type { NotificationIntegrationName } from "@/domain/admin/integration";
 import type { IntegrationBrand } from "@/shared/ui/icons/brand-icons";
+
+import { LOGIN_KIND_META } from "./login-kinds";
 
 /**
  * Sentinel option value for "leave this optional field unset". Radix Select
@@ -49,6 +51,38 @@ export interface ConfigFieldMeta {
    * become auth-dance parameters, so a malformed one is not cosmetic.
    */
   url?: true;
+  /**
+   * The backend rejects `http://` here, so the form blocks it instead of
+   * warning. Only meaningful alongside `url`.
+   *
+   * `validateUrlFields` warns on `http://` by default because local development
+   * against `http://localhost` is legitimate for most fields. It is not
+   * legitimate for a field carrying the backend's `HTTPSURL` rule (OIDC's
+   * `issuer_url`): a warning there promises a save that will fail. The private
+   * -range half of that rule is NOT duplicated here — the server words it well
+   * and its shape is surprising (any numeric host is refused, public ones too).
+   */
+  httpsOnly?: true;
+  /**
+   * Owned by the deployment's preset catalog, not by the operator.
+   *
+   * Rendered read-only. NOT sent on create — the backend refuses a supplied
+   * preset field. Echoed verbatim from the stored config on PATCH, because
+   * `config` replaces wholesale and a DROPPED preset field is refused just like
+   * a changed one. Which fields these are is per NAME, not per field: `google`
+   * owns `issuer_url` + `display_name`, `custom` owns nothing.
+   */
+  preset?: true;
+  /**
+   * Where the value lives in the wire config, when it is not a top-level key.
+   *
+   * `jwtverifier.allowed_hosted_domains` is nested, so `name` alone cannot
+   * address it. Only the two functions that cross the wire boundary read this —
+   * `buildConfig` (write) and `buildDrafts` (read). The form's own draft state
+   * stays FLAT and keyed by `name`; teaching the validators a path would make
+   * them look up a nested key in a flat map and silently validate `undefined`.
+   */
+  path?: string[];
 }
 
 export interface SecretMeta {
@@ -60,6 +94,18 @@ export interface SecretMeta {
   clearable: boolean;
   placeholder?: string;
   help?: string;
+  /**
+   * Config fields whose value this secret is cryptographically bound to.
+   *
+   * Editing one of them invalidates the stored secret, so the backend refuses
+   * the update unless a replacement travels in the same request. The form
+   * pushes the secret out of `locked` into `editing` rather than letting the
+   * operator meet that 400 after typing everything else.
+   *
+   * Only fires when a secret is actually stored (`secrets_set[key]`): on a row
+   * with nothing stored there is nothing to strand.
+   */
+  rebindsOn?: string[];
 }
 
 export interface IntegrationKindMeta {
@@ -73,11 +119,6 @@ export interface IntegrationKindMeta {
    * grepping for exactly that).
    */
   statusHint: [enabled: string, disabled: string];
-  /**
-   * Shown above the Status block when this kind cannot be saved yet, and
-   * disables Save. Present only while a kind is configurable but not routable.
-   */
-  unavailableNotice?: string;
   /**
    * Which mark `IntegrationBrandIcon` renders. A data field rather than a
    * second hand-maintained union keyed by system — the previous shape drifted
@@ -223,21 +264,25 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, Integra
 };
 
 /**
- * Metadata for any system the UI is currently rendering.
+ * Metadata for any system the UI renders, both halves in one record.
  *
- * Deliberately NOT one eager record over every known system: the row and the
- * dialog are shared by both sections and ship to every production browser, so a
- * single record would drag the sign-in provider descriptors into production
- * chunks along with them (RUK-294's gate is verified by grepping for exactly
- * that). Auth metadata is registered by the gated section at import time, so it
- * exists only where that section does.
+ * This used to be a lazy registry: the sign-in descriptors registered
+ * themselves at import time, so they existed only where the dev-gated section
+ * did, and `kindMeta` fell back to that registration. The point was keeping
+ * them out of production chunks while the section could not reach production.
+ *
+ * The section ships to production now, so its descriptors ship with it either
+ * way and the indirection bought nothing — while still costing a real hazard:
+ * the fallback returned `null` if the registering module had not been evaluated
+ * yet, and `IntegrationRow` renders nothing on a `null` meta. That is a provider
+ * quietly missing from the screen depending on module order, which is the same
+ * shape as the incident this feature already had once.
  */
-const registered: Partial<Record<string, IntegrationKindMeta>> = {};
-
-export function registerKindMeta(entries: Record<string, IntegrationKindMeta>): void {
-  Object.assign(registered, entries);
-}
+const KIND_META: Record<string, IntegrationKindMeta> = {
+  ...NOTIFICATION_KIND_META,
+  ...LOGIN_KIND_META,
+};
 
 export function kindMeta(name: string): IntegrationKindMeta | null {
-  return (NOTIFICATION_KIND_META as Record<string, IntegrationKindMeta>)[name] ?? registered[name] ?? null;
+  return KIND_META[name] ?? null;
 }

@@ -18,11 +18,14 @@ const toastSuccess = toasts.success;
 const toastError = toasts.error;
 
 import type { Integration } from "@/domain/admin/integration";
+import { BffError } from "@/features/_shared/api/bff-fetch";
 
 import {
   integrationsKey,
   useCreateIntegration,
-  usePendingToggleNames,
+  integrationRefKey,
+  useDeleteIntegration,
+  usePendingToggleRefs,
   useTestIntegration,
   useToggleIntegration,
   useUpdateIntegration,
@@ -164,24 +167,31 @@ describe("useToggleIntegration — optimistic update targets ONE row", () => {
   });
 });
 
-describe("usePendingToggleNames — busy state targets ONE row", () => {
+describe("usePendingToggleRefs — busy state targets ONE row", () => {
   it("reports the system in flight, so other switches stay usable", async () => {
     const client = seededClient();
     bffFetchMock.mockReturnValue(new Promise(() => {}));
     const wrapper = wrapperFor(client);
     const toggle = renderHook(() => useToggleIntegration(), { wrapper });
-    const pending = renderHook(() => usePendingToggleNames(), { wrapper });
+    const pending = renderHook(() => usePendingToggleRefs(), { wrapper });
 
     act(() => {
       toggle.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
     });
 
-    await waitFor(() => expect(pending.result.current.has("slack")).toBe(true));
-    // Keyed by category, this set would contain "notify" and the page — which
-    // asks `has(name)` — would grey out every transport's switch at once.
-    expect(pending.result.current.has("telegram")).toBe(false);
-    expect(pending.result.current.has("email")).toBe(false);
+    const key = (kind: "notify" | "login", name: string) => integrationRefKey({ kind, name });
+
+    await waitFor(() => expect(pending.result.current.has(key("notify", "slack"))).toBe(true));
+    // Keyed by category, this set would contain "notify" and the page would
+    // grey out every transport's switch at once.
+    expect(pending.result.current.has(key("notify", "telegram"))).toBe(false);
+    expect(pending.result.current.has(key("notify", "email"))).toBe(false);
     expect(pending.result.current.has("notify")).toBe(false);
+    // Keyed by NAME, a login provider sharing a transport's name would spin
+    // the wrong switch. Nothing collides today; this pins the key shape so
+    // adding one to the registry cannot quietly start it.
+    expect(pending.result.current.has(key("login", "slack"))).toBe(false);
+    expect(pending.result.current.has("slack")).toBe(false);
   });
 });
 
@@ -301,7 +311,7 @@ describe("concurrent toggles", () => {
     const wrapper = wrapperFor(client);
     const first = renderHook(() => useToggleIntegration(), { wrapper });
     const second = renderHook(() => useToggleIntegration(), { wrapper });
-    const pending = renderHook(() => usePendingToggleNames(), { wrapper });
+    const pending = renderHook(() => usePendingToggleRefs(), { wrapper });
 
     act(() => {
       first.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
@@ -313,10 +323,10 @@ describe("concurrent toggles", () => {
     // Reading a single mutation's `variables` would report only the last one,
     // which is why this comes from the mutation cache.
     await waitFor(() => {
-      expect(pending.result.current.has("slack")).toBe(true);
-      expect(pending.result.current.has("email")).toBe(true);
+      expect(pending.result.current.has(integrationRefKey({ kind: "notify", name: "slack" }))).toBe(true);
+      expect(pending.result.current.has(integrationRefKey({ kind: "notify", name: "email" }))).toBe(true);
     });
-    expect(pending.result.current.has("telegram")).toBe(false);
+    expect(pending.result.current.has(integrationRefKey({ kind: "notify", name: "telegram" }))).toBe(false);
   });
 
   it("rolls back only the failed row while the other stays flipped", async () => {
@@ -341,5 +351,77 @@ describe("concurrent toggles", () => {
     await waitFor(() => expect(cachedByName(client).slack.enabled).toBe(true));
     // A whole-list snapshot rollback would have clobbered this one too.
     expect(cachedByName(client).email.enabled).toBe(false);
+  });
+});
+
+/**
+ * Deleting a login provider is irreversible on the backend, so the client's
+ * reaction to a FAILURE matters as much as its reaction to success: a failed
+ * delete reported as success takes the row off the screen while the provider
+ * still signs people in.
+ *
+ * The contract test covers the route's status. Nothing covered the hook's
+ * reaction to it until now — every mutation of these callbacks survived.
+ */
+describe("useDeleteIntegration", () => {
+  it("deletes by the pair", async () => {
+    bffFetchMock.mockResolvedValueOnce(undefined);
+    const wrapper = wrapperFor(seededClient());
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "google" });
+    });
+
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    expect(bffFetchMock.mock.calls[0][0]).toBe("/api/admin/integrations/login/google");
+    expect(bffFetchMock.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("reports a failure as a failure, never as a success", async () => {
+    bffFetchMock.mockRejectedValueOnce(new Error("backend exploded"));
+    const wrapper = wrapperFor(seededClient());
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "google" });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A 404 means the row is already gone, which is the outcome the operator
+   * asked for. Saying "couldn't delete" about a row that no longer exists
+   * sends them looking for a problem that is not there.
+   */
+  it("treats a 404 as already deleted", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(404, "not found"));
+    const wrapper = wrapperFor(seededClient());
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "google" });
+    });
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  /** Without the invalidation the deleted row stays on screen indefinitely. */
+  it("refetches the list so the row leaves the screen", async () => {
+    bffFetchMock.mockResolvedValueOnce(undefined);
+    const client = seededClient();
+    const wrapper = wrapperFor(client);
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+    const before = client.getQueryState(integrationsKey())?.isInvalidated ?? false;
+
+    act(() => {
+      del.result.current.mutate({ kind: "notify", name: "slack" });
+    });
+
+    await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
+    expect(before).toBe(false);
   });
 });

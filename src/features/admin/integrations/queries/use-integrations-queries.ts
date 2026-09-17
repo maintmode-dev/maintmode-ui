@@ -29,6 +29,11 @@ function integrationPath({ kind, name }: IntegrationRef, suffix = ""): string {
   return `/api/admin/integrations/${kind}/${name}${suffix}`;
 }
 
+/** A row's identity as a map/set key — one spelling, so callers cannot drift. */
+export function integrationRefKey({ kind, name }: IntegrationRef): string {
+  return `${kind}/${name}`;
+}
+
 /** Identity is the pair; matching on `kind` alone now matches every transport. */
 function isSameRow(row: Integration, ref: IntegrationRef): boolean {
   return row.kind === ref.kind && row.name === ref.name;
@@ -118,6 +123,40 @@ export function useUpdateIntegration() {
   });
 }
 
+/**
+ * Remove a row. 204, no body, and for a login provider it is irreversible:
+ * the backend unlinks every identity bound to that provider in the same
+ * transaction, reports no count, and offers no way to ask for one first.
+ *
+ * NOT optimistic, unlike the toggle. A row removed from the screen before the
+ * server agreed is a claim that people have lost access when they may not
+ * have; and unlike a flipped switch, there is nothing to roll back TO that the
+ * operator could verify. The row stays until the 204 arrives.
+ */
+export function useDeleteIntegration() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (ref: IntegrationRef): Promise<void> => {
+      await bffFetch<void>(integrationPath(ref), { method: "DELETE" });
+    },
+    onSuccess: (_data, ref) => {
+      toast.success(`${ref.name} integration deleted`);
+      invalidate(queryClient);
+    },
+    onError: (error: unknown, ref) => {
+      if (error instanceof BffError && error.status === 404) {
+        // Already gone. Refetch rather than insist: the screen is what is
+        // stale, and saying "couldn't delete" about a row that no longer
+        // exists sends the operator looking for a problem that is not there.
+        toast.success(`${ref.name} integration deleted`);
+        invalidate(queryClient);
+        return;
+      }
+      toast.error(`Couldn't delete ${ref.name}. Try again.`);
+    },
+  });
+}
+
 const TOGGLE_MUTATION_KEY = ["integrations-toggle"] as const;
 
 /**
@@ -176,14 +215,19 @@ export function useToggleIntegration() {
  * A single mutation instance's `variables` only reflects its latest call, so
  * concurrent toggles need the mutation cache as the source of truth.
  *
- * Keyed by `name`, not `kind`: keying by category would disable every
- * transport's switch while any one of them was in flight. Callers hold one
- * category, so the name alone is unambiguous here.
+ * Keyed by the PAIR, not by `kind` and no longer by `name` alone. Keying by
+ * category would disable every transport's switch while any one of them was in
+ * flight; keying by name rested on "callers hold one category", which was true
+ * while each section had its own screen and false since both share one. Two
+ * rows answering to one key would spin a switch nobody touched. No name
+ * collides across the categories today, so this is a latent hazard rather than
+ * a live bug — fixed rather than documented because the row map beside it was
+ * already fixed the same way.
  */
-export function usePendingToggleNames(): Set<string> {
+export function usePendingToggleRefs(): Set<string> {
   const pending = useMutationState({
     filters: { mutationKey: TOGGLE_MUTATION_KEY, status: "pending" },
-    select: (mutation) => (mutation.state.variables as { ref: IntegrationRef }).ref.name,
+    select: (mutation) => integrationRefKey((mutation.state.variables as { ref: IntegrationRef }).ref),
   });
   return new Set(pending);
 }

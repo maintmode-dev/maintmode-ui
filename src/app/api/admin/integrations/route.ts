@@ -9,8 +9,9 @@ import type {
   IntegrationDto,
   ListIntegrationsResponseDto,
 } from "@/server/backend/contracts/integrations-dto";
-import { readJsonBody } from "@/server/backend/http/read-json-body";
-import { isNotifyIntegrationName } from "@/domain/admin/integration";
+import { readCappedJsonBody } from "@/server/backend/http/read-json-body";
+import { isRoutableIntegrationPair } from "@/domain/admin/integration";
+import { INTEGRATION_MAX_BODY_BYTES } from "@/server/backend/contracts/integration-route-params";
 
 /**
  * GET /api/admin/integrations — proxy to `GET /api/v1/integrations`
@@ -58,17 +59,17 @@ export async function POST(request: Request) {
 
   try {
     await requireAdminSession();
-    const body = await readJsonBody<{
+    const body = await readCappedJsonBody<{
       kind?: string;
       name?: string;
       enabled?: unknown;
       config?: unknown;
       secrets?: unknown;
-    }>(request);
-    if (body.kind !== "notify") {
-      throw new BffValidationError([{ field: "kind", message: "Unknown integration category" }]);
-    }
-    if (!body.name || !isNotifyIntegrationName(body.name)) {
+    }>(request, INTEGRATION_MAX_BODY_BYTES);
+    // The SAME predicate the item routes gate on. This route used to hand-roll
+    // the check against its body, which is how the two drifted: the resolver
+    // learned about the pair and this did not.
+    if (!isRoutableIntegrationPair(body.kind ?? "", body.name ?? "")) {
       throw new BffValidationError([{ field: "name", message: "Unknown integration" }]);
     }
     if (typeof body.enabled !== "boolean") {

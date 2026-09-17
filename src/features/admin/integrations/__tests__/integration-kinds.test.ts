@@ -1,35 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { AUTH_INTEGRATION_KINDS, NOTIFICATION_INTEGRATION_NAMES } from "@/domain/admin/integration";
+import { LOGIN_INTEGRATION_NAMES, NOTIFICATION_INTEGRATION_NAMES } from "@/domain/admin/integration";
 
-import { AUTH_KIND_META } from "../auth-kinds";
 import { kindMeta, type ConfigFieldMeta } from "../integration-kinds";
 
 /**
- * Everything `kindMeta` must resolve: the three transport systems plus the two
- * dev-gated sign-in entries. Listed together here rather than read off one
- * domain constant because the domain deliberately no longer has one — the auth
- * identifiers name nothing in the backend's vocabulary and are frozen for
- * RUK-302, so a union of the two would read as a contract it is not.
+ * Everything `kindMeta` must resolve. Both halves now come from domain
+ * constants: the login names are the backend registry's own, so a union of the
+ * two reads as the contract it actually is. (It did not before — the auth half
+ * was `oidc`/`github_oauth`, which named nothing.)
  */
-const ALL_META_KEYS = [...NOTIFICATION_INTEGRATION_NAMES, ...AUTH_INTEGRATION_KINDS] as const;
+const ALL_META_KEYS = [...NOTIFICATION_INTEGRATION_NAMES, ...LOGIN_INTEGRATION_NAMES] as const;
 
-/**
- * `kindMeta` resolves across both records, and importing `auth-kinds` above is
- * what registers the auth half — in production that import only exists inside
- * the gated section, which is the point of the split.
- */
 const INTEGRATION_KIND_META = Object.fromEntries(ALL_META_KEYS.map((k) => [k, kindMeta(k)])) as Record<
   (typeof ALL_META_KEYS)[number],
   NonNullable<ReturnType<typeof kindMeta>>
 >;
 
 /**
- * Field names are asserted as literals on purpose: they mirror the backend's
- * OIDC config (`internal/config/oidc_provider.go`) and are an ASSUMPTION, not a
- * contract — the backend's `oidc` kind does not exist yet. When it lands and a
- * name differs, this test is what fails, which is the point. Reading the names
- * back out of the metadata would survive any rename and prove nothing.
+ * Field names are asserted as LITERALS on purpose: they mirror
+ * `internal/integrationkinds/oidc.go` on the backend's `main`. When the backend
+ * renames one, this test is what fails. Reading the names back out of the
+ * metadata would survive any rename and prove nothing.
  */
 describe("INTEGRATION_KIND_META", () => {
   it("covers every system the UI renders", () => {
@@ -54,82 +46,90 @@ describe("INTEGRATION_KIND_META", () => {
     expect(kindMeta("login")).toBeNull();
   });
 
-  describe("oidc", () => {
-    const meta = INTEGRATION_KIND_META.oidc;
+  describe("custom — the operator owns every field", () => {
+    const meta = INTEGRATION_KIND_META.custom;
 
-    it("declares exactly the fields the backend's file config names", () => {
+    it("declares exactly the fields the backend's OIDC settings name", () => {
       expect(meta.configFields.map((f: ConfigFieldMeta) => f.name)).toEqual([
         "display_name",
         "issuer_url",
         "client_id",
         "redirect_uri",
         "scopes",
+        "allowed_hosted_domains",
       ]);
     });
 
-    it("requires display_name, issuer_url and client_id", () => {
+    /**
+     * `redirect_uri` among them is the correction this change carries: the
+     * previous descriptor called it optional and offered a default callback
+     * that does not exist. The backend requires it.
+     */
+    it("requires everything but scopes and the hosted domains", () => {
       const required = meta.configFields
         .filter((f: ConfigFieldMeta) => !f.optional)
         .map((f: ConfigFieldMeta) => f.name);
-      expect(required).toEqual(["display_name", "issuer_url", "client_id"]);
+      expect(required).toEqual(["display_name", "issuer_url", "client_id", "redirect_uri"]);
     });
 
-    it("validates issuer_url and redirect_uri as URLs", () => {
-      const urlFields = meta.configFields
-        .filter((f: ConfigFieldMeta) => f.url)
+    it("owns no preset fields — nothing here is deployment-supplied", () => {
+      expect(meta.configFields.filter((f: ConfigFieldMeta) => f.preset)).toEqual([]);
+    });
+
+    /**
+     * Only `issuer_url` carries the backend's HTTPSURL rule. `redirect_uri`
+     * carries `is.URL` alone, so `http://localhost:3000/cb` is valid there and
+     * blocking it would refuse a save the backend accepts.
+     */
+    it("blocks http only on issuer_url", () => {
+      const httpsOnly = meta.configFields
+        .filter((f: ConfigFieldMeta) => f.httpsOnly)
         .map((f: ConfigFieldMeta) => f.name);
-      expect(urlFields).toEqual(["issuer_url", "redirect_uri"]);
+      expect(httpsOnly).toEqual(["issuer_url"]);
     });
 
-    it("edits scopes as a list", () => {
-      expect(meta.configFields.find((f: ConfigFieldMeta) => f.name === "scopes")?.list).toBe(true);
+    it("addresses the hosted domains at their nested wire path", () => {
+      const field = meta.configFields.find((f: ConfigFieldMeta) => f.name === "allowed_hosted_domains");
+      expect(field?.path).toEqual(["jwtverifier", "allowed_hosted_domains"]);
     });
 
-    it("warns that clearing scopes hands the choice to the server", () => {
-      const scopes = meta.configFields.find((f: ConfigFieldMeta) => f.name === "scopes");
-      expect(scopes?.help).toContain("server");
-    });
-
-    it("takes client_secret as a required, non-clearable secret", () => {
-      expect(meta.secrets).toHaveLength(1);
-      expect(meta.secrets[0].key).toBe("client_secret");
-      expect(meta.secrets[0].required).toBe(true);
-      expect(meta.secrets[0].clearable).toBe(false);
+    it("binds the secret to both fields that invalidate it", () => {
+      expect(meta.secrets[0].rebindsOn).toEqual(["issuer_url", "client_id"]);
     });
   });
 
-  describe("github_oauth", () => {
-    const meta = INTEGRATION_KIND_META.github_oauth;
+  describe("google — the deployment owns two fields", () => {
+    const meta = INTEGRATION_KIND_META.google;
 
-    it("takes client_id and optional display_name and scopes — no issuer", () => {
-      expect(meta.configFields.map((f: ConfigFieldMeta) => f.name)).toEqual([
-        "display_name",
-        "client_id",
-        "scopes",
-      ]);
-      expect(meta.configFields.find((f: ConfigFieldMeta) => f.name === "display_name")?.optional).toBe(true);
-      expect(meta.configFields.find((f: ConfigFieldMeta) => f.name === "client_id")?.optional).toBe(false);
+    it("marks exactly issuer_url and display_name as preset-owned", () => {
+      const preset = meta.configFields
+        .filter((f: ConfigFieldMeta) => f.preset)
+        .map((f: ConfigFieldMeta) => f.name);
+      expect(preset).toEqual(["display_name", "issuer_url"]);
     });
 
-    it("says it is not active yet, so an admin filling it in is not misled", () => {
-      expect(meta.description).toMatch(/not.*(active|implemented|available)/i);
-    });
-
-    it("takes client_secret as a required secret", () => {
-      expect(meta.secrets.map((s: { key: string }) => s.key)).toEqual(["client_secret"]);
-      expect(meta.secrets[0].required).toBe(true);
+    /**
+     * The issuer is preset-owned and therefore never editable, so naming it
+     * here would demand a re-typed secret for a field the operator cannot
+     * change. Only `client_id` can trigger a rebind.
+     */
+    it("binds the secret to client_id alone", () => {
+      expect(meta.secrets[0].rebindsOn).toEqual(["client_id"]);
     });
   });
 
-  it("describes the auth kinds as sign-in providers, not transports", () => {
-    for (const kind of AUTH_INTEGRATION_KINDS) {
-      expect(INTEGRATION_KIND_META[kind].description).not.toMatch(/notification|transport/i);
+  it("takes client_secret as a required, non-clearable secret on both", () => {
+    for (const name of LOGIN_INTEGRATION_NAMES) {
+      const secrets = INTEGRATION_KIND_META[name].secrets;
+      expect(secrets.map((s: { key: string }) => s.key)).toEqual(["client_secret"]);
+      expect(secrets[0].required).toBe(true);
+      expect(secrets[0].clearable).toBe(false);
     }
   });
-});
 
-describe("AUTH_KIND_META lives outside the eager record", () => {
-  it("covers exactly the auth kinds", () => {
-    expect(Object.keys(AUTH_KIND_META).sort()).toEqual([...AUTH_INTEGRATION_KINDS].sort());
+  it("describes the login kinds as sign-in providers, not transports", () => {
+    for (const name of LOGIN_INTEGRATION_NAMES) {
+      expect(INTEGRATION_KIND_META[name].description).not.toMatch(/notification|transport/i);
+    }
   });
 });

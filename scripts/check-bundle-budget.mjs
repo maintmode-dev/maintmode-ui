@@ -140,17 +140,41 @@ const allowedRoutes = {
  * string matters more than usual.
  */
 const forbiddenInClient = [
+  // Empty, and deliberately so. Three markers lived here while the sign-in
+  // providers section was dev-only; all three are gone, for three reasons:
+  //
+  //   - "Sign-in providers" is now SUPPOSED to be in a production chunk. The
+  //     section ships. That assertion moved to `requiredInClient` below, where
+  //     it says the same thing inverted.
+  //   - "issuer_url" ships with it, because the provider descriptors moved into
+  //     one eager record when the lazy registry was deleted.
+  //   - "github_oauth" named nothing after the identifiers were replaced by the
+  //     backend's real registry names, and a marker matching nothing is an
+  //     absent check rather than a passing one.
+];
+
+/**
+ * The inverse assertion: copy that MUST reach a production chunk.
+ *
+ * This list exists because removing `forbiddenInClient`'s entries would
+ * otherwise leave the sign-in section with no guardrail at all — and this
+ * screen has already shipped a gate that leaked, caught only by grepping
+ * chunks. The direction flips but the risk does not: the section is one
+ * `NODE_ENV` branch away from silently vanishing from production again.
+ *
+ * It needs its OWN list and its own failure branch. Adding an entry to
+ * `forbiddenInClient` would report a match as a leak — failing precisely when
+ * the section ships correctly, and passing when it regresses.
+ *
+ * What it proves is narrower than "the screen renders": this walks every chunk
+ * with no route attribution, so a match means the string was bundled, not that
+ * the section is reachable from /admin/integrations. That remains a job for
+ * looking at a real build.
+ */
+const requiredInClient = [
   {
     marker: "Sign-in providers",
-    why: "the dev-only sign-in providers section (RUK-294) reached a production chunk",
-  },
-  {
-    marker: "issuer_url",
-    why: "OIDC field descriptors reached a production chunk — check that auth-kinds.ts is not in the shared row/dialog import graph",
-  },
-  {
-    marker: "github_oauth",
-    why: "auth kind metadata reached a production chunk",
+    why: "the sign-in providers section is gated out of the production bundle again — check for a NODE_ENV branch or a lost import",
   },
 ];
 
@@ -406,6 +430,7 @@ function findMarkerOwners() {
 
   const owners = new Map(heavyDeps.map((dep) => [dep.name, []]));
   const leaked = new Map();
+  const present = new Set();
   for (const file of files) {
     const content = readFileSync(file, "utf8");
     for (const dep of heavyDeps) {
@@ -419,8 +444,12 @@ function findMarkerOwners() {
         leaked.get(forbidden.marker).files.push(relative(nextDir, file));
       }
     }
+    // Same pass, opposite question — see `requiredInClient`.
+    for (const required of requiredInClient) {
+      if (content.includes(required.marker)) present.add(required.marker);
+    }
   }
-  return { owners, leaked };
+  return { owners, leaked, present };
 }
 
 // --- run ---------------------------------------------------------------------
@@ -442,7 +471,16 @@ if (manifestFiles.length === 0) {
 
 // Self-check first: if the markers have rotted, every result below is worthless,
 // so say so before reporting anything that might look reassuring.
-const { owners: markerOwners, leaked } = findMarkerOwners();
+const { owners: markerOwners, leaked, present } = findMarkerOwners();
+const missingRequired = requiredInClient.filter((required) => !present.has(required.marker));
+if (missingRequired.length > 0) {
+  process.stderr.write("check-bundle-budget: required copy is NOT in the client bundle.\n\n");
+  for (const required of missingRequired) {
+    process.stderr.write(`  ${JSON.stringify(required.marker)}: ${required.why}\n`);
+  }
+  process.exit(1);
+}
+
 const rotted = heavyDeps.filter((dep) => markerOwners.get(dep.name).length === 0);
 if (rotted.length > 0) {
   process.stderr.write("check-bundle-budget: marker no longer matches — update the pattern.\n\n");

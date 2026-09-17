@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
-import { isNotifyIntegrationName, type Integration } from "@/domain/admin/integration";
+import {
+  isRoutableIntegrationPair,
+  type Integration,
+  type IntegrationCategory,
+} from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -21,11 +25,14 @@ import {
   type IntegrationKindMeta,
   type SecretMeta,
 } from "./integration-kinds";
+import { IntegrationHealthBadge } from "./integration-health";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
 import {
   buildConfig,
   buildDrafts,
   hasMissingRequired,
+  hostedDomainNotice,
+  secretsInvalidatedBy,
   validateUrlFields,
   type FieldVerdict,
 } from "./dialog-form";
@@ -45,12 +52,21 @@ import {
  * secrets never enter the payload — see `secret-patch.ts` for the intent map.
  */
 export function IntegrationDialog({
+  kind,
   name,
   integration,
   open,
   onOpenChange,
 }: {
-  /** The SYSTEM being configured — `kindMeta` and the whitelist both key on it. */
+  /**
+   * The CATEGORY half of the pair, supplied by the caller on both paths.
+   *
+   * It could be read off `integration` when editing, but a create has no row to
+   * read it from — and the section that rendered the dialog always knows which
+   * half of the registry it is. One source beats a conditional.
+   */
+  kind: IntegrationCategory;
+  /** The SYSTEM being configured — `kindMeta` keys on it. */
   name: string | null;
   /** Existing integration → edit mode; null → create mode. */
   integration: Integration | null;
@@ -80,7 +96,8 @@ export function IntegrationDialog({
           destroyed on close, and that outweighs the brief empty flash. */}
       {name && meta ? (
         <IntegrationDialogBody
-          key={`${name}-${integration?.updated_at ?? "create"}`}
+          key={`${kind}/${name}-${integration?.updated_at ?? "create"}`}
+          kind={kind}
           name={name}
           meta={meta}
           integration={integration}
@@ -102,11 +119,13 @@ const TEST_PLATE = {
 } as const;
 
 function IntegrationDialogBody({
+  kind,
   name,
   meta,
   integration,
   onClose,
 }: {
+  kind: IntegrationCategory;
   name: string;
   /** Resolved by the parent — a system whose metadata is absent renders nothing. */
   meta: IntegrationKindMeta;
@@ -192,6 +211,23 @@ function IntegrationDialogBody({
     invalidateTest();
   };
 
+  // Which stored secrets a given set of drafts has invalidated.
+  //
+  // Takes the drafts as an argument rather than closing over `config`: the
+  // change handler must ask about the NEXT drafts, and `config` is still the
+  // pre-change state there. Both callers otherwise thread the same three
+  // arguments, which is the duplication this collapses.
+  const reboundBy = useCallback(
+    (drafts: Record<string, string>) =>
+      secretsInvalidatedBy(meta, drafts, integration?.config ?? {}, integration?.secrets_set ?? {}),
+    [meta, integration],
+  );
+
+  // Derived rather than remembered: an operator who edits a bound field and
+  // puts the old value back has not invalidated anything, and a latch would
+  // keep insisting.
+  const rebound = useMemo(() => reboundBy(config), [reboundBy, config]);
+
   const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
   const fieldVerdicts = useMemo(() => validateUrlFields(meta, config), [meta, config]);
   const hasBlockingField = useMemo(
@@ -205,13 +241,14 @@ function IntegrationDialogBody({
   // the Next server process and any request logging there. Blocking the button
   // is what keeps the credential in the browser.
   //
-  // Reading this from `unavailableNotice` would tie a security control to a
-  // string — deleting the notice would silently re-enable saving on a
-  // credentials form. `isNotifyIntegrationName` is the same predicate the routes
-  // gate on, so the button and the route can never disagree. The category half
-  // of the pair is a constant there, so the name alone carries the same answer;
-  // the dialog never needs to know a category.
-  const savingUnavailable = !isNotifyIntegrationName(name);
+  // The same predicate the routes gate on, so the button and the route can
+  // never disagree. It reads the PAIR: a name alone stopped being an answer
+  // once one screen held both halves of the registry.
+  //
+  // Deliberately not derived from any copy field. Tying a security control to a
+  // string means a copy edit can silently re-enable saving on a credentials
+  // form.
+  const savingUnavailable = !isRoutableIntegrationPair(kind, name);
 
   // A live probe exists for SMTP only; the other transports have no equivalent.
   const canTest = name === "email";
@@ -230,7 +267,7 @@ function IntegrationDialogBody({
     setTestResult(null);
     try {
       await testMutation.mutateAsync({
-        ref: { kind: "notify", name },
+        ref: { kind, name },
         body: buildTestSendBody(meta, config, secrets, sentTo, integration?.config ?? {}),
       });
       if (testRunRef.current === run) setTestResult({ ok: true, to: sentTo });
@@ -258,19 +295,19 @@ function IntegrationDialogBody({
     try {
       if (isEdit) {
         await updateMutation.mutateAsync({
-          ref: { kind: "notify", name },
+          ref: { kind, name },
           body: {
             enabled,
-            config: buildConfig(meta, config, integration.config),
+            config: buildConfig(meta, config, integration.config, "patch"),
             secrets: buildSecretsPatch(secrets),
           },
         });
       } else {
         await createMutation.mutateAsync({
-          kind: "notify",
+          kind,
           name,
           enabled,
-          config: buildConfig(meta, config),
+          config: buildConfig(meta, config, {}, "create"),
           secrets: buildSecretsCreate(secrets),
         });
       }
@@ -295,10 +332,15 @@ function IntegrationDialogBody({
           </div>
         ) : null}
 
-        {meta.unavailableNotice ? (
-          <p className="rounded-md border border-border-subtle bg-bg-elev-2 px-3 py-2.5 text-xs text-fg-muted">
-            {meta.unavailableNotice}
-          </p>
+        {/* Sign-in health, in the body rather than the header: the header's
+            description slot already carries the updated-at line. Only for a
+            configured login row — there is nothing to report about a provider
+            that does not exist yet. */}
+        {isEdit && integration.kind === "login" ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-fg-muted">Sign-in status:</span>
+            <IntegrationHealthBadge health={integration.health} />
+          </div>
         ) : null}
 
         {/* Enabled is part of the form: the backend rejects a create without
@@ -327,6 +369,7 @@ function IntegrationDialogBody({
             secret={secret}
             state={secrets[secret.key]}
             disabled={submitting}
+            rebound={rebound.includes(secret.key)}
             onModeChange={(mode) => setSecret(secret.key, { mode, value: "" })}
             onValueChange={(value) => setSecret(secret.key, { value })}
           />
@@ -339,10 +382,25 @@ function IntegrationDialogBody({
             key={field.name}
             field={field}
             verdict={fieldVerdicts[field.name]}
+            notice={
+              field.name === "allowed_hosted_domains"
+                ? hostedDomainNotice(config.issuer_url ?? "", config[field.name] ?? "")
+                : null
+            }
             value={config[field.name]}
             disabled={submitting}
             onChange={(value) => {
-              setConfig((cur) => ({ ...cur, [field.name]: value }));
+              const next = { ...config, [field.name]: value };
+              setConfig(next);
+              // A stored secret is cryptographically bound to some of these
+              // values. Editing one invalidates it, so unlock it here — while
+              // the operator is still looking at the field they changed —
+              // rather than letting the backend refuse the save afterwards.
+              for (const key of reboundBy(next)) {
+                setSecrets((cur) =>
+                  cur[key]?.mode === "locked" ? { ...cur, [key]: { mode: "editing", value: "" } } : cur,
+                );
+              }
               invalidateTest();
             }}
           />
@@ -439,7 +497,8 @@ function FieldLabel({
   htmlFor,
 }: {
   children: React.ReactNode;
-  required: boolean;
+  /** `undefined` marks it neither required nor optional — see below. */
+  required: boolean | undefined;
   secret?: boolean;
   htmlFor?: string;
 }) {
@@ -449,7 +508,10 @@ function FieldLabel({
       className="text-xs uppercase tracking-wide text-fg-muted flex items-baseline gap-1.5"
     >
       {children}
-      {required ? (
+      {/* A preset field is neither: the value is required by the server and
+          supplied by it, so "*" would ask the operator for something they
+          cannot give and "· optional" would claim it can be left out. */}
+      {required === undefined ? null : required ? (
         <span className="text-[var(--destructive-fg)]">*</span>
       ) : (
         <span className="normal-case tracking-normal text-fg-dim">· optional</span>
@@ -468,11 +530,14 @@ function ConfigField({
   value,
   disabled,
   verdict,
+  notice,
   onChange,
 }: {
   field: ConfigFieldMeta;
   value: string;
   disabled: boolean;
+  /** Advisory copy that depends on other fields, not on this one's format. */
+  notice?: string | null;
   /** Format verdict for a `url` field — blocks submit, or warns and lets it through. */
   verdict?: FieldVerdict;
   onChange: (value: string) => void;
@@ -490,7 +555,7 @@ function ConfigField({
   const isUnknownValue = !!field.options && value !== "" && !field.options.some((o) => o.value === value);
   return (
     <div className="space-y-1.5">
-      <FieldLabel required={!field.optional} htmlFor={inputId}>
+      <FieldLabel required={field.preset ? undefined : !field.optional} htmlFor={inputId}>
         {field.label}
       </FieldLabel>
       {field.options ? (
@@ -516,14 +581,21 @@ function ConfigField({
           id={inputId}
           value={value}
           placeholder={field.placeholder}
+          // A preset field is supplied by the deployment. `readOnly` rather than
+          // `disabled`: the value is the point — an operator needs to SEE which
+          // issuer they are pointed at — and a disabled input dims it out of
+          // legibility and drops it from the tab order.
+          readOnly={field.preset}
           disabled={disabled}
           inputMode={field.numeric ? "numeric" : undefined}
           onChange={(e) => onChange(e.target.value)}
+          className={field.preset ? "bg-bg-elev-2 text-fg-muted" : undefined}
         />
       )}
       {activeDanger ? <p className="text-xs text-destructive">{activeDanger}</p> : null}
       {verdict?.block ? <p className="text-xs text-destructive">{verdict.block}</p> : null}
       {verdict?.warn ? <p className="text-xs text-[var(--status-in_progress-fg)]">{verdict.warn}</p> : null}
+      {notice ? <p className="text-xs text-[var(--status-in_progress-fg)]">{notice}</p> : null}
       {field.help ? <p className="text-xs text-fg-dim">{field.help}</p> : null}
     </div>
   );
@@ -539,9 +611,17 @@ function SecretField({
   secret,
   state,
   disabled,
+  rebound,
   onModeChange,
   onValueChange,
 }: {
+  /**
+   * The stored value is no longer usable: a field it is bound to has been
+   * edited, so the backend will refuse a save that does not carry a
+   * replacement. "Keep current" is hidden while this holds — it would put the
+   * field back into a state the server rejects.
+   */
+  rebound?: boolean;
   secret: SecretMeta;
   state: SecretFieldState;
   disabled: boolean;
@@ -619,7 +699,7 @@ function SecretField({
           disabled={disabled}
           onChange={(e) => onValueChange(e.target.value)}
         />
-        {state.mode === "editing" ? (
+        {state.mode === "editing" && !rebound ? (
           <Button
             variant="ghost"
             size="sm"
@@ -632,7 +712,11 @@ function SecretField({
         ) : null}
       </div>
       <p className="text-xs text-fg-dim">
-        {state.mode === "editing" ? "Entering a new value replaces the stored one on save." : secret.help}
+        {rebound
+          ? "You changed a value this secret is tied to, so the stored one no longer works — enter it again to save."
+          : state.mode === "editing"
+            ? "Entering a new value replaces the stored one on save."
+            : secret.help}
       </p>
     </div>
   );
