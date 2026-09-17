@@ -257,8 +257,15 @@ describe("buildConfig — preset fields", () => {
     client_id: "stored-id",
   };
 
-  it("omits every preset field on create", () => {
-    const body = buildConfig(presetMeta, { client_id: "new-id" }, {}, "create");
+  /**
+   * `storedConfig` is deliberately NOT empty here. With `{}` this test proves
+   * only that nothing can be read, and holds whether or not `mode` is honoured
+   * at all — which is what an earlier version did. A create genuinely has no
+   * stored config today; passing one anyway is what makes the assertion about
+   * the MODE rather than about emptiness.
+   */
+  it("omits every preset field on create, even when a stored value exists", () => {
+    const body = buildConfig(presetMeta, { client_id: "new-id" }, STORED, "create");
 
     expect(body).toEqual({ client_id: "new-id" });
     expect(body.issuer_url).toBeUndefined();

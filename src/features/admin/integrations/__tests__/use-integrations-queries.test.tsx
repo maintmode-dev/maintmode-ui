@@ -18,11 +18,13 @@ const toastSuccess = toasts.success;
 const toastError = toasts.error;
 
 import type { Integration } from "@/domain/admin/integration";
+import { BffError } from "@/features/_shared/api/bff-fetch";
 
 import {
   integrationsKey,
   useCreateIntegration,
   integrationRefKey,
+  useDeleteIntegration,
   usePendingToggleRefs,
   useTestIntegration,
   useToggleIntegration,
@@ -349,5 +351,77 @@ describe("concurrent toggles", () => {
     await waitFor(() => expect(cachedByName(client).slack.enabled).toBe(true));
     // A whole-list snapshot rollback would have clobbered this one too.
     expect(cachedByName(client).email.enabled).toBe(false);
+  });
+});
+
+/**
+ * Deleting a login provider is irreversible on the backend, so the client's
+ * reaction to a FAILURE matters as much as its reaction to success: a failed
+ * delete reported as success takes the row off the screen while the provider
+ * still signs people in.
+ *
+ * The contract test covers the route's status. Nothing covered the hook's
+ * reaction to it until now — every mutation of these callbacks survived.
+ */
+describe("useDeleteIntegration", () => {
+  it("deletes by the pair", async () => {
+    bffFetchMock.mockResolvedValueOnce(undefined);
+    const wrapper = wrapperFor(seededClient());
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "google" });
+    });
+
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    expect(bffFetchMock.mock.calls[0][0]).toBe("/api/admin/integrations/login/google");
+    expect(bffFetchMock.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
+  });
+
+  it("reports a failure as a failure, never as a success", async () => {
+    bffFetchMock.mockRejectedValueOnce(new Error("backend exploded"));
+    const wrapper = wrapperFor(seededClient());
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "google" });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A 404 means the row is already gone, which is the outcome the operator
+   * asked for. Saying "couldn't delete" about a row that no longer exists
+   * sends them looking for a problem that is not there.
+   */
+  it("treats a 404 as already deleted", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(404, "not found"));
+    const wrapper = wrapperFor(seededClient());
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "google" });
+    });
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  /** Without the invalidation the deleted row stays on screen indefinitely. */
+  it("refetches the list so the row leaves the screen", async () => {
+    bffFetchMock.mockResolvedValueOnce(undefined);
+    const client = seededClient();
+    const wrapper = wrapperFor(client);
+    const del = renderHook(() => useDeleteIntegration(), { wrapper });
+    const before = client.getQueryState(integrationsKey())?.isInvalidated ?? false;
+
+    act(() => {
+      del.result.current.mutate({ kind: "notify", name: "slack" });
+    });
+
+    await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
+    expect(before).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import type { Integration } from "@/domain/admin/integration";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -54,13 +54,21 @@ export function DeleteIntegrationDialog({
 }) {
   const deleteIntegration = useDeleteIntegration();
   const [typed, setTyped] = useState("");
+  // Synchronous latch. `isPending` only lands on a re-render, so it cannot stop
+  // a second click in the same tick — the same reason the probe button in
+  // `integration-dialog` carries one. There a double fire is a duplicate email;
+  // here it is a second irreversible cascade.
+  const inFlightRef = useRef(false);
 
   const isLogin = integration.kind === "login";
   const confirmed = !isLogin || typed.trim() === integration.name;
   const busy = deleteIntegration.isPending;
 
   const close = (next: boolean) => {
-    if (!next) setTyped("");
+    if (!next) {
+      setTyped("");
+      inFlightRef.current = false;
+    }
     onOpenChange(next);
   };
 
@@ -103,9 +111,19 @@ export function DeleteIntegrationDialog({
             className="bg-[var(--destructive-solid)] text-white hover:bg-[var(--destructive-solid-hover)]"
             onClick={(e) => {
               e.preventDefault();
+              if (inFlightRef.current) return;
+              inFlightRef.current = true;
               deleteIntegration.mutate(
                 { kind: integration.kind, name: integration.name },
-                { onSuccess: () => close(false) },
+                {
+                  onSuccess: () => close(false),
+                  // Released on failure only: a success closes the dialog, and
+                  // re-arming it there would let a late second click delete
+                  // whatever row the operator opened next.
+                  onError: () => {
+                    inFlightRef.current = false;
+                  },
+                },
               );
             }}
           >

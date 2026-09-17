@@ -105,6 +105,46 @@ describe("deleting a sign-in provider", () => {
     expect(bffFetchMock.mock.calls[0][0]).toBe("/api/admin/integrations/login/google");
     expect(bffFetchMock.mock.calls[0][1]).toMatchObject({ method: "DELETE" });
   });
+
+  /**
+   * One confirmed intent, one cascade.
+   *
+   * `isPending` from react-query only lands on a re-render, so the disabled
+   * attribute cannot stop a second click in the same tick — verified: without
+   * the synchronous latch this sends TWO DELETEs. On a probe button that would
+   * be a duplicate email; here the backend unlinks every bound identity, twice.
+   */
+  it("sends ONE request however many times Delete is clicked", async () => {
+    bffFetchMock.mockReturnValue(new Promise(() => {}));
+    renderDialog(GOOGLE);
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "google" } });
+    const button = deleteButton();
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    expect(bffFetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A failed delete must be retryable: the row is still there, so the latch
+   * has to release. Releasing it on SUCCESS instead would be worse than not
+   * having it — a late click would delete whatever row was opened next.
+   */
+  it("lets the operator retry after a failure", async () => {
+    bffFetchMock.mockRejectedValueOnce(new Error("network"));
+    renderDialog(GOOGLE);
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "google" } });
+    fireEvent.click(deleteButton());
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalledTimes(1));
+
+    bffFetchMock.mockResolvedValueOnce(undefined);
+    fireEvent.click(deleteButton());
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalledTimes(2));
+  });
 });
 
 describe("deleting a transport", () => {
