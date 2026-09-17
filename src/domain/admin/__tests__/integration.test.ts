@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  AUTH_INTEGRATION_KINDS,
   INTEGRATION_CATEGORIES,
+  LOGIN_INTEGRATION_NAMES,
   NOTIFICATION_INTEGRATION_NAMES,
   isIntegrationCategory,
   isIntegrationHealth,
+  isLoginIntegrationName,
   isNotifyIntegrationName,
+  isRoutableIntegrationPair,
 } from "../integration";
 
 /**
@@ -25,16 +27,16 @@ describe("integration vocabulary", () => {
   });
 
   /**
-   * Values frozen, not corrected: these name nothing in the new vocabulary, but
-   * they are only referenced from the dev-gated section and RUK-302 owns them.
-   * Rewriting them here would collide with that ticket for no benefit (SPEC §1.1).
+   * The replacements for `oidc`/`github_oauth`, which named nothing. These are
+   * the backend's own names. `github` is absent because it lives only on an
+   * unmerged backend branch — see the constant's docblock.
    */
-  it("leaves the dev-gated auth kinds untouched", () => {
-    expect([...AUTH_INTEGRATION_KINDS]).toEqual(["oidc", "github_oauth"]);
+  it("names the two sign-in providers the backend serves", () => {
+    expect([...LOGIN_INTEGRATION_NAMES]).toEqual(["google", "custom"]);
   });
 });
 
-describe("isNotifyIntegrationName — the BFF route whitelist", () => {
+describe("isNotifyIntegrationName", () => {
   it("accepts the three transport systems", () => {
     expect(isNotifyIntegrationName("slack")).toBe(true);
     expect(isNotifyIntegrationName("telegram")).toBe(true);
@@ -42,15 +44,13 @@ describe("isNotifyIntegrationName — the BFF route whitelist", () => {
   });
 
   /**
-   * Load-bearing, and it survives the rename: the routes serve no login
-   * providers, so a form that reached one would hand a real `client_secret` to
-   * a route this BFF does not proxy. RUK-302 widens this together with the
-   * forms that need it.
+   * Still false here, and that is not the routing answer any more: this
+   * predicate reports membership of the notify half only. Whether a login name
+   * may be sent is `isRoutableIntegrationPair`'s question, below.
    */
-  it("REJECTS login system names, so the routes 400 them", () => {
+  it("rejects login system names — it answers about its own half", () => {
     expect(isNotifyIntegrationName("google")).toBe(false);
     expect(isNotifyIntegrationName("custom")).toBe(false);
-    expect(isNotifyIntegrationName("github")).toBe(false);
   });
 
   /** A category is not a name — the confusion this whole change exists to fix. */
@@ -61,6 +61,71 @@ describe("isNotifyIntegrationName — the BFF route whitelist", () => {
 
   it("rejects an unknown name", () => {
     expect(isNotifyIntegrationName("carrier_pigeon")).toBe(false);
+  });
+});
+
+describe("isLoginIntegrationName", () => {
+  it("accepts the two providers the backend registry serves", () => {
+    expect(isLoginIntegrationName("google")).toBe(true);
+    expect(isLoginIntegrationName("custom")).toBe(true);
+  });
+
+  /**
+   * `github` is a real backend name — on an UNMERGED branch. Against the
+   * deployed registry `(login, github)` is a 400, so admitting it here would
+   * build a form for a pair the backend refuses.
+   */
+  it("rejects github, which the deployed backend does not serve", () => {
+    expect(isLoginIntegrationName("github")).toBe(false);
+  });
+
+  it("rejects a transport name and a category", () => {
+    expect(isLoginIntegrationName("slack")).toBe(false);
+    expect(isLoginIntegrationName("login")).toBe(false);
+  });
+});
+
+/**
+ * The routability gate. Every assertion here is a request the BFF either
+ * forwards or refuses before touching the backend — including one that carries
+ * a real `client_secret`.
+ */
+describe("isRoutableIntegrationPair — the BFF route whitelist", () => {
+  it("admits the three transports under notify", () => {
+    expect(isRoutableIntegrationPair("notify", "slack")).toBe(true);
+    expect(isRoutableIntegrationPair("notify", "telegram")).toBe(true);
+    expect(isRoutableIntegrationPair("notify", "email")).toBe(true);
+  });
+
+  it("admits the two sign-in providers under login", () => {
+    expect(isRoutableIntegrationPair("login", "google")).toBe(true);
+    expect(isRoutableIntegrationPair("login", "custom")).toBe(true);
+  });
+
+  /**
+   * The case that proves widening did not become "allow anything". Both halves
+   * are individually valid and the pair is still refused — the backend refuses
+   * it too (`registry.go`: "%q is a %s integration, not %s").
+   */
+  it("REFUSES a valid name under the wrong category", () => {
+    expect(isRoutableIntegrationPair("login", "slack")).toBe(false);
+    expect(isRoutableIntegrationPair("notify", "google")).toBe(false);
+  });
+
+  it("refuses a category this frontend does not know", () => {
+    expect(isRoutableIntegrationPair("billing", "slack")).toBe(false);
+    expect(isRoutableIntegrationPair("", "slack")).toBe(false);
+  });
+
+  it("refuses an unknown name in a known category", () => {
+    expect(isRoutableIntegrationPair("login", "github")).toBe(false);
+    expect(isRoutableIntegrationPair("notify", "carrier_pigeon")).toBe(false);
+  });
+
+  /** The two halves are not interchangeable: neither is a pair on its own. */
+  it("refuses the halves swapped", () => {
+    expect(isRoutableIntegrationPair("slack", "notify")).toBe(false);
+    expect(isRoutableIntegrationPair("google", "login")).toBe(false);
   });
 });
 

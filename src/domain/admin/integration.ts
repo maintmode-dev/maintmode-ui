@@ -19,19 +19,20 @@
  * constant listing it would be a stale list that looks authoritative. RUK-302
  * owns the login side and can encode it once it renders it.
  *
- * ## The whitelist is narrower than the backend, on purpose
+ * ## The whitelist now admits both halves (RUK-302)
  *
- * `isNotifyIntegrationName` is what every BFF integrations route gates on, and
- * it admits transports only. The backend serves login rows too, but this
- * frontend has no route for them: admitting one would let a real
- * `client_secret` be forwarded toward a path this BFF does not proxy. Widening
- * it is a RUK-302 change that ships together with the forms that need it, not a
- * cleanup.
+ * `isRoutableIntegrationPair` is what every BFF integrations route gates on,
+ * and it admits the five pairs the backend's registry serves: three transports
+ * under `notify`, two sign-in providers under `login`.
  *
- * `AUTH_INTEGRATION_KINDS` keeps its values (`oidc`, `github_oauth`) even
- * though they name nothing in the new vocabulary. They are referenced only from
- * the dev-gated sign-in providers section, which cannot reach production, and
- * RUK-302 rewrites them alongside that section's field descriptors.
+ * It used to admit transports only, because this frontend had no login routes
+ * and forwarding a real `client_secret` toward a path the BFF does not proxy
+ * would have been worse than refusing it. The forms that need those routes now
+ * exist, so the narrow gate would only break them.
+ *
+ * What did NOT change: the gate is still a closed list, and it is still checked
+ * before the backend is touched. A pair outside it is a 400 here, not a round
+ * trip that discovers the same answer more slowly.
  */
 
 /** The category half of the pair — which half of the product a row serves. */
@@ -43,11 +44,21 @@ export const NOTIFICATION_INTEGRATION_NAMES = ["slack", "telegram", "email"] as 
 export type NotificationIntegrationName = (typeof NOTIFICATION_INTEGRATION_NAMES)[number];
 
 /**
- * Dev-gated sign-in provider identifiers. NOT names in the backend's
- * vocabulary — see the module docblock. Frozen for RUK-302.
+ * The system half for the sign-in providers this UI renders.
+ *
+ * These ARE names in the backend's vocabulary, unlike the `oidc`/`github_oauth`
+ * placeholders they replace, which named nothing. The backend's registry admits
+ * `(login, google)` and `(login, custom)`; both are OIDC, differing only in
+ * which fields the deployment preset owns.
+ *
+ * `github` is deliberately absent: it exists only on an unmerged backend
+ * branch (`feat/github-oauth-provider`), so `(login, github)` is a 400 from
+ * today's `Registry.admit`. Adding it later is one entry here plus one
+ * descriptor — which is why this is a named constant rather than an inline
+ * list.
  */
-export const AUTH_INTEGRATION_KINDS = ["oidc", "github_oauth"] as const;
-export type AuthIntegrationKind = (typeof AUTH_INTEGRATION_KINDS)[number];
+export const LOGIN_INTEGRATION_NAMES = ["google", "custom"] as const;
+export type LoginIntegrationName = (typeof LOGIN_INTEGRATION_NAMES)[number];
 
 /**
  * Reported for login rows only, and `omitempty` on the wire — absence means
@@ -57,13 +68,44 @@ export type AuthIntegrationKind = (typeof AUTH_INTEGRATION_KINDS)[number];
 export const INTEGRATION_HEALTH_VALUES = ["ok", "unresolved", "disabled", "unreadable"] as const;
 export type IntegrationHealth = (typeof INTEGRATION_HEALTH_VALUES)[number];
 
-/**
- * The BFF route whitelist. Narrower than the backend's registry by design —
- * see the module docblock. Widening this is a backend-gated change, not a
- * cleanup.
- */
+/** Whether a wire `name` is a transport this UI renders. */
 export function isNotifyIntegrationName(value: string): value is NotificationIntegrationName {
   return (NOTIFICATION_INTEGRATION_NAMES as readonly string[]).includes(value);
+}
+
+/** Whether a wire `name` is a sign-in provider this UI renders. */
+export function isLoginIntegrationName(value: string): value is LoginIntegrationName {
+  return (LOGIN_INTEGRATION_NAMES as readonly string[]).includes(value);
+}
+
+/**
+ * THE routability gate — one predicate, four callers.
+ *
+ * Answers exactly one question: may a request for this pair leave this
+ * frontend. It is the whitelist every integrations BFF route checks, the
+ * condition the create route checks on its body, and the condition the dialog
+ * checks before putting a typed `client_secret` on the wire.
+ *
+ * ## Why one function and not four conditions
+ *
+ * There used to be four, and they had already drifted: the item routes called a
+ * shared resolver, the create route hand-rolled `body.kind !== "notify"`, and
+ * the dialog tested the name alone — so "may this be sent" had three different
+ * answers depending on which door you came through. A security control with
+ * copies is a control that disagrees with itself eventually; this is the one
+ * place to change when the backend's registry changes.
+ *
+ * ## Why the category matters
+ *
+ * A name alone stopped being an answer once one screen held both halves of the
+ * registry. `slack` is routable under `notify` and not under `login`, and the
+ * backend refuses the mismatched pair too — the pair is the identity, so the
+ * pair is what gets checked.
+ */
+export function isRoutableIntegrationPair(kind: string, name: string): boolean {
+  if (kind === "notify") return isNotifyIntegrationName(name);
+  if (kind === "login") return isLoginIntegrationName(name);
+  return false;
 }
 
 /** Whether a wire `kind` is a category this frontend knows how to place. */
