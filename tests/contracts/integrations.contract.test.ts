@@ -206,6 +206,22 @@ describe("POST /api/admin/integrations — create", () => {
     expect(backendRequest).toHaveBeenCalled();
   });
 
+  /**
+   * The backend caps this group at 64 KiB and answers a larger body from
+   * middleware, BEFORE its handler — so what comes back is not the JSON error
+   * envelope this frontend knows how to read. Refusing the same size here turns
+   * an opaque failure into a field error, and stops an unbounded buffered read
+   * on a path that now carries a real `client_secret`.
+   */
+  it("refuses a body over the backend's cap without forwarding it", async () => {
+    const huge = { ...VALID, config: { note: "x".repeat(64 * 1024) } };
+
+    const response = await create(huge);
+
+    expect(response.status).toBe(400);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
   it("rejects a missing name here rather than paying for a backend round trip", async () => {
     const response = await create({ kind: "notify", enabled: true, config: {}, secrets: {} });
 
@@ -214,25 +230,41 @@ describe("POST /api/admin/integrations — create", () => {
   });
 
   /**
-   * The whitelist is a security control, not tidiness: this BFF proxies no
-   * login routes, so a request for one must die here rather than carry a typed
-   * client_secret toward a path that does not exist.
+   * The widening, asserted from the side that used to be refused. A login
+   * provider is a real row now, and its create carries a real `client_secret`
+   * — so this is also the case that proves the credential reaches the backend
+   * rather than dying in the BFF.
    */
-  it("refuses the login category before touching the backend", async () => {
+  it("forwards a login pair to the backend", async () => {
+    backendRequest.mockResolvedValue(recorded.google);
+
     const response = await create({ ...VALID, kind: "login", name: "google" });
+
+    expect(response.status).toBe(200);
+    expect(backendBody().kind).toBe("login");
+    expect(backendBody().name).toBe("google");
+  });
+
+  /**
+   * `github` is a real backend name — on an unmerged branch. Until it ships,
+   * this frontend must not address a pair the deployed registry answers with a
+   * 400, and it must fail here rather than after a round trip.
+   */
+  it("refuses a login name the deployed backend does not serve", async () => {
+    const response = await create({ ...VALID, kind: "login", name: "github" });
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
   });
 
   /**
-   * The case that isolates the CATEGORY guard.
+   * The case that proves widening did not become "allow anything".
    *
-   * `(login, google)` above is refused by either half — `google` is not a
-   * notify name — so it cannot tell which guard fired. `slack` IS a valid
-   * notify name, so only the category check stands between this request and
-   * `POST` with `kind: "login"`. Found in review: deleting that check left
-   * every other case green.
+   * `slack` IS a valid notify name and `login` IS a valid category, so only the
+   * PAIR check stands between this request and a `POST` the backend refuses.
+   * Found in review the first time; it keeps its job now for the opposite
+   * reason — the gate is wider, so the cross-product case is the one that can
+   * silently open.
    */
   it("refuses a valid transport name submitted under the login category", async () => {
     const response = await create({ ...VALID, kind: "login", name: "slack" });
@@ -322,11 +354,13 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
     expect(body.kind).toBe("notify");
   });
 
-  it("refuses a login pair without reaching the backend", async () => {
+  it("forwards a login pair to the backend", async () => {
+    backendRequest.mockResolvedValue(recorded.google);
+
     const response = await patch("login", "google");
 
-    expect(response.status).toBe(400);
-    expect(backendRequest).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(backendRequest).toHaveBeenCalled();
   });
 
   /** Isolates the category guard — see the create-route case for why. */
@@ -338,20 +372,27 @@ describe("PATCH /api/admin/integrations/{kind}/{name} — update", () => {
   });
 
   /**
-   * The two guards keep separate messages (SPEC §3.3): "not a routable
-   * category" and "not a routable system" are different facts, and collapsing
-   * them tells an operator the wrong one. Asserted on the field, which is what
-   * distinguishes them in the envelope.
+   * One message for every unroutable pair, which is a change from the two this
+   * route used to give.
+   *
+   * The old pair of messages distinguished "bad category" from "bad system",
+   * and that distinction stopped existing when the gate became a pair check:
+   * `(login, google)` is now valid and `(login, slack)` is not, so neither half
+   * is wrong on its own — only their combination is. Naming which half failed
+   * would also tell an unauthenticated prober which categories and names the
+   * registry holds, for no operator benefit: the UI only ever sends pairs it
+   * rendered, so nobody reaching this from the screen can produce it.
    */
-  it("distinguishes a bad category from a bad system", async () => {
-    const badCategory = await patch("login", "google");
-    const badName = await patch("notify", "carrier-pigeon");
+  it("answers every unroutable pair the same way, naming no half", async () => {
+    const crossCategory = await patch("login", "slack");
+    const unknownName = await patch("notify", "carrier-pigeon");
 
-    const categoryBody = (await badCategory.json()) as { fieldErrors?: { field: string }[] };
-    const nameBody = (await badName.json()) as { fieldErrors?: { field: string }[] };
-
-    expect(categoryBody.fieldErrors?.[0].field).toBe("kind");
-    expect(nameBody.fieldErrors?.[0].field).toBe("name");
+    for (const response of [crossCategory, unknownName]) {
+      const body = (await response.json()) as { fieldErrors?: { field: string }[] };
+      expect(response.status).toBe(400);
+      expect(body.fieldErrors?.[0].field).toBe("name");
+    }
+    expect(backendRequest).not.toHaveBeenCalled();
   });
 
   it("keeps a backend failure a failure", async () => {
@@ -436,7 +477,7 @@ describe("GET /api/admin/integrations/{kind}/{name} — single row", () => {
     expect(body.kind).toBe("notify");
   });
 
-  it("refuses a login pair without reaching the backend", async () => {
+  it("refuses a valid transport name under the login category", async () => {
     const response = await get("login", "slack");
 
     expect(response.status).toBe(400);
@@ -480,11 +521,13 @@ describe("POST /api/admin/integrations/{kind}/{name}/toggle", () => {
     expect(backendRequest).not.toHaveBeenCalled();
   });
 
-  it("refuses a login pair without reaching the backend", async () => {
+  it("forwards a login pair to the backend", async () => {
+    backendRequest.mockResolvedValue(recorded.google);
+
     const response = await flip("login", "google");
 
-    expect(response.status).toBe(400);
-    expect(backendRequest).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(backendRequest).toHaveBeenCalled();
   });
 
   /** Isolates the category guard — see the create-route case for why. */

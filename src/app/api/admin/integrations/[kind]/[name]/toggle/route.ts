@@ -4,10 +4,13 @@ import { authenticatedBackendRequest } from "@/server/backend/client/authenticat
 import { requireAdminSession } from "@/server/auth/require-admin";
 import { routeErrorResponse, BffValidationError } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
-import { readJsonBody } from "@/server/backend/http/read-json-body";
+import { readCappedJsonBody } from "@/server/backend/http/read-json-body";
 import { mustMapIntegration } from "@/server/backend/contracts/integrations-mapper";
 import type { IntegrationDto } from "@/server/backend/contracts/integrations-dto";
-import { resolveIntegrationParams } from "@/server/backend/contracts/integration-route-params";
+import {
+  INTEGRATION_MAX_BODY_BYTES,
+  resolveIntegrationParams,
+} from "@/server/backend/contracts/integration-route-params";
 
 /**
  * POST /api/admin/integrations/{kind}/{name}/toggle — proxy to
@@ -28,7 +31,7 @@ export async function POST(
   try {
     await requireAdminSession();
     const { kind, name } = await resolveIntegrationParams(params);
-    const body = await readJsonBody<{ enabled?: unknown }>(request);
+    const body = await readCappedJsonBody<{ enabled?: unknown }>(request, INTEGRATION_MAX_BODY_BYTES);
     if (typeof body.enabled !== "boolean") {
       throw new BffValidationError([{ field: "enabled", message: "enabled must be an explicit boolean" }]);
     }

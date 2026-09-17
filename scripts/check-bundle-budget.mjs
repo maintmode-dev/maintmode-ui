@@ -142,16 +142,22 @@ const allowedRoutes = {
 const forbiddenInClient = [
   {
     marker: "Sign-in providers",
-    why: "the dev-only sign-in providers section (RUK-294) reached a production chunk",
+    why: "the dev-only sign-in providers section reached a production chunk",
   },
-  {
-    marker: "issuer_url",
-    why: "OIDC field descriptors reached a production chunk — check that auth-kinds.ts is not in the shared row/dialog import graph",
-  },
-  {
-    marker: "github_oauth",
-    why: "auth kind metadata reached a production chunk",
-  },
+  // `issuer_url` and `github_oauth` used to sit here. Both are gone, and for
+  // different reasons:
+  //
+  //   - `issuer_url` is now SUPPOSED to ship. The provider descriptors moved
+  //     into one eager record when the lazy registry was deleted, so the field
+  //     names travel with the dialog that renders them. Keeping the marker
+  //     would fail the build for doing the intended thing.
+  //   - `github_oauth` names nothing any more — the identifier was replaced by
+  //     the backend's real registry names. A marker matching nothing is not a
+  //     passing check, it is an absent one, and this file argues at length that
+  //     an evergreen no-op is worse than no guardrail at all.
+  //
+  // The section's own heading stays until the dev gate is removed, which is the
+  // commit that also turns this list's remaining entry into its inverse.
 ];
 
 const heavyDeps = [

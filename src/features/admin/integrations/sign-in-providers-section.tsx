@@ -44,6 +44,7 @@ export function SignInProvidersSection() {
       </div>
 
       <IntegrationDialog
+        kind="login"
         name={openName}
         integration={null}
         open={openName !== null}

@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Check, Lock, MailCheck } from "lucide-react";
 
-import { isNotifyIntegrationName, type Integration } from "@/domain/admin/integration";
+import {
+  isRoutableIntegrationPair,
+  type Integration,
+  type IntegrationCategory,
+} from "@/domain/admin/integration";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
@@ -45,12 +49,21 @@ import {
  * secrets never enter the payload — see `secret-patch.ts` for the intent map.
  */
 export function IntegrationDialog({
+  kind,
   name,
   integration,
   open,
   onOpenChange,
 }: {
-  /** The SYSTEM being configured — `kindMeta` and the whitelist both key on it. */
+  /**
+   * The CATEGORY half of the pair, supplied by the caller on both paths.
+   *
+   * It could be read off `integration` when editing, but a create has no row to
+   * read it from — and the section that rendered the dialog always knows which
+   * half of the registry it is. One source beats a conditional.
+   */
+  kind: IntegrationCategory;
+  /** The SYSTEM being configured — `kindMeta` keys on it. */
   name: string | null;
   /** Existing integration → edit mode; null → create mode. */
   integration: Integration | null;
@@ -80,7 +93,8 @@ export function IntegrationDialog({
           destroyed on close, and that outweighs the brief empty flash. */}
       {name && meta ? (
         <IntegrationDialogBody
-          key={`${name}-${integration?.updated_at ?? "create"}`}
+          key={`${kind}/${name}-${integration?.updated_at ?? "create"}`}
+          kind={kind}
           name={name}
           meta={meta}
           integration={integration}
@@ -102,11 +116,13 @@ const TEST_PLATE = {
 } as const;
 
 function IntegrationDialogBody({
+  kind,
   name,
   meta,
   integration,
   onClose,
 }: {
+  kind: IntegrationCategory;
   name: string;
   /** Resolved by the parent — a system whose metadata is absent renders nothing. */
   meta: IntegrationKindMeta;
@@ -205,13 +221,14 @@ function IntegrationDialogBody({
   // the Next server process and any request logging there. Blocking the button
   // is what keeps the credential in the browser.
   //
-  // Reading this from `unavailableNotice` would tie a security control to a
-  // string — deleting the notice would silently re-enable saving on a
-  // credentials form. `isNotifyIntegrationName` is the same predicate the routes
-  // gate on, so the button and the route can never disagree. The category half
-  // of the pair is a constant there, so the name alone carries the same answer;
-  // the dialog never needs to know a category.
-  const savingUnavailable = !isNotifyIntegrationName(name);
+  // The same predicate the routes gate on, so the button and the route can
+  // never disagree. It reads the PAIR: a name alone stopped being an answer
+  // once one screen held both halves of the registry.
+  //
+  // Deliberately not derived from any copy field. Tying a security control to a
+  // string means a copy edit can silently re-enable saving on a credentials
+  // form.
+  const savingUnavailable = !isRoutableIntegrationPair(kind, name);
 
   // A live probe exists for SMTP only; the other transports have no equivalent.
   const canTest = name === "email";
@@ -230,7 +247,7 @@ function IntegrationDialogBody({
     setTestResult(null);
     try {
       await testMutation.mutateAsync({
-        ref: { kind: "notify", name },
+        ref: { kind, name },
         body: buildTestSendBody(meta, config, secrets, sentTo, integration?.config ?? {}),
       });
       if (testRunRef.current === run) setTestResult({ ok: true, to: sentTo });
@@ -258,7 +275,7 @@ function IntegrationDialogBody({
     try {
       if (isEdit) {
         await updateMutation.mutateAsync({
-          ref: { kind: "notify", name },
+          ref: { kind, name },
           body: {
             enabled,
             config: buildConfig(meta, config, integration.config),
@@ -267,7 +284,7 @@ function IntegrationDialogBody({
         });
       } else {
         await createMutation.mutateAsync({
-          kind: "notify",
+          kind,
           name,
           enabled,
           config: buildConfig(meta, config),

@@ -55,7 +55,14 @@ function renderDialog(props: Partial<React.ComponentProps<typeof IntegrationDial
   });
   const element = (p: Partial<React.ComponentProps<typeof IntegrationDialog>>) => (
     <QueryClientProvider client={client}>
-      <IntegrationDialog name="slack" integration={null} open onOpenChange={onOpenChange} {...p} />
+      <IntegrationDialog
+        kind="notify"
+        name="slack"
+        integration={null}
+        open
+        onOpenChange={onOpenChange}
+        {...p}
+      />
     </QueryClientProvider>
   );
   const view = render(element(props));
@@ -367,7 +374,7 @@ describe("sign-in provider kinds", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
-        <IntegrationDialog name={name} integration={null} open onOpenChange={() => {}} />
+        <IntegrationDialog kind="login" name={name} integration={null} open onOpenChange={() => {}} />
       </QueryClientProvider>,
     );
   }
@@ -386,10 +393,7 @@ describe("sign-in provider kinds", () => {
    * previous descriptor called it optional and promised a default callback that
    * does not exist, so a form built from it invited a guaranteed 400.
    */
-  // Unskipped by the commit that widens the save guard: `savingUnavailable`
-  // still requires a notify name, so Save stays disabled here for a reason that
-  // has nothing to do with the redirect URI.
-  it.todo("keeps Save disabled until the redirect URI is filled in", () => {
+  it("keeps Save disabled until the redirect URI is filled in", () => {
     renderDialog("custom");
     fireEvent.change(screen.getByLabelText(/Display name/), { target: { value: "Corp SSO" } });
     fireEvent.change(screen.getByLabelText(/Issuer URL/), {
@@ -454,7 +458,13 @@ describe("transport status copy is preserved verbatim", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return render(
       <QueryClientProvider client={client}>
-        <IntegrationDialog name="slack" integration={SLACK_CONFIGURED} open onOpenChange={() => {}} />
+        <IntegrationDialog
+          kind="notify"
+          name="slack"
+          integration={SLACK_CONFIGURED}
+          open
+          onOpenChange={() => {}}
+        />
       </QueryClientProvider>,
     );
   }

@@ -86,6 +86,7 @@ export function IntegrationsPage({ signInProviders }: { signInProviders?: ReactN
       {signInProviders}
 
       <IntegrationDialog
+        kind="notify"
         name={openName}
         integration={openName ? (byName.get(openName) ?? null) : null}
         open={openName !== null}
