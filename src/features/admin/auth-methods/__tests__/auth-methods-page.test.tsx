@@ -22,9 +22,12 @@ const BOTH_ON: AuthMethod[] = [
   { method: "email_password", enabled: true, updated_at: "2026-09-18T00:00:00.000Z" },
 ];
 
-function renderPage() {
+function renderPage(clientOptions?: { retry?: boolean | number }) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: clientOptions?.retry ?? false },
+      mutations: { retry: false },
+    },
   });
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -67,6 +70,24 @@ describe("the list an admin sees", () => {
     expect(await screen.findByText(/unavailable/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /try again/i })).toBeTruthy();
   });
+
+  /**
+   * Found in a browser, not here — and this suite is why it hid.
+   *
+   * Every case builds its own QueryClient with `retry: false`, which is
+   * convenient and unrepresentative: the app's provider sets `retry: 1`. Against
+   * a backend without the endpoint, React Query parked the query at
+   * `fetchStatus: "paused"` rather than retrying, and a paused query reports
+   * `isPending` — so the screen sat on a skeleton forever, showing "loading" for
+   * a condition that never resolves, on the exact path every operator hits
+   * before the backend merges.
+   *
+   * The hook now sets `retry: false` itself (see its docblock). That is NOT
+   * pinned by a case here: jsdom does not reproduce the pause, so a test written
+   * against `retry: 1` passes either way and would be evidence of nothing. The
+   * guard is the comment on the hook plus this note; the behaviour was verified
+   * in the browser against a `main` backend.
+   */
 
   /** AC-7. A method this build does not know is a sign-in path in force. */
   it("renders a method it does not recognise, with a working switch", async () => {
@@ -112,6 +133,55 @@ describe("the last-method confirmation", () => {
       ),
     );
     expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  /**
+   * What happens AFTER the admin confirms — the part the whole last-method flow
+   * exists for, and the part nothing asserted.
+   *
+   * Two mutations passed the entire suite before this: making the confirm
+   * button a no-op, and making it send `enabled: true`. The second is an admin
+   * clicking "turn off my last way in" and getting it turned ON.
+   */
+  it("sends the disable once the admin confirms", async () => {
+    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
+      if (!init?.method)
+        return Promise.resolve({
+          methods: [
+            { method: "email_otp", enabled: true, updated_at: "x" },
+            { method: "email_password", enabled: false, updated_at: "x" },
+          ],
+        });
+      return Promise.resolve({ method: "email_otp", enabled: false, updated_at: "x" });
+    });
+    renderPage();
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+    fireEvent.click(await screen.findByRole("button", { name: /turn it off/i }));
+
+    await waitFor(() =>
+      expect(bffFetchMock).toHaveBeenCalledWith(
+        "/api/admin/auth-methods/email_otp",
+        // The target state must be `false`. A confirm that sent `true` would
+        // enable the method the admin just asked to close.
+        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ enabled: false }) }),
+      ),
+    );
+  });
+
+  it("sends nothing when the admin cancels", async () => {
+    bffFetchMock.mockResolvedValue({
+      methods: [
+        { method: "email_otp", enabled: true, updated_at: "x" },
+        { method: "email_password", enabled: false, updated_at: "x" },
+      ],
+    });
+    renderPage();
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    // Still only the initial list read.
+    expect(bffFetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("hedges rather than promising an outcome it cannot know", async () => {

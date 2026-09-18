@@ -74,6 +74,12 @@ function patchRequest(body: unknown): Request {
 
 const params = (method: string) => ({ params: Promise.resolve({ method }) });
 
+/** The body the route forwarded to the backend, parsed. */
+function backendBody(): Record<string, unknown> {
+  const opts = backendRequest.mock.calls[0]?.[0] as { body?: string } | undefined;
+  return JSON.parse(opts?.body ?? "{}") as Record<string, unknown>;
+}
+
 /** Backend failure as the client wrapper raises it. */
 function backendFails(status: number, body: unknown) {
   backendRequest.mockRejectedValueOnce(
@@ -127,6 +133,20 @@ describe("auth methods — the recorded response still matches the contract", ()
       "auth method setting",
     );
   });
+
+  /**
+   * The fixture's CONTENTS, as literals.
+   *
+   * Field-type assertions alone left the fixture free to say anything: renaming
+   * `email_otp` to nonsense, or trimming it to a single junk row, kept every
+   * case green. That is tolerable for a recorded fixture, where the wire is the
+   * author. This one is hand-written — the endpoint ships on an unmerged branch
+   * — so a transcription slip has nothing to contradict it but this.
+   */
+  it("describes the two methods the migration seeds, both on", () => {
+    expect(wire.methods.map((m) => m.method).sort()).toEqual(["email_otp", "email_password"]);
+    expect(wire.methods.every((m) => m.enabled)).toBe(true);
+  });
 });
 
 describe("auth methods — response pass-through", () => {
@@ -143,6 +163,33 @@ describe("auth methods — response pass-through", () => {
       enabled: wire.methods[0].enabled,
       updated_at: wire.methods[0].updated_at,
     });
+  });
+
+  /**
+   * The body, not just the destination.
+   *
+   * The route's docblock promises a TARGET STATE rather than a flip — the thing
+   * that keeps a double-click from re-opening a method the admin just closed.
+   * Nothing asserted it: a route that sent `!body.enabled`, or a hardcoded
+   * `true`, passed every case here, which is the failure mode this endpoint is
+   * least able to afford.
+   */
+  it("forwards the requested state verbatim", async () => {
+    backendRequest.mockResolvedValueOnce({ method: "email_otp", enabled: false, updated_at: "x" });
+
+    await item.PATCH(patchRequest({ enabled: false }), params("email_otp"));
+
+    expect(backendBody()).toEqual({ enabled: false });
+  });
+
+  it("forwards an enable the same way", async () => {
+    backendRequest.mockResolvedValueOnce({ method: "email_otp", enabled: true, updated_at: "x" });
+
+    await item.PATCH(patchRequest({ enabled: true }), params("email_otp"));
+
+    // Pinned separately from the disable: a route that hardcoded either value
+    // would still satisfy the other case.
+    expect(backendBody()).toEqual({ enabled: true });
   });
 
   it("returns the updated element from a write, not a 204", async () => {
@@ -254,6 +301,30 @@ describe("auth methods — the 409 refusal reaches the operator intact", () => {
 
     expect(response.status).toBe(409);
     expect(body.error).toBe("Maintenance state conflict");
+  });
+});
+
+describe("auth methods — the admin gate runs on the happy path", () => {
+  /**
+   * Positive assertions, because the negative one on the cross-origin path
+   * (`not.toHaveBeenCalled`) passes just as happily when the gate is absent
+   * from the route entirely. Removing `requireAdminSession()` from both
+   * handlers left every other case in this file green.
+   */
+  it("checks the session before reading", async () => {
+    backendRequest.mockResolvedValueOnce(wire);
+
+    await list.GET();
+
+    expect(requireAdminSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks the session before writing", async () => {
+    backendRequest.mockResolvedValueOnce(wire.methods[0]);
+
+    await item.PATCH(patchRequest({ enabled: false }), params("email_otp"));
+
+    expect(requireAdminSession).toHaveBeenCalledTimes(1);
   });
 });
 

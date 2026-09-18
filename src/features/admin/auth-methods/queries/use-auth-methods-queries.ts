@@ -24,6 +24,18 @@ export function authMethodsKey() {
 export function useAuthMethodsQuery() {
   return useQuery({
     queryKey: authMethodsKey(),
+    /**
+     * No retry, deliberately.
+     *
+     * Every way this read fails is a standing condition, not a blip: the
+     * endpoint is missing because the backend has not shipped yet (404), the
+     * caller is not an admin (403), or the table is not seeded (the throw
+     * below). Retrying buys nothing and costs the operator the error state —
+     * a paused or retrying query renders as "loading", so the screen sits on a
+     * skeleton instead of saying what is wrong. Observed in the browser against
+     * a backend without the endpoint: `fetchStatus: "paused"`, forever.
+     */
+    retry: false,
     queryFn: async (): Promise<AuthMethod[]> => {
       const data = await bffFetch<{ methods?: AuthMethod[] }>("/api/admin/auth-methods");
       const methods = data?.methods;
