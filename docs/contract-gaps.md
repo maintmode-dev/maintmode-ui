@@ -145,6 +145,7 @@ backend has already computed never reaches the operator.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
 | ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                              | —      |
 | `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                                     | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —      |
+| 8 audit actions          | the backend declares 23 audit actions; `AUDIT_ACTIONS` declares 15                                                     | the same `mapAuditAction` hole — see the section below                                                                                                                       | RUK-297 (found) |
 
 **`prune-*` is the most serious entry in this file.** The other discrepancies
 mean "a field did not arrive"; this one means **"a row did not arrive"**. In a
@@ -160,6 +161,47 @@ the owner: possibly the service `prune-*` actions are not needed in the UI at
 all, in which case the correct fix is to filter them out **explicitly** rather
 than lose them to a hole in the whitelist. Right now the assertion lets only
 `prune-*` through; any **new** unknown action will fail the test and name itself.
+
+**The `prune-*` row is the visible half of a wider gap, measured under RUK-297.**
+The backend declares 23 audit actions; `AUDIT_ACTIONS`
+([`audit-log.ts`](../src/domain/audit/audit-log.ts)) declares 15. Diffing the two
+sets leaves **eight** the screen drops silently, through the same
+`mapAuditAction` hole:
+
+`auth_method.toggled`, `integration.created`, `integration.updated`,
+`integration.deleted`, `password.changed`, `password.reset`, `provider.linked`,
+`user.tags_changed`.
+
+Three of those — `integration.*` — are written by the existing
+`/admin/integrations` screen, so **this is a loss happening in production now**,
+not one waiting on a merge. `auth_method.toggled` is the eighth case rather than
+a new defect; it was simply the one that made someone count.
+
+**Not fixed here, deliberately.** RUK-297 built the screen that emits
+`auth_method.toggled`, and repairing the enum in that change would be exactly the
+drive-by this registry exists to prevent. Two further reasons the fix is not the
+one-liner it looks like: `auditActionLabel`
+([`audit-presentation.ts`](../src/features/audit/audit-presentation.ts)) reads
+`ACTION_META[action].label` with no fallback, so an enum entry without a matching
+meta row throws at runtime; and `password.changed` / `password.reset` are also
+missing from the backend's own `IsValid()` list that gates the audit read filter,
+so they stay unfilterable until `feature/ruk-297` merges — adding them here first
+would not make them work.
+
+Whoever picks this up should fix the CLASS, not one action, and consider
+checking `AUDIT_ACTIONS` against the enum the backend publishes rather than
+maintaining a parallel list by hand — and/or rendering an unknown action as a
+generic row instead of dropping it, since losing an audit record silently is
+worse than showing it plainly. Adding `integration.*` to the audit fixture first
+would make the existing assertion in
+[`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts)
+speak up about the loss already under way.
+
+**This row has no executable assertion.** The registry's checks compare rows
+against recorded fixtures, and none of these actions appears in `audit-log.json`
+— see *Unproven captures* below for the same limitation elsewhere. It will
+acquire one the day a fixture carries any of the eight: that assertion's
+whitelist admits only `prune-*`, so it will fail and name the action itself.
 
 **`facets.integration` — closed, and the first gap this mechanism closed
 end-to-end.** The backend sends six counters
