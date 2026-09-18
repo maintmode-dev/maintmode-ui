@@ -89,6 +89,22 @@ const RECONCILIATIONS: Reconciliation[] = [
     source: "integrations-dto.ts",
     fixture: "integrations.json",
   },
+  /**
+   * RUK-297. The one endpoint here whose fixture is hand-written (the backend
+   * ships on an unmerged branch), which is exactly why the declared type is
+   * reconciled against it: a transcription slip has no wire to contradict it.
+   */
+  {
+    dto: "AuthMethodSettingDto",
+    source: "auth-methods-dto.ts",
+    fixture: "auth-methods.json",
+    rowsAt: "methods",
+  },
+  {
+    dto: "AuthMethodSettingsResponseDto",
+    source: "auth-methods-dto.ts",
+    fixture: "auth-methods.json",
+  },
 ];
 
 /**
