@@ -1,6 +1,11 @@
 /**
  * Sign-in methods advertised by the backend's `GET /api/v1/auth/providers`.
  *
+ * NOT `auth-method-settings.ts`, which models the admin-side flags behind
+ * `GET /api/v1/auth/settings`. This file is the public listing `/login` renders
+ * from; that one is what an admin switches on and off. Disabling a method there
+ * removes it from here, which is what makes the two easy to confuse.
+ *
  * Lives in `src/domain/**` rather than beside the backend client because the
  * browser-owned login component names this type, and `scripts/check-boundaries.mjs`
  * matches `import type` as well as value imports — a type under `src/server/**`
