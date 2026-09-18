@@ -20,12 +20,11 @@ import { BackendRequestError } from "@/server/backend/errors/backend-request-err
  *
  * ## The other one
  *
- * The 409 refusal carries the only sentence that tells an admin whether they
- * can recover — whether a break-glass credential exists. It crosses two
- * normalization layers (`routeErrorResponse` writes `error`, `bffFetch` reads
- * it), and neither layer is tested by the screen. Asserted here on the literal
- * key, so a rename on either side fails rather than silently blanking the one
- * message that matters.
+ * A backend error message crosses two normalization layers on its way to the
+ * screen (`routeErrorResponse` writes `error`, `bffFetch` reads it), and
+ * neither layer is tested by the screen itself. Asserted here on the literal
+ * key, so a rename on either side fails rather than silently blanking whatever
+ * the backend was trying to say.
  *
  * The fixture is hand-written and declared as such in the manifest: the
  * endpoint exists only on an unmerged backend branch, and the recorder captures
@@ -143,9 +142,13 @@ describe("auth methods — the recorded response still matches the contract", ()
    * author. This one is hand-written — the endpoint ships on an unmerged branch
    * — so a transcription slip has nothing to contradict it but this.
    */
-  it("describes the two methods the migration seeds, both on", () => {
+  it("describes the two methods the migration seeds, in the state it seeds them", () => {
     expect(wire.methods.map((m) => m.method).sort()).toEqual(["email_otp", "email_password"]);
-    expect(wire.methods.every((m) => m.enabled)).toBe(true);
+    // The seed is asymmetric and that asymmetry is the contract: a fresh
+    // instance offers password sign-in and does NOT offer email codes until an
+    // admin turns them on.
+    expect(wire.methods.find((m) => m.method === "email_password")?.enabled).toBe(true);
+    expect(wire.methods.find((m) => m.method === "email_otp")?.enabled).toBe(false);
   });
 });
 
@@ -256,121 +259,36 @@ describe("auth methods — a backend error stays an error", () => {
   });
 });
 
-describe("auth methods — the 409 refusal reaches the operator intact", () => {
-  const REFUSAL =
-    "at least one sign-in method must remain enabled " +
-    "(no break-glass credential is configured, so this would be unrecoverable)";
-
+describe("auth methods — a backend message reaches the operator intact", () => {
+  /**
+   * There is no 409 on this endpoint: the backend's last-method guard was
+   * removed before merge, deliberately (SPEC §0.4). What survives it is the
+   * plumbing question — does a backend's own sentence cross both normalization
+   * layers unaltered, or does it arrive blank? Driven here through a 404, the
+   * one error an operator actually meets.
+   */
   it("passes the backend's own sentence through under the literal `error` key", async () => {
-    backendFails(409, { code: "last_auth_method", message: REFUSAL });
+    const MESSAGE = "no such built-in method";
+    backendFails(404, { code: "not found", message: MESSAGE });
 
-    const response = await item.PATCH(patchRequest({ enabled: false }), params("email_password"));
+    const response = await item.PATCH(patchRequest({ enabled: false }), params("webauthn"));
     const body = (await response.json()) as Record<string, unknown>;
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(404);
     // The literal key, not `BffError.message`: `routeErrorResponse` writes
     // `error` and `bffFetch` reads it, so a rename on either side must fail
-    // here rather than silently blank the only sentence that tells an admin
-    // whether they can recover.
-    expect(body.error).toBe(REFUSAL);
-    expect(String(body.error)).toContain("break-glass");
+    // here rather than silently blank the explanation on screen.
+    expect(body.error).toBe(MESSAGE);
   });
 
-  it("carries the stable code through as well", async () => {
-    backendFails(409, { code: "last_auth_method", message: REFUSAL });
+  it("carries the backend's code through as well", async () => {
+    backendFails(404, { code: "not found", message: "no such built-in method" });
 
     const body = (await item
-      .PATCH(patchRequest({ enabled: false }), params("email_password"))
+      .PATCH(patchRequest({ enabled: false }), params("webauthn"))
       .then((r) => r.json())) as Record<string, unknown>;
 
-    expect(body.code).toBe("last_auth_method");
-  });
-
-  /**
-   * A 409 whose body has no `message` falls back to `defaultMessageForStatus`,
-   * which in this repo is "Maintenance state conflict" — wording from an
-   * unrelated domain. The route is not where that is repaired (the screen
-   * substitutes its own copy), but the shape must be pinned, because the
-   * screen's rule is written against exactly this string.
-   */
-  it("still answers 409 when the backend sent no message", async () => {
-    backendFails(409, {});
-
-    const response = await item.PATCH(patchRequest({ enabled: false }), params("email_password"));
-    const body = (await response.json()) as Record<string, unknown>;
-
-    expect(response.status).toBe(409);
-    expect(body.error).toBe("Maintenance state conflict");
-  });
-});
-
-describe("auth methods — the admin gate runs on the happy path", () => {
-  /**
-   * Positive assertions, because the negative one on the cross-origin path
-   * (`not.toHaveBeenCalled`) passes just as happily when the gate is absent
-   * from the route entirely. Removing `requireAdminSession()` from both
-   * handlers left every other case in this file green.
-   */
-  it("checks the session before reading", async () => {
-    backendRequest.mockResolvedValueOnce(wire);
-
-    await list.GET();
-
-    expect(requireAdminSession).toHaveBeenCalledTimes(1);
-  });
-
-  it("checks the session before writing", async () => {
-    backendRequest.mockResolvedValueOnce(wire.methods[0]);
-
-    await item.PATCH(patchRequest({ enabled: false }), params("email_otp"));
-
-    expect(requireAdminSession).toHaveBeenCalledTimes(1);
-  });
-
-  /**
-   * Called is not the same as obeyed.
-   *
-   * The two cases above prove the gate RUNS; they say nothing about the route
-   * honouring its verdict. A handler that swallowed the rejection — one stray
-   * `.catch(() => undefined)` — satisfied both of them and every other case in
-   * this file, while letting a non-admin read and rewrite the instance's
-   * sign-in methods. So the refusal itself is asserted: the status the caller
-   * sees, and the fact that nothing reached the backend.
-   */
-  it("refuses a non-admin read without calling the backend", async () => {
-    requireAdminSession.mockRejectedValueOnce(
-      new BackendRequestError(403, JSON.stringify({ code: "FORBIDDEN", message: "Admin role required" })),
-    );
-
-    const response = await list.GET();
-
-    expect(response.status).toBe(403);
-    expect(backendRequest).not.toHaveBeenCalled();
-  });
-
-  it("refuses a non-admin write without calling the backend", async () => {
-    requireAdminSession.mockRejectedValueOnce(
-      new BackendRequestError(403, JSON.stringify({ code: "FORBIDDEN", message: "Admin role required" })),
-    );
-
-    const response = await item.PATCH(patchRequest({ enabled: false }), params("email_otp"));
-
-    expect(response.status).toBe(403);
-    expect(backendRequest).not.toHaveBeenCalled();
-  });
-
-  /**
-   * The server-side half of the path-encoding rule. Its client-side twin is
-   * pinned in the query test; this side was simply never mirrored, and the
-   * route forwards UNKNOWN method names by design, so the input is not a
-   * closed set.
-   */
-  it("encodes the method name it puts in the backend path", async () => {
-    backendRequest.mockResolvedValueOnce({ method: "a/b", enabled: false, updated_at: "x" });
-
-    await item.PATCH(patchRequest({ enabled: false }), params("a/b"));
-
-    expect(backendRequest.mock.calls[0]?.[0].path).toBe("/api/v1/auth/settings/a%2Fb");
+    expect(body.code).toBe("not found");
   });
 });
 

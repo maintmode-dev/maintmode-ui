@@ -66,10 +66,10 @@ export function AuthMethodRow({
       {refusal ? (
         <div className="px-4 pb-4">
           {/*
-            Persistent, not a toast. This text names the constraint and says
-            whether a break-glass credential exists — the single sentence that
-            tells an admin whether closing the last way in is recoverable — and
-            `sonner` would take it away on a timer.
+            Persistent, not a toast. A failed toggle leaves the switch back
+            where it started, and an explanation that dismisses itself on a
+            timer would leave the admin looking at a snapped-back control with
+            no account of why.
           */}
           <Alert variant="destructive">
             <AlertDescription className="flex items-start justify-between gap-3">

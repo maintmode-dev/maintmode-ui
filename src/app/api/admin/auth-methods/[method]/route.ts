@@ -37,10 +37,12 @@ const AUTH_METHOD_MAX_BODY_BYTES = 64 * 1024;
  * request goes to the maintmode backend and 404s, which reads exactly like the
  * backend not having shipped yet.
  *
- * 409 = disabling this would leave no way to sign in. Its `message` names the
- * constraint and says whether a break-glass credential exists, and it is passed
- * through untouched — that sentence is the whole reason the admin can decide
- * what to do next.
+ * There is no 409. The backend had a guard refusing to disable the last enabled
+ * method and removed it before merge: an instance offering no built-in sign-in
+ * is a legitimate SSO-only configuration, and it is not a lockout — sessions
+ * survive, break-glass answers regardless, and the same state was already
+ * reachable through the integration registry. 404 is the only refusal a
+ * well-formed request from an admin can now get.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ method: string }> }) {
   // Outside the `try`, like every other mutating admin route: this answers with

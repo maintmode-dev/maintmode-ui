@@ -97,11 +97,11 @@ export function useSetAuthMethodEnabled() {
       // what makes the integrations rollback skip.
       return { previous: previous ?? null };
     },
-    // Present so a refusal counts as HANDLED. Without an `onError` on the
+    // Present so a failure counts as HANDLED. Without an `onError` on the
     // mutation itself, React Query still rejects the promise `mutate` drives
     // and the failure surfaces as unhandled — even though the screen is
-    // displaying it. The operator-facing copy stays in the component, which is
-    // the layer that knows what a 409 means here; this hook only restores state.
+    // displaying it. The operator-facing copy stays in the component; this hook
+    // only restores state.
     onError: (_error, { method }, context) => {
       const previous = context?.previous;
       if (!previous) {

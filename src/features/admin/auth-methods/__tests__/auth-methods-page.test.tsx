@@ -14,8 +14,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import type { AuthMethod } from "@/domain/auth/auth-method-settings";
 
-import { AuthMethodsPage, wouldLeaveNoneEnabled } from "../auth-methods-page";
-import { refusalMessage } from "../refusal-message";
+import { AuthMethodsPage } from "../auth-methods-page";
 
 const BOTH_ON: AuthMethod[] = [
   { method: "email_otp", enabled: true, updated_at: "2026-09-18T00:00:00.000Z" },
@@ -114,105 +113,6 @@ describe("the list an admin sees", () => {
   });
 });
 
-describe("the last-method confirmation", () => {
-  /** AC-3: the warning comes BEFORE the click reaches the backend. */
-  it("asks first when the change would leave nothing enabled", async () => {
-    bffFetchMock.mockResolvedValue({
-      methods: [
-        { method: "email_otp", enabled: true, updated_at: "x" },
-        { method: "email_password", enabled: false, updated_at: "x" },
-      ],
-    });
-    renderPage();
-
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-
-    expect(await screen.findByRole("alertdialog")).toBeTruthy();
-    // Nothing travelled: the only call so far is the initial list read.
-    expect(bffFetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not ask when another method stays enabled", async () => {
-    bffFetchMock.mockResolvedValue({ methods: BOTH_ON });
-    renderPage();
-
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-
-    await waitFor(() =>
-      expect(bffFetchMock).toHaveBeenCalledWith(
-        "/api/admin/auth-methods/email_otp",
-        expect.objectContaining({ method: "PATCH" }),
-      ),
-    );
-    expect(screen.queryByRole("alertdialog")).toBeNull();
-  });
-
-  /**
-   * What happens AFTER the admin confirms — the part the whole last-method flow
-   * exists for, and the part nothing asserted.
-   *
-   * Two mutations passed the entire suite before this: making the confirm
-   * button a no-op, and making it send `enabled: true`. The second is an admin
-   * clicking "turn off my last way in" and getting it turned ON.
-   */
-  it("sends the disable once the admin confirms", async () => {
-    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
-      if (!init?.method)
-        return Promise.resolve({
-          methods: [
-            { method: "email_otp", enabled: true, updated_at: "x" },
-            { method: "email_password", enabled: false, updated_at: "x" },
-          ],
-        });
-      return Promise.resolve({ method: "email_otp", enabled: false, updated_at: "x" });
-    });
-    renderPage();
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-    fireEvent.click(await screen.findByRole("button", { name: /turn it off/i }));
-
-    await waitFor(() =>
-      expect(bffFetchMock).toHaveBeenCalledWith(
-        "/api/admin/auth-methods/email_otp",
-        // The target state must be `false`. A confirm that sent `true` would
-        // enable the method the admin just asked to close.
-        expect.objectContaining({ method: "PATCH", body: JSON.stringify({ enabled: false }) }),
-      ),
-    );
-  });
-
-  it("sends nothing when the admin cancels", async () => {
-    bffFetchMock.mockResolvedValue({
-      methods: [
-        { method: "email_otp", enabled: true, updated_at: "x" },
-        { method: "email_password", enabled: false, updated_at: "x" },
-      ],
-    });
-    renderPage();
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-    fireEvent.click(await screen.findByRole("button", { name: /cancel/i }));
-
-    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
-    // Still only the initial list read.
-    expect(bffFetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("hedges rather than promising an outcome it cannot know", async () => {
-    bffFetchMock.mockResolvedValue({
-      methods: [
-        { method: "email_otp", enabled: true, updated_at: "x" },
-        { method: "email_password", enabled: false, updated_at: "x" },
-      ],
-    });
-    renderPage();
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-
-    const dialog = await screen.findByRole("alertdialog");
-    // "may", never "will": healthy SSO providers also satisfy the backend's
-    // guard and are invisible to this screen.
-    expect(dialog.textContent).toMatch(/may leave no way to sign in/i);
-  });
-});
-
 describe("while a change is in flight", () => {
   /**
    * The switch must be inert until the PATCH settles.
@@ -250,26 +150,6 @@ describe("while a change is in flight", () => {
 });
 
 describe("a refused change", () => {
-  const REFUSAL =
-    "at least one sign-in method must remain enabled " +
-    "(no break-glass credential is configured, so this would be unrecoverable)";
-
-  it("shows the backend's own explanation and keeps it on screen", async () => {
-    // Keyed on the METHOD, not the path: the list read and the toggle share a
-    // prefix, so matching on path alone would reject the initial load too.
-    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
-      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
-      return Promise.reject(new BffError(409, REFUSAL, "last_auth_method"));
-    });
-    renderPage();
-
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-
-    // The break-glass clause is the sentence that tells an admin whether this
-    // is recoverable, so it must survive to the screen verbatim.
-    expect(await screen.findByText(new RegExp("break-glass", "i"))).toBeTruthy();
-  });
-
   /**
    * The 404 copy, which is the one an operator meets BEFORE the backend ships.
    *
@@ -305,39 +185,41 @@ describe("a refused change", () => {
   });
 
   /**
-   * A refusal describes the SCREEN ("this would leave no way to sign in"), not
-   * one row. Once any toggle succeeds that claim is stale, and an alert still
-   * asserting it contradicts the switches next to it.
+   * A refusal is cleared when ITS OWN row is retried, and only then.
+   *
+   * With the last-method guard gone, every message this screen produces is a
+   * claim about one row. A different method toggling successfully says nothing
+   * about "the backend did not recognise it" — see the next case for that half.
    */
-  it("clears a stale refusal once another toggle succeeds", async () => {
+  it("clears a row's refusal when that row is retried successfully", async () => {
     let failNext = true;
     bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
       if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
       if (failNext) {
         failNext = false;
-        return Promise.reject(new BffError(409, REFUSAL, "last_auth_method"));
+        return Promise.reject(new BffError(404, "Not Found", "NOT_FOUND"));
       }
-      return Promise.resolve({ method: "email_password", enabled: false, updated_at: "x" });
+      return Promise.resolve({ method: "email_otp", enabled: false, updated_at: "x" });
     });
     renderPage();
 
     fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-    await screen.findByText(new RegExp("break-glass", "i"));
+    await screen.findByText(/did not recognise it/i);
 
-    fireEvent.click(screen.getByLabelText("Password sign-in"));
+    fireEvent.click(screen.getByLabelText("Email code sign-in"));
 
-    await waitFor(() => expect(screen.queryByText(new RegExp("break-glass", "i"))).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/did not recognise it/i)).toBeNull());
   });
 
   /**
    * The other half of the clearing rule, and the case the two-method test
    * cannot see.
    *
-   * A 409 is a claim about the INSTANCE ("one method must remain enabled"), so
-   * any success makes it stale. A 403 or 404 is a claim about ONE row, and an
-   * unrelated method toggling successfully does not make it untrue. Clearing
-   * those would leave the admin with a switch that snapped back and nothing
-   * saying why.
+   * Every message this screen can show is a claim about ONE row — "the backend
+   * did not recognise it", "you no longer have admin access". An unrelated
+   * method toggling successfully does not make either untrue, and clearing them
+   * would leave the admin with a switch that snapped back and nothing saying
+   * why.
    */
   it("keeps a per-row refusal when a different method succeeds", async () => {
     const THREE = [...BOTH_ON, { method: "webauthn", enabled: true, updated_at: "2026-09-18T00:00:00.000Z" }];
@@ -375,7 +257,7 @@ describe("a refused change", () => {
     bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
       if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
       return new Promise((_resolve, reject) => {
-        settle = () => reject(new BffError(409, REFUSAL, "last_auth_method"));
+        settle = () => reject(new BffError(404, "Not Found", "NOT_FOUND"));
       });
     });
     renderPage();
@@ -394,71 +276,5 @@ describe("a refused change", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Email code sign-in").getAttribute("data-state")).toBe("checked"),
     );
-  });
-});
-
-/**
- * The message whitelist, unit-tested away from React because the interesting
- * inputs are strings, not interactions.
- */
-describe("which refusal text is worth showing", () => {
-  it("shows a real message from the backend", () => {
-    expect(refusalMessage("at least one sign-in method must remain enabled (…)")).toContain(
-      "must remain enabled",
-    );
-  });
-
-  it("replaces the BFF's unrelated 409 default", () => {
-    // `defaultMessageForStatus(409)` is wording from the maintenance domain.
-    expect(refusalMessage("Maintenance state conflict")).toBe(
-      "The backend refused: this would leave no way to sign in.",
-    );
-  });
-
-  it("replaces the message bffFetch synthesises when no body arrived", () => {
-    expect(refusalMessage("BFF 409 Conflict")).toBe(
-      "The backend refused: this would leave no way to sign in.",
-    );
-  });
-
-  it("replaces an empty or whitespace message", () => {
-    expect(refusalMessage("")).toContain("no way to sign in");
-    expect(refusalMessage("   ")).toContain("no way to sign in");
-    expect(refusalMessage(undefined)).toContain("no way to sign in");
-  });
-});
-
-describe("the dialog trigger rule", () => {
-  it("fires when the row being turned off is the only one on", () => {
-    expect(
-      wouldLeaveNoneEnabled(
-        [
-          { method: "email_otp", enabled: true, updated_at: "x" },
-          { method: "email_password", enabled: false, updated_at: "x" },
-        ],
-        "email_otp",
-      ),
-    ).toBe(true);
-  });
-
-  it("does not fire while another method stays on", () => {
-    expect(wouldLeaveNoneEnabled(BOTH_ON, "email_otp")).toBe(false);
-  });
-
-  /**
-   * An unknown method counts. Written over the closed set the count would
-   * exclude it — the natural implementation, and the one that would wave
-   * through a change leaving only a method the build cannot name.
-   */
-  it("counts a method this build does not recognise", () => {
-    expect(
-      wouldLeaveNoneEnabled(
-        [
-          { method: "email_otp", enabled: true, updated_at: "x" },
-          { method: "webauthn", enabled: true, updated_at: "x" },
-        ],
-        "email_otp",
-      ),
-    ).toBe(false);
   });
 });

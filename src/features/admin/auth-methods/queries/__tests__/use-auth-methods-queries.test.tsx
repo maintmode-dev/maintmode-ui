@@ -100,7 +100,7 @@ describe("toggling a method", () => {
   it("puts the switch back when the backend refuses", async () => {
     const client = freshClient();
     client.setQueryData(authMethodsKey(), BOTH);
-    bffFetchMock.mockRejectedValue(new BffError(409, "at least one sign-in method must remain enabled"));
+    bffFetchMock.mockRejectedValue(new BffError(404, "no such built-in method"));
 
     const { result } = renderHook(() => useSetAuthMethodEnabled(), { wrapper: wrapper(client) });
     act(() => {
@@ -142,7 +142,7 @@ describe("toggling a method", () => {
       { method: "email_otp", updated_at: "2026-09-18T00:00:00.000Z" } as unknown as AuthMethod,
       BOTH[1],
     ]);
-    bffFetchMock.mockRejectedValue(new BffError(409, "at least one sign-in method must remain enabled"));
+    bffFetchMock.mockRejectedValue(new BffError(404, "no such built-in method"));
 
     const { result } = renderHook(() => useSetAuthMethodEnabled(), { wrapper: wrapper(client) });
     act(() => {
