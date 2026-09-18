@@ -223,6 +223,40 @@ describe("a refused change", () => {
   });
 
   /**
+   * The 404 copy, which is the one an operator meets BEFORE the backend ships.
+   *
+   * It must not claim the method was removed: at that point the 404 means the
+   * endpoint does not exist, and a row that was never there cannot have
+   * vanished. Both causes are named because the screen genuinely cannot tell
+   * them apart from one status.
+   */
+  it("names both causes of a 404 rather than guessing at one", async () => {
+    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
+      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
+      return Promise.reject(new BffError(404, "Not Found", "NOT_FOUND"));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+
+    const alert = await screen.findByText(/did not recognise it/i);
+    expect(alert.textContent).toMatch(/may not support sign-in method settings yet/i);
+  });
+
+  /** A lost role reads as a lost role, not as a generic failure. */
+  it("says the admin role is gone on a 403", async () => {
+    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
+      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
+      return Promise.reject(new BffError(403, "Admin role required", "FORBIDDEN"));
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+
+    expect(await screen.findByText(/no longer have admin access/i)).toBeTruthy();
+  });
+
+  /**
    * A refusal describes the SCREEN ("this would leave no way to sign in"), not
    * one row. Once any toggle succeeds that claim is stale, and an alert still
    * asserting it contradicts the switches next to it.

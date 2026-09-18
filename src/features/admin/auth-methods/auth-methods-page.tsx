@@ -45,6 +45,35 @@ export function wouldLeaveNoneEnabled(rows: AuthMethod[], method: string): boole
   return rows.every((row) => (row.method === method ? true : !row.enabled));
 }
 
+/**
+ * What one row says when its toggle was refused.
+ *
+ * 409 on this endpoint means one thing: the guard fired. The backend's sentence
+ * is shown as-is when it says something.
+ *
+ * 404 has two causes, one status, and the screen cannot tell them apart: the
+ * method really is gone, or the endpoint itself is missing because the backend
+ * has not shipped this feature yet. Naming only the first sends an operator
+ * hunting for a vanished row on a backend where no row ever existed — the
+ * mistake the list route's own 404 copy avoids by knowing which request it was.
+ * Observed in a browser against a backend without the endpoint.
+ */
+function toRefusal(error: unknown): string {
+  if (!(error instanceof BffError)) {
+    return "Couldn't change this method. Try again.";
+  }
+  switch (error.status) {
+    case 409:
+      return refusalMessage(error.message, 409);
+    case 404:
+      return "Couldn't change this method: the backend did not recognise it. It may have been removed, or this backend may not support sign-in method settings yet.";
+    case 403:
+      return "You no longer have admin access.";
+    default:
+      return "Couldn't change this method. Try again.";
+  }
+}
+
 /** Drop one method's refusal, leaving the others standing. */
 function without(refusals: Record<string, string>, method: string): Record<string, string> {
   return Object.fromEntries(Object.entries(refusals).filter(([key]) => key !== method));
@@ -73,27 +102,7 @@ export function AuthMethodsPage() {
           setRefusals({});
         },
         onError: (error) => {
-          if (error instanceof BffError && error.status === 409) {
-            // 409 on this endpoint means one thing: the guard fired. The
-            // backend's sentence is shown as-is when it says something.
-            setRefusals((current) => ({ ...current, [method]: refusalMessage(error.message, 409) }));
-            return;
-          }
-          const message =
-            error instanceof BffError && error.status === 404
-              ? // Two causes, one status, and the screen cannot tell them
-                // apart: the method really is gone, or the endpoint itself is
-                // missing because the backend has not shipped this feature
-                // yet. Naming only the first sends an operator hunting for a
-                // vanished row on a backend where no row ever existed — the
-                // mistake the list route's own 404 copy avoids by knowing
-                // which request it was. Observed in a browser against a
-                // backend without the endpoint.
-                "Couldn't change this method: the backend did not recognise it. It may have been removed, or this backend may not support sign-in method settings yet."
-              : error instanceof BffError && error.status === 403
-                ? "You no longer have admin access."
-                : "Couldn't change this method. Try again.";
-          setRefusals((current) => ({ ...current, [method]: message }));
+          setRefusals((current) => ({ ...current, [method]: toRefusal(error) }));
         },
       },
     );
