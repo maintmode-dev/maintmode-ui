@@ -326,6 +326,52 @@ describe("auth methods — the admin gate runs on the happy path", () => {
 
     expect(requireAdminSession).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * Called is not the same as obeyed.
+   *
+   * The two cases above prove the gate RUNS; they say nothing about the route
+   * honouring its verdict. A handler that swallowed the rejection — one stray
+   * `.catch(() => undefined)` — satisfied both of them and every other case in
+   * this file, while letting a non-admin read and rewrite the instance's
+   * sign-in methods. So the refusal itself is asserted: the status the caller
+   * sees, and the fact that nothing reached the backend.
+   */
+  it("refuses a non-admin read without calling the backend", async () => {
+    requireAdminSession.mockRejectedValueOnce(
+      new BackendRequestError(403, JSON.stringify({ code: "FORBIDDEN", message: "Admin role required" })),
+    );
+
+    const response = await list.GET();
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-admin write without calling the backend", async () => {
+    requireAdminSession.mockRejectedValueOnce(
+      new BackendRequestError(403, JSON.stringify({ code: "FORBIDDEN", message: "Admin role required" })),
+    );
+
+    const response = await item.PATCH(patchRequest({ enabled: false }), params("email_otp"));
+
+    expect(response.status).toBe(403);
+    expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The server-side half of the path-encoding rule. Its client-side twin is
+   * pinned in the query test; this side was simply never mirrored, and the
+   * route forwards UNKNOWN method names by design, so the input is not a
+   * closed set.
+   */
+  it("encodes the method name it puts in the backend path", async () => {
+    backendRequest.mockResolvedValueOnce({ method: "a/b", enabled: false, updated_at: "x" });
+
+    await item.PATCH(patchRequest({ enabled: false }), params("a/b"));
+
+    expect(backendRequest.mock.calls[0]?.[0].path).toBe("/api/v1/auth/settings/a%2Fb");
+  });
 });
 
 describe("auth methods — the write is guarded before it travels", () => {

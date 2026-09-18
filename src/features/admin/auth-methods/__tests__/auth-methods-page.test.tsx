@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,6 +34,18 @@ function renderPage(clientOptions?: { retry?: boolean | number }) {
   }
   return render(<AuthMethodsPage />, { wrapper: Wrapper });
 }
+
+/**
+ * Raised from RTL's 1000ms default.
+ *
+ * Every case here waits on a chain — query resolve, mutation, `onError`,
+ * `setState`, re-render — and on a slow scheduling tick that overruns one
+ * second and fails on a screen that is merely not-yet-updated. Two such
+ * timeouts were observed in this suite. A rare red on an admin screen reads as
+ * drift and costs someone an investigation, which is the opposite of what a
+ * test is for.
+ */
+configure({ asyncUtilTimeout: 5000 });
 
 beforeEach(() => bffFetchMock.mockReset());
 afterEach(() => cleanup());
@@ -201,6 +213,42 @@ describe("the last-method confirmation", () => {
   });
 });
 
+describe("while a change is in flight", () => {
+  /**
+   * The switch must be inert until the PATCH settles.
+   *
+   * Nothing observed this: `usePendingAuthMethods` returning an empty set, and
+   * `disabled={busy}` becoming `disabled={false}`, both left the whole suite
+   * green. On this screen that gap means an admin can click twice on the last
+   * enabled method while the first request is still travelling — the one place
+   * a double submit is least affordable.
+   */
+  it("disables the row's switch until the request settles, then re-enables it", async () => {
+    let settle: (value: unknown) => void = () => {};
+    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
+      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
+      return new Promise((resolve) => {
+        settle = resolve;
+      });
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Email code sign-in").hasAttribute("disabled")).toBe(true),
+    );
+    // The other row stays usable: pending is keyed by method, not global.
+    expect(screen.getByLabelText("Password sign-in").hasAttribute("disabled")).toBe(false);
+
+    settle({ method: "email_otp", enabled: false, updated_at: "x" });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Email code sign-in").hasAttribute("disabled")).toBe(false),
+    );
+  });
+});
+
 describe("a refused change", () => {
   const REFUSAL =
     "at least one sign-in method must remain enabled " +
@@ -281,17 +329,67 @@ describe("a refused change", () => {
     await waitFor(() => expect(screen.queryByText(new RegExp("break-glass", "i"))).toBeNull());
   });
 
-  it("puts the switch back where it was", async () => {
-    // Keyed on the METHOD, not the path: the list read and the toggle share a
-    // prefix, so matching on path alone would reject the initial load too.
-    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
-      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
-      return Promise.reject(new BffError(409, REFUSAL, "last_auth_method"));
+  /**
+   * The other half of the clearing rule, and the case the two-method test
+   * cannot see.
+   *
+   * A 409 is a claim about the INSTANCE ("one method must remain enabled"), so
+   * any success makes it stale. A 403 or 404 is a claim about ONE row, and an
+   * unrelated method toggling successfully does not make it untrue. Clearing
+   * those would leave the admin with a switch that snapped back and nothing
+   * saying why.
+   */
+  it("keeps a per-row refusal when a different method succeeds", async () => {
+    const THREE = [...BOTH_ON, { method: "webauthn", enabled: true, updated_at: "2026-09-18T00:00:00.000Z" }];
+    bffFetchMock.mockImplementation((path: string, init?: { method?: string }) => {
+      if (!init?.method) return Promise.resolve({ methods: THREE });
+      if (path.endsWith("/email_otp")) {
+        return Promise.reject(new BffError(403, "Admin role required", "FORBIDDEN"));
+      }
+      return Promise.resolve({ method: "webauthn", enabled: false, updated_at: "x" });
     });
     renderPage();
 
-    const toggle = await screen.findByLabelText("Email code sign-in");
-    fireEvent.click(toggle);
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+    await screen.findByText(/no longer have admin access/i);
+
+    fireEvent.click(screen.getByLabelText("webauthn sign-in"));
+
+    // Wait for the success to have been processed — the PATCH resolving is what
+    // triggers the clearing rule under test.
+    await waitFor(() =>
+      expect(
+        bffFetchMock.mock.calls.some(
+          ([path, init]) => String(path).endsWith("/webauthn") && init?.method === "PATCH",
+        ),
+      ).toBe(true),
+    );
+
+    // Still true of that row, so still shown. Clearing it would leave a switch
+    // that snapped back with nothing saying why.
+    expect(screen.getByText(/no longer have admin access/i)).toBeTruthy();
+  });
+
+  it("moves the switch optimistically, then puts it back when refused", async () => {
+    let settle: (value: unknown) => void = () => {};
+    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
+      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
+      return new Promise((_resolve, reject) => {
+        settle = () => reject(new BffError(409, REFUSAL, "last_auth_method"));
+      });
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+
+    // FIRST the optimistic move, or this case is tautological: asserting only
+    // the final "checked" passes when the switch never moved at all, which is
+    // what a deleted optimistic write or a deleted rollback both look like.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Email code sign-in").getAttribute("data-state")).toBe("unchecked"),
+    );
+
+    settle(undefined);
 
     await waitFor(() =>
       expect(screen.getByLabelText("Email code sign-in").getAttribute("data-state")).toBe("checked"),

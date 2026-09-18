@@ -44,7 +44,11 @@ export async function GET() {
     const methods = dto?.methods ?? [];
     const unknown = methods.filter((m) => !isKnownAuthMethod(m.method)).map((m) => m.method);
     if (unknown.length > 0) {
-      console.error("[auth-methods] backend listed methods this build does not know", { unknown });
+      // `warn`, not `error`: the route deliberately passes the row through, so
+      // this is drift arriving rather than a failure. It fires per request
+      // while the condition lasts, which on an admin-only screen is acceptable
+      // noise for a signal that the backend has moved ahead of this build.
+      console.warn("[auth-methods] backend listed methods this build does not know", { unknown });
     }
 
     return NextResponse.json(dto);
