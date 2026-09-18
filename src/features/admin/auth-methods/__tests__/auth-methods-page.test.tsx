@@ -222,6 +222,31 @@ describe("a refused change", () => {
     expect(await screen.findByText(new RegExp("break-glass", "i"))).toBeTruthy();
   });
 
+  /**
+   * A refusal describes the SCREEN ("this would leave no way to sign in"), not
+   * one row. Once any toggle succeeds that claim is stale, and an alert still
+   * asserting it contradicts the switches next to it.
+   */
+  it("clears a stale refusal once another toggle succeeds", async () => {
+    let failNext = true;
+    bffFetchMock.mockImplementation((_path: string, init?: { method?: string }) => {
+      if (!init?.method) return Promise.resolve({ methods: BOTH_ON });
+      if (failNext) {
+        failNext = false;
+        return Promise.reject(new BffError(409, REFUSAL, "last_auth_method"));
+      }
+      return Promise.resolve({ method: "email_password", enabled: false, updated_at: "x" });
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
+    await screen.findByText(new RegExp("break-glass", "i"));
+
+    fireEvent.click(screen.getByLabelText("Password sign-in"));
+
+    await waitFor(() => expect(screen.queryByText(new RegExp("break-glass", "i"))).toBeNull());
+  });
+
   it("puts the switch back where it was", async () => {
     // Keyed on the METHOD, not the path: the list read and the toggle share a
     // prefix, so matching on path alone would reject the initial load too.

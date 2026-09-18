@@ -26,7 +26,7 @@ const BFF_DEFAULT_409 = "Maintenance state conflict";
 
 /** `bffFetch`'s synthesised message when no `error` key was present. */
 function isSynthesised(message: string, status: number): boolean {
-  return /^BFF \d{3}\b/.test(message) && message.startsWith(`BFF ${status}`);
+  return message.startsWith(`BFF ${status}`);
 }
 
 /**

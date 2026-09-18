@@ -181,7 +181,7 @@ a new defect; it was simply the one that made someone count.
 `auth_method.toggled`, and repairing the enum in that change would be exactly the
 drive-by this registry exists to prevent. Two further reasons the fix is not the
 one-liner it looks like: `auditActionLabel`
-([`audit-presentation.ts`](../src/features/audit/audit-presentation.ts)) reads
+([`audit-presentation.ts`](../src/domain/audit/audit-presentation.ts)) reads
 `ACTION_META[action].label` with no fallback, so an enum entry without a matching
 meta row throws at runtime; and `password.changed` / `password.reset` are also
 missing from the backend's own `IsValid()` list that gates the audit read filter,

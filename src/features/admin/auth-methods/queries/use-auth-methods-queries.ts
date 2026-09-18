@@ -137,7 +137,10 @@ export function useSetAuthMethodEnabled() {
 export function usePendingAuthMethods(): Set<string> {
   const pending = useMutationState({
     filters: { mutationKey: TOGGLE_MUTATION_KEY, status: "pending" },
-    select: (mutation) => (mutation.state.variables as SetEnabledVars).method,
+    // `variables` is undefined before a mutation's first execution on some
+    // React Query paths, and `.method` on that would throw inside a selector —
+    // taking the whole screen down to disable a switch.
+    select: (mutation) => (mutation.state.variables as SetEnabledVars | undefined)?.method,
   });
-  return new Set(pending);
+  return new Set(pending.filter((method): method is string => method !== undefined));
 }

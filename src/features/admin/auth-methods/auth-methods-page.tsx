@@ -64,6 +64,14 @@ export function AuthMethodsPage() {
     setEnabled.mutate(
       { method, enabled },
       {
+        onSuccess: () => {
+          // Clear every refusal, not just this row's. A refusal reads "this
+          // would leave no way to sign in" — a claim about the whole screen,
+          // not about one row — so once any toggle succeeds the state it
+          // described is gone, and leaving it up contradicts the switches
+          // beside it.
+          setRefusals({});
+        },
         onError: (error) => {
           if (error instanceof BffError && error.status === 409) {
             // 409 on this endpoint means one thing: the guard fired. The
@@ -73,7 +81,15 @@ export function AuthMethodsPage() {
           }
           const message =
             error instanceof BffError && error.status === 404
-              ? "This method no longer exists."
+              ? // Two causes, one status, and the screen cannot tell them
+                // apart: the method really is gone, or the endpoint itself is
+                // missing because the backend has not shipped this feature
+                // yet. Naming only the first sends an operator hunting for a
+                // vanished row on a backend where no row ever existed — the
+                // mistake the list route's own 404 copy avoids by knowing
+                // which request it was. Observed in a browser against a
+                // backend without the endpoint.
+                "Couldn't change this method: the backend did not recognise it. It may have been removed, or this backend may not support sign-in method settings yet."
               : error instanceof BffError && error.status === 403
                 ? "You no longer have admin access."
                 : "Couldn't change this method. Try again.";
