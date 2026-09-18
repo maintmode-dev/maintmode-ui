@@ -40,9 +40,7 @@ describe("the list an admin sees", () => {
     bffFetchMock.mockResolvedValue({ methods: BOTH_ON });
     renderPage();
 
-    expect((await screen.findByLabelText("Email code sign-in")).getAttribute("data-state")).toBe(
-      "checked",
-    );
+    expect((await screen.findByLabelText("Email code sign-in")).getAttribute("data-state")).toBe("checked");
     expect(screen.getByLabelText("Password sign-in").getAttribute("data-state")).toBe("checked");
   });
 

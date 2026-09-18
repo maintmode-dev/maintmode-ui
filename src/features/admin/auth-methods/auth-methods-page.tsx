@@ -96,9 +96,8 @@ export function AuthMethodsPage() {
       <header className="mb-6">
         <h1 className="text-fg-strong text-xl font-semibold">Sign-in methods</h1>
         <p className="text-fg-muted mt-1 text-sm">
-          Which built-in methods this instance offers. Turning one off closes it for new sign-ins;
-          people already signed in stay signed in. Single sign-on providers are configured under
-          Integrations.
+          Which built-in methods this instance offers. Turning one off closes it for new sign-ins; people
+          already signed in stay signed in. Single sign-on providers are configured under Integrations.
         </p>
       </header>
 
@@ -108,9 +107,9 @@ export function AuthMethodsPage() {
         <div className="border-border-strong rounded-lg border p-6">
           <p className="text-fg-strong font-medium">Sign-in method settings are unavailable</p>
           <p className="text-fg-muted mt-1 text-sm">
-            The list came back empty or could not be read. Both built-in methods are created by a
-            database migration, so an empty list means the backend is not in the state it should be
-            — this is not a screen with nothing to show.
+            The list came back empty or could not be read. Both built-in methods are created by a database
+            migration, so an empty list means the backend is not in the state it should be — this is not a
+            screen with nothing to show.
           </p>
           <Button className="mt-4" variant="outline" onClick={() => query.refetch()}>
             Try again
@@ -140,10 +139,10 @@ export function AuthMethodsPage() {
               Turn off {confirming ? authMethodLabel(confirming.method) : ""}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This is the last method switched on here, so it may leave no way to sign in. Any
-              single sign-on provider that is configured and working also counts, and this screen
-              cannot see those — so the change may well succeed. If the backend refuses it, it is
-              protecting the instance from locking everyone out.
+              This is the last method switched on here, so it may leave no way to sign in. Any single sign-on
+              provider that is configured and working also counts, and this screen cannot see those — so the
+              change may well succeed. If the backend refuses it, it is protecting the instance from locking
+              everyone out.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

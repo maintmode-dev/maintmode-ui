@@ -14,11 +14,7 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import type { AuthMethod } from "@/domain/auth/auth-method-settings";
 
-import {
-  authMethodsKey,
-  useAuthMethodsQuery,
-  useSetAuthMethodEnabled,
-} from "../use-auth-methods-queries";
+import { authMethodsKey, useAuthMethodsQuery, useSetAuthMethodEnabled } from "../use-auth-methods-queries";
 
 const BOTH: AuthMethod[] = [
   { method: "email_otp", enabled: true, updated_at: "2026-09-18T00:00:00.000Z" },
@@ -127,12 +123,9 @@ describe("toggling a method", () => {
    * just refused to disable. Harmless there (every row comes from the list);
    * here it lands on exactly the unknown-method row the screen exists to
    * surface.
-   */
-  /**
-   * The mutation proof for the paragraph above, and it took two attempts to
-   * write one that bites.
    *
-   * Asserting on a row absent from the cache does NOT distinguish the two
+   * This case is the mutation proof, and it took two attempts to write one that
+   * bites. Asserting on a row absent from the cache does NOT distinguish the two
    * implementations: the scalar guard skips the restore, and there is no row to
    * restore anyway, so both leave the cache identical. The difference only
    * becomes observable when the row EXISTS and its prior value is falsy-or-

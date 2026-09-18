@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AUTH_METHODS,
-  authMethodLabel,
-  authMethodNote,
-  isKnownAuthMethod,
-} from "../auth-method-settings";
+import { AUTH_METHODS, authMethodLabel, authMethodNote, isKnownAuthMethod } from "../auth-method-settings";
 
 /**
  * RUK-297, SPEC §3.1/§3.2. The closed set and its labels.

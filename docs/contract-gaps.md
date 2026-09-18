@@ -141,11 +141,11 @@ detector that cannot fire is worse than an acknowledged absence of one.
 The opposite direction. It does not break a screen, but it means data the
 backend has already computed never reaches the operator.
 
-| Field                    | What is on the wire                                                                                                    | Where it is lost                                                                                                                                                               | Ticket |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
-| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                              | —      |
-| `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                                     | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —      |
-| 8 audit actions          | the backend declares 23 audit actions; `AUDIT_ACTIONS` declares 15                                                     | the same `mapAuditAction` hole — see the section below                                                                                                                       | RUK-297 (found) |
+| Field                    | What is on the wire                                                                                                    | Where it is lost                                                                                                                                                               | Ticket          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
+| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                              | —               |
+| `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                                     | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —               |
+| 8 audit actions          | the backend declares 23 audit actions; `AUDIT_ACTIONS` declares 15                                                     | the same `mapAuditAction` hole — see the section below                                                                                                                         | RUK-297 (found) |
 
 **`prune-*` is the most serious entry in this file.** The other discrepancies
 mean "a field did not arrive"; this one means **"a row did not arrive"**. In a
@@ -199,7 +199,7 @@ speak up about the loss already under way.
 
 **This row has no executable assertion.** The registry's checks compare rows
 against recorded fixtures, and none of these actions appears in `audit-log.json`
-— see *Unproven captures* below for the same limitation elsewhere. It will
+— see _Unproven captures_ below for the same limitation elsewhere. It will
 acquire one the day a fixture carries any of the eight: that assertion's
 whitelist admits only `prune-*`, so it will fail and name the action itself.
 
