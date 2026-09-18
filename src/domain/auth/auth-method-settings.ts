@@ -21,6 +21,19 @@
  * with a bare identifier.
  */
 
+/**
+ * One method as the admin screen holds it.
+ *
+ * `method` is a plain `string`, not `AuthMethodName`, for the same reason the
+ * DTO is: a method this build has never heard of is still a sign-in path in
+ * force, and the screen has to be able to hold it in order to show it.
+ */
+export interface AuthMethod {
+  method: string;
+  enabled: boolean;
+  updated_at: string;
+}
+
 /** Every built-in method the backend seeds. `bootstrap` is deliberately absent:
  * it is the break-glass credential, always on and never listed. */
 export const AUTH_METHODS = ["email_otp", "email_password"] as const;
