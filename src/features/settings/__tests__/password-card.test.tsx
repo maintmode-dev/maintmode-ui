@@ -48,6 +48,18 @@ function fill(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+describe("UX-3 — the new password can be checked before it is saved", () => {
+  it("offers show/hide on the new password, on both forms", () => {
+    for (const passwordSet of [true, false]) {
+      renderCard(passwordSet);
+
+      fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+      expect((screen.getByLabelText("New password") as HTMLInputElement).type).toBe("text");
+      cleanup();
+    }
+  });
+});
+
 describe("which form is drawn — the three values of password_set", () => {
   // AC-5. `undefined` is NOT `false`: a backend that predates the field would
   // otherwise get the set-password form for every operator, and every save

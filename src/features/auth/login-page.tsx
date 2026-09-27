@@ -144,7 +144,13 @@ export function LoginPage({
   // the code being sent and the tab being reloaded gets the normal page: the
   // advertised method list is the authority on what is offered, and a cookie
   // must not resurrect a withdrawn one.
-  const [resetting, setResetting] = useState(Boolean(resetInProgressEmail) && offersPassword);
+  //
+  // Nor when the page arrived with an error (UX-11). `?code=` means a sign-in
+  // just failed — an OAuth dance, a code, a password — and that is what the
+  // user came here about. Resuming a reset over it drew both at once: the
+  // sign-in error above and step two of a flow they were not in. The binding
+  // stays; "Forgot password" resumes it.
+  const [resetting, setResetting] = useState(Boolean(resetInProgressEmail) && offersPassword && !error);
   const [resetDone, setResetDone] = useState(false);
 
   return (

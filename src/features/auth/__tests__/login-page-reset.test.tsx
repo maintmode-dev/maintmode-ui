@@ -78,6 +78,21 @@ describe("rehydration after a reload", () => {
     expect(screen.getByLabelText("Email code")).toBeTruthy();
   });
 
+  /**
+   * UX-11 (v0.2.0-rc). `?code=` means a sign-in just failed, and that is what
+   * the user came back to. Resuming a reset over it drew the sign-in error and
+   * step two of a flow the user was not in, at once.
+   */
+  it("does not resume a reset over a sign-in error", () => {
+    renderLogin({ resetInProgressEmail: "op@example.test", error: "oauth_handoff_failed" });
+
+    expect(screen.getByRole("alert").textContent).toMatch(/didn't complete/i);
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    // The binding was not thrown away: the reset is one click away.
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
   it("starts at step one when there is no binding", () => {
     renderLogin();
     fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));

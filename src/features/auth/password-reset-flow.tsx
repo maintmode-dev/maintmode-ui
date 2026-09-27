@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
+import { PasswordInput } from "@/shared/ui/domain/password-input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode, isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
 import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
@@ -117,6 +118,12 @@ export function PasswordResetFlow({
     setError(message);
   }
 
+  /** Abandons the flow from step two: discard the binding, then leave. */
+  async function leave() {
+    await restart();
+    onCancel();
+  }
+
   async function onSubmitCode(event: React.FormEvent) {
     event.preventDefault();
     if (pending || timers.expired || budgetSpent) return;
@@ -213,6 +220,10 @@ export function PasswordResetFlow({
 
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmitCode}>
+      {/* The flow's name stays on screen for step two as well (UX-2): the page
+          heading still reads "Sign in to …", and without this the code and
+          password fields below look like a sign-in form. */}
+      <h2 className="text-sm font-medium">Reset your password</h2>
       <Label htmlFor="reset-code">Enter the 6-digit code</Label>
       <p className="caption">
         Sent to {email}.{" "}
@@ -236,10 +247,9 @@ export function PasswordResetFlow({
         aria-describedby={error || dead ? "reset-error" : "reset-countdown"}
       />
       <Label htmlFor="reset-password">New password</Label>
-      <Input
+      <PasswordInput
         id="reset-password"
         name="new-password"
-        type="password"
         autoComplete="new-password"
         value={password}
         disabled={dead}
@@ -279,6 +289,12 @@ export function PasswordResetFlow({
         onClick={() => void send(email)}
       >
         {throttled ? `Request a new code (${timers.cooldown}s)` : "Request a new code"}
+      </Button>
+      {/* A way out of step two (UX-2). It discards the binding before leaving:
+          otherwise the next visit to /login would rehydrate straight back into
+          this step, which is the opposite of what "back" asked for. */}
+      <Button type="button" variant="ghost" disabled={pending} onClick={() => void leave()}>
+        Back to sign in
       </Button>
     </form>
   );

@@ -21,6 +21,19 @@ vi.mock("next/headers", () => ({
   cookies: () => Promise.resolve(store),
 }));
 
+/** The `Set-Cookie` Next would emit for a `store.delete(...)` call with these arguments. */
+async function serializeDelete(arg: unknown): Promise<string> {
+  const { ResponseCookies } = await import("next/dist/compiled/@edge-runtime/cookies");
+  const headers = new Headers();
+  const cookies = new ResponseCookies(headers);
+  if (typeof arg === "string") {
+    cookies.delete(arg);
+  } else {
+    cookies.delete(arg as Exclude<Parameters<typeof cookies.delete>[0], string>);
+  }
+  return headers.get("set-cookie") ?? "";
+}
+
 /** Encodes exactly as the module does, so round-trip tests aren't self-fulfilling. */
 function encode(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
@@ -73,10 +86,24 @@ describe("otp-nonce-cookie — the binding never reaches browser JavaScript", ()
     expect(await readOtpBinding()).toEqual({ nonce: "n-9", email: "user@example.test" });
   });
 
-  it("clears the cookie by name", async () => {
-    await clearOtpBinding();
+  /**
+   * Replayed through Next's REAL cookie serializer rather than asserted on the
+   * call: the defect was in what reached the wire. `delete(name)` serializes
+   * without `Secure`, and a browser drops a `Set-Cookie` for a `__Host-` cookie
+   * that lacks it — so the old assertion, `toHaveBeenCalledWith(name)`, pinned
+   * the bug in place.
+   */
+  it.each([
+    ["sign-in", clearOtpBinding, OTP_NONCE_COOKIE],
+    ["reset", clearPasswordResetBinding, PWRESET_NONCE_COOKIE],
+  ] as const)("clears the %s binding with a delete the browser will apply", async (_flow, clear, name) => {
+    await clear();
 
-    expect(store.delete).toHaveBeenCalledWith(OTP_NONCE_COOKIE);
+    const header = await serializeDelete(store.delete.mock.calls[0]?.[0]);
+    expect(header).toMatch(new RegExp(`^${name.replace(/\./g, "\\.")}=;`));
+    expect(header).toContain("Secure");
+    expect(header).toContain("Path=/");
+    expect(header).toMatch(/Expires=Thu, 01 Jan 1970/);
   });
 });
 
@@ -173,7 +200,7 @@ describe("two flows, two cookies (RUK-289)", () => {
     await clearPasswordResetBinding();
 
     expect(store.delete).toHaveBeenCalledTimes(1);
-    expect(store.delete).toHaveBeenCalledWith("__Host-mm.pwreset_nonce");
+    expect(store.delete.mock.calls[0]?.[0]).toMatchObject({ name: "__Host-mm.pwreset_nonce" });
   });
 
   it("keeps the reset cookie's flags and TTL identical to sign-in's", async () => {
