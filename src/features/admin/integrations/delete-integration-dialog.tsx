@@ -35,6 +35,11 @@ import { useDeleteIntegration } from "./queries/use-integrations-queries";
  * typed: a single click is not proportionate consent for an action whose blast
  * radius the product itself cannot report.
  *
+ * The name typed is the one the SCREEN shows ("Google", "Custom OIDC"), matched
+ * without regard to case — not the registry key, which appears nowhere else in
+ * the UI and read as a riddle (UX-7, v0.2.0-rc). It also points at the reversible
+ * alternative, turning the provider off, since that is usually what was meant.
+ *
  * A transport is a different matter — deleting one loses settings, not access —
  * so it keeps the plain confirmation every other destructive action here uses.
  * This is the only new interaction in this screen; everything else reuses the
@@ -61,7 +66,7 @@ export function DeleteIntegrationDialog({
   const inFlightRef = useRef(false);
 
   const isLogin = integration.kind === "login";
-  const confirmed = !isLogin || typed.trim() === integration.name;
+  const confirmed = !isLogin || typed.trim().toLowerCase() === label.trim().toLowerCase();
   const busy = deleteIntegration.isPending;
 
   const close = (next: boolean) => {
@@ -81,7 +86,8 @@ export function DeleteIntegrationDialog({
             {isLogin ? (
               <>
                 Everyone who signs in through {label} loses access, and their accounts are unlinked. This
-                cannot be undone, and the number of people affected is not available.
+                cannot be undone, and the number of people affected is not available. To stop sign-ins without
+                unlinking anyone, turn {label} off instead.
               </>
             ) : (
               <>Settings for {label} are removed. Notifications already sent are not affected.</>
@@ -92,7 +98,7 @@ export function DeleteIntegrationDialog({
         {isLogin ? (
           <div className="space-y-1.5">
             <Label htmlFor="delete-integration-confirm" className="text-xs">
-              Type <span className="font-mono">{integration.name}</span> to confirm
+              Type <span className="font-medium">{label}</span> to confirm
             </Label>
             <Input
               id="delete-integration-confirm"
@@ -106,9 +112,13 @@ export function DeleteIntegrationDialog({
 
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+          {/* The variant, not a className: `AlertDialogAction` renders `Button`
+              through `asChild`, and Slot concatenates classes without merging
+              them, so a background passed here lost to the default variant's
+              and the irreversible action drew in the primary colour (UX-7). */}
           <AlertDialogAction
+            variant="destructive"
             disabled={busy || !confirmed}
-            className="bg-[var(--destructive-solid)] text-white hover:bg-[var(--destructive-solid-hover)]"
             onClick={(e) => {
               e.preventDefault();
               if (inFlightRef.current) return;

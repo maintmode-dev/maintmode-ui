@@ -60,12 +60,42 @@ describe("deleting a sign-in provider", () => {
     expect(screen.getByText(/not available/i)).toBeTruthy();
   });
 
+  /**
+   * UX-7: the name to type is the one on screen, not the registry key — for
+   * `custom` the key appears nowhere in the UI.
+   */
+  it("asks for the name the screen shows, in any case", () => {
+    renderDialog({ ...GOOGLE, name: "custom" }, "Custom OIDC");
+
+    expect(screen.getByLabelText(/Type/).closest("div")?.textContent).toContain("Custom OIDC");
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "custom" } });
+    expect(deleteButton().hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "custom oidc" } });
+    expect(deleteButton().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("points at turning the provider off as the reversible alternative", () => {
+    renderDialog(GOOGLE);
+
+    expect(screen.getByText(/turn Google off instead/i)).toBeTruthy();
+  });
+
+  it("draws Delete as destructive, not in the primary colour", () => {
+    // Slot concatenates classes: a className background lost to the default
+    // variant's, which is how this rendered purple.
+    renderDialog(GOOGLE);
+
+    expect(deleteButton().className).toMatch(/\bbg-destructive\b/);
+    expect(deleteButton().className).not.toMatch(/\bbg-primary\b/);
+  });
+
   it("keeps Delete disabled until the provider name is typed", () => {
     renderDialog(GOOGLE);
 
     expect(deleteButton().hasAttribute("disabled")).toBe(true);
 
-    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "google" } });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Google" } });
 
     expect(deleteButton().hasAttribute("disabled")).toBe(false);
   });
@@ -73,7 +103,7 @@ describe("deleting a sign-in provider", () => {
   it("does not accept a near miss", () => {
     renderDialog(GOOGLE);
 
-    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "googl" } });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Googl" } });
 
     expect(deleteButton().hasAttribute("disabled")).toBe(true);
   });
@@ -98,7 +128,7 @@ describe("deleting a sign-in provider", () => {
     bffFetchMock.mockResolvedValue(undefined);
     renderDialog(GOOGLE);
 
-    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "google" } });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Google" } });
     fireEvent.click(deleteButton());
 
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
@@ -118,7 +148,7 @@ describe("deleting a sign-in provider", () => {
     bffFetchMock.mockReturnValue(new Promise(() => {}));
     renderDialog(GOOGLE);
 
-    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "google" } });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Google" } });
     const button = deleteButton();
     fireEvent.click(button);
     fireEvent.click(button);
@@ -137,7 +167,7 @@ describe("deleting a sign-in provider", () => {
     bffFetchMock.mockRejectedValueOnce(new Error("network"));
     renderDialog(GOOGLE);
 
-    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "google" } });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Google" } });
     fireEvent.click(deleteButton());
     await waitFor(() => expect(bffFetchMock).toHaveBeenCalledTimes(1));
 
