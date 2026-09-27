@@ -59,8 +59,10 @@ describe("the email_otp note", () => {
     expect(note?.toLowerCase()).toContain("reset");
   });
 
-  it("says nothing extra about the password method", () => {
-    expect(authMethodNote("email_password")).toBeUndefined();
+  it("says the reset link goes with the password method (UX-4)", () => {
+    // It used to say nothing, and "Forgot password?" disappearing with the
+    // switch was left for the admin to discover.
+    expect(authMethodNote("email_password")).toMatch(/Forgot password/);
   });
 
   it("says nothing about a method it does not know", () => {

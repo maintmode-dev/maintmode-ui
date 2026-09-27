@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, configure, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -74,6 +74,49 @@ describe("the list an admin sees", () => {
    * AC-6. An empty list is a fault: the migration seeds both rows. Rendering a
    * friendly empty state would tell an admin no sign-in method is configured.
    */
+  /**
+   * UX-4 (v0.2.0-rc). Turning every built-in method off went by in silence. It
+   * is allowed — SSO-only is legitimate — so this warns and never blocks, and
+   * says "may" because the screen cannot see the providers.
+   */
+  it("warns, without blocking, when every built-in method is off", async () => {
+    bffFetchMock.mockResolvedValue({ methods: BOTH_ON.map((m) => ({ ...m, enabled: false })) });
+    renderPage();
+
+    const notice = await screen.findByRole("status");
+    expect(notice.textContent).toMatch(/every built-in method is off/i);
+    expect(notice.textContent).toMatch(/may/);
+    expect(within(notice).getByRole("link", { name: "Integrations" }).getAttribute("href")).toBe(
+      "/admin/integrations",
+    );
+    // Not a block: every switch is still there to use.
+    expect(screen.getByLabelText("Password sign-in").hasAttribute("disabled")).toBe(false);
+    expect(screen.getByLabelText("Email code sign-in").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("does not warn while any method is on", async () => {
+    bffFetchMock.mockResolvedValue({ methods: [BOTH_ON[0], { ...BOTH_ON[1], enabled: false }] });
+    renderPage();
+
+    await screen.findByLabelText("Password sign-in");
+    expect(screen.queryByText(/every built-in method is off/i)).toBeNull();
+  });
+
+  it("states on the password row that the reset link goes with it", async () => {
+    bffFetchMock.mockResolvedValue({ methods: BOTH_ON });
+    renderPage();
+
+    expect(await screen.findByText(/removes “Forgot password\?”/)).toBeTruthy();
+  });
+
+  it("links Integrations from the header", async () => {
+    bffFetchMock.mockResolvedValue({ methods: BOTH_ON });
+    renderPage();
+
+    const links = await screen.findAllByRole("link", { name: "Integrations" });
+    expect(links[0]?.getAttribute("href")).toBe("/admin/integrations");
+  });
+
   it("reports an empty list as a fault, not an empty screen", async () => {
     bffFetchMock.mockResolvedValue({ methods: [] });
     renderPage();
