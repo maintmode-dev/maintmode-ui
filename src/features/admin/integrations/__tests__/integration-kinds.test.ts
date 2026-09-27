@@ -139,6 +139,12 @@ describe("INTEGRATION_KIND_META", () => {
    * here. No issuer and no scopes: plain OAuth 2.0 has neither, and a form that
    * offered them would send keys the backend's struct does not declare.
    */
+  it("draws Google's own mark, and the neutral key only for a custom provider", () => {
+    // UX-8: Google showed the generic OIDC key.
+    expect(INTEGRATION_KIND_META.google.brand).toBe("google");
+    expect(INTEGRATION_KIND_META.custom.brand).toBe("oidc");
+  });
+
   describe("github — plain OAuth 2.0, the deployment owns the endpoints", () => {
     const meta = INTEGRATION_KIND_META.github;
 

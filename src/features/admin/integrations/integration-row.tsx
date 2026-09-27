@@ -6,7 +6,7 @@ import type { Integration } from "@/domain/admin/integration";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Switch } from "@/shared/ui/shadcn/switch";
 
-import { IntegrationHealthBadge } from "./integration-health";
+import { IntegrationHealthBadge, healthAddsInformation } from "./integration-health";
 import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
@@ -78,7 +78,7 @@ export function IntegrationRow({
                 (which has no such concept) and for a login row whose state it
                 could not read, so a truthiness check would make "transports
                 show nothing" an accident of the same empty string. */}
-            {integration.kind === "login" ? (
+            {integration.kind === "login" && healthAddsInformation(integration) ? (
               <>
                 <span className="text-fg-dim">·</span>
                 <IntegrationHealthBadge health={integration.health} />

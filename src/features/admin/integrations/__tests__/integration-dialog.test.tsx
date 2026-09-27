@@ -461,6 +461,14 @@ describe("sign-in provider kinds", () => {
     expect(clientId?.textContent).toContain("*");
   });
 
+  /** UX-8: a read-only preset field read as an ordinary input to fill in. */
+  it("marks a preset field as set by the deployment, and only a preset field", () => {
+    renderDialog("google");
+
+    expect(screen.getByText("Issuer URL").closest("label")?.textContent).toMatch(/set by deployment/i);
+    expect(screen.getByText("Client ID").closest("label")?.textContent).not.toMatch(/set by deployment/i);
+  });
+
   /**
    * The credential gate, asserted against its own deletion.
    *

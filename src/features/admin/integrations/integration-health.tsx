@@ -1,4 +1,4 @@
-import type { IntegrationHealth } from "@/domain/admin/integration";
+import type { Integration, IntegrationHealth } from "@/domain/admin/integration";
 
 /**
  * What each health value means to an operator, and how alarmed to look.
@@ -37,4 +37,17 @@ export function IntegrationHealthBadge({ health }: { health?: IntegrationHealth 
   }
   const { label, tone } = HEALTH_COPY[health];
   return <span className={`text-xs ${TONE_CLASS[tone]}`}>{label}</span>;
+}
+
+/**
+ * Whether the health badge says anything the enabled flag beside it does not.
+ *
+ * A turned-off provider reports `health: "disabled"`, which rendered as
+ * "Disabled · Turned off" in the row and twice in the dialog (UX-8). Absent,
+ * `unresolved` and `unreadable` still show — they are news — and so does
+ * "Turned off" on a row that claims to be ENABLED, where it means the backend
+ * has not caught up.
+ */
+export function healthAddsInformation(integration: Pick<Integration, "enabled" | "health">): boolean {
+  return !(integration.health === "disabled" && !integration.enabled);
 }

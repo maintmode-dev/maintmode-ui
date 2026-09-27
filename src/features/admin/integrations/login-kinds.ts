@@ -88,7 +88,7 @@ export const LOGIN_KIND_META: Record<LoginIntegrationName, IntegrationKindMeta> 
   google: {
     label: "Google",
     description: "Lets people sign in with a Google account.",
-    brand: "oidc",
+    brand: "google",
     statusHint: STATUS_HINT,
     configFields: [
       {

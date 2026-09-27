@@ -230,6 +230,33 @@ describe("IntegrationsPage — the sign-in providers section", () => {
     expect(within(rowFor("Slack")).queryByText(/unknown/i)).toBeNull();
   });
 
+  /**
+   * UX-8: a turned-off provider reports `health: "disabled"`, which rendered as
+   * "Disabled · Turned off" — the same fact twice. The badge stays for health
+   * that is news, including "Turned off" on a row that claims to be enabled.
+   */
+  it("does not repeat 'Turned off' beside 'Disabled'", async () => {
+    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, enabled: false, health: "disabled" }]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).getByText("Disabled")).toBeTruthy();
+    expect(within(rowFor("Google")).queryByText("Turned off")).toBeNull();
+  });
+
+  it("still says 'Turned off' when the row claims to be enabled", async () => {
+    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, enabled: true, health: "disabled" }]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).getByText("Turned off")).toBeTruthy();
+  });
+
+  it("still reports an unreadable secret on a disabled row", async () => {
+    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, enabled: false, health: "unreadable" }]);
+    await screen.findByText("Google");
+
+    expect(within(rowFor("Google")).getByText("Secret unreadable")).toBeTruthy();
+  });
+
   it("shows a login row with no health as unknown, never as active", async () => {
     renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, health: undefined }]);
     await screen.findByText("Google");

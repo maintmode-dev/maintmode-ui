@@ -113,7 +113,7 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
  *
  * Source: the integrations-settings design snapshot.
  */
-export type IntegrationBrand = "slack" | "telegram" | "email" | "github" | "oidc";
+export type IntegrationBrand = "slack" | "telegram" | "email" | "github" | "google" | "oidc";
 
 export function IntegrationBrandIcon({
   name,
@@ -175,6 +175,10 @@ export function IntegrationBrandIcon({
     case "github":
       // Reuses the provider mark rather than a second copy of the path data.
       return <BrandIcon name="github" size={size} className={className} />;
+    case "google":
+      // Google has a mark of its own; the neutral OIDC key below is for a
+      // provider that is whoever the operator points it at (UX-8).
+      return <BrandIcon name="google" size={size} className={className} />;
     case "oidc":
       // No vendor mark: an OIDC provider is whoever the operator points it at.
       // A neutral key reads as "identity" without implying a brand.
