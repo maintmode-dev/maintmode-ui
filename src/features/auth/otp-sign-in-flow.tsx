@@ -22,7 +22,7 @@ type Step = "email" | "code";
 export interface OtpSignInFlowProps {
   label: string;
   /** Resolves with the bound code's deadline (epoch ms) on success. */
-  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number }>;
+  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number; refused?: number }>;
   submitCode: (email: string, code: string) => Promise<{ error?: string }>;
   onChangeEmail: () => Promise<void>;
 }
@@ -56,6 +56,11 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
 
       if (result.error) {
         setError(result.error);
+        // The server recognised a burnt code for this address — after a
+        // reload, or burnt in the reset flow — and says when it clears.
+        if (result.error === "otp_attempts_spent" && result.expiresAt !== undefined) {
+          spentHold.holdFor(address, Math.ceil((result.expiresAt - Date.now()) / 1000));
+        }
         timers.startCooldown();
         return;
       }
@@ -64,10 +69,12 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
       // already part-way through its life.
       timers.start(result.expiresAt);
       setCode("");
-      setAttempts(0);
+      // A kept code resumes with what it has left, not a fresh five: back out of
+      // step two after four refusals, ask again, and one attempt remains.
+      setAttempts(result.refused ?? 0);
       setStep("code");
     },
-    [requestCode, timers],
+    [requestCode, timers, spentHold],
   );
 
   async function onSubmitCode(event: React.FormEvent) {

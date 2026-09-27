@@ -2,7 +2,7 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
-import { OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
+import { OTP_MAX_ATTEMPTS, OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
 
 /**
  * Short-lived, httpOnly cookie carrying the OTP browser binding (RUK-288).
@@ -71,7 +71,25 @@ export interface OtpBinding {
    * field existed; readers must treat it as unknown.
    */
   expiresAt?: number;
+  /**
+   * Refused codes counted against this binding's code (BUG-13 follow-up). Kept
+   * in the cookie rather than in page state so a reload or the other flow can
+   * still tell the code is burnt — the backend holds a burnt code's slot until
+   * it expires, and says nothing about it.
+   */
+  fails?: number;
+  /**
+   * The user left step two ("Back to sign in", "Change email", "Use a
+   * different address"). A dormant binding resumes nothing and verifies
+   * nothing, but it is still the binding of a live code: asking again for the
+   * same address inside the reissue cooldown must wake it rather than replace
+   * it with a nonce that matches nothing.
+   */
+  dormant?: boolean;
 }
+
+/** The two flows that bind a code to this browser; the backend shares one code between them. */
+export type OtpFlow = "sign-in" | "reset";
 
 function isBinding(value: unknown): value is OtpBinding {
   if (typeof value !== "object" || value === null) {
@@ -125,7 +143,13 @@ export function isWithinReissueCooldown(
 }
 
 async function setBinding(name: string, binding: OtpBinding): Promise<number> {
-  const expiresAt = Date.now() + MAX_AGE_SECONDS * 1000;
+  // A fresh code lives the full TTL. A binding rewritten for the same code —
+  // counted, put to sleep, woken, or copied from the other flow — keeps the
+  // deadline of the code it names, never later than a fresh one would be.
+  const now = Date.now();
+  const fresh = now + MAX_AGE_SECONDS * 1000;
+  const expiresAt = binding.expiresAt === undefined ? fresh : Math.min(binding.expiresAt, fresh);
+  const maxAge = Math.max(1, Math.ceil((expiresAt - now) / 1000));
   const encoded = Buffer.from(
     JSON.stringify({
       nonce: binding.nonce,
@@ -135,11 +159,13 @@ async function setBinding(name: string, binding: OtpBinding): Promise<number> {
       // showed "Expires in 4:59" for a code minutes into its life (UX-12). The
       // cookie's own maxAge IS that TTL, so the two cannot disagree.
       exp: expiresAt,
+      ...(binding.fails ? { fails: binding.fails } : {}),
+      ...(binding.dormant ? { dormant: true } : {}),
     }),
     "utf8",
   ).toString("base64url");
   const store = await cookies();
-  store.set(name, encoded, { ...BINDING_COOKIE_ATTRIBUTES, maxAge: MAX_AGE_SECONDS });
+  store.set(name, encoded, { ...BINDING_COOKIE_ATTRIBUTES, maxAge });
   return expiresAt;
 }
 
@@ -161,7 +187,10 @@ export function setPasswordResetBinding(binding: OtpBinding): Promise<number> {
  * state — so a corrupted cookie can never surface as "wrong code" to someone
  * holding a correct one, and can never crash the sign-in callback.
  */
-async function readBinding(name: string): Promise<OtpBinding | undefined> {
+async function readBinding(
+  name: string,
+  { includeDormant = false }: { includeDormant?: boolean } = {},
+): Promise<OtpBinding | undefined> {
   const store = await cookies();
   const raw = store.get(name)?.value;
   if (!raw) {
@@ -171,11 +200,16 @@ async function readBinding(name: string): Promise<OtpBinding | undefined> {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
     if (!isBinding(parsed)) return undefined;
-    const exp = (parsed as { exp?: unknown }).exp;
+    const { exp, fails, dormant } = parsed as { exp?: unknown; fails?: unknown; dormant?: unknown };
+    // A dormant binding is invisible to everything but the request step: it
+    // must not resume a flow the user left, nor verify a code from it.
+    if (dormant === true && !includeDormant) return undefined;
     return {
       nonce: parsed.nonce,
       email: parsed.email,
       ...(typeof exp === "number" && Number.isFinite(exp) ? { expiresAt: exp } : {}),
+      ...(typeof fails === "number" && Number.isInteger(fails) && fails > 0 ? { fails } : {}),
+      ...(dormant === true ? { dormant: true } : {}),
     };
   } catch {
     return undefined;
@@ -212,4 +246,99 @@ export function clearOtpBinding(): Promise<void> {
 
 export function clearPasswordResetBinding(): Promise<void> {
   return clearBinding(PWRESET_NONCE_COOKIE);
+}
+
+const COOKIE_OF: Record<OtpFlow, string> = { "sign-in": OTP_NONCE_COOKIE, reset: PWRESET_NONCE_COOKIE };
+
+/**
+ * Counts a refused code against the flow's binding. Called on the backend's
+ * uniform 401 only: a 429 or an outage never reached the code.
+ */
+export async function recordRefusedCode(flow: OtpFlow): Promise<void> {
+  const binding = await readBinding(COOKIE_OF[flow]);
+  if (!binding) return;
+  await setBinding(COOKIE_OF[flow], { ...binding, fails: (binding.fails ?? 0) + 1 });
+}
+
+/**
+ * The user left step two. The binding is kept, asleep, instead of deleted:
+ * deleted, a request for the same address inside the reissue cooldown went to
+ * the backend, which answered 202 with no email and a nonce that matches
+ * nothing — and the one code the user had stopped verifying (QA regress of
+ * BUG-13: "Back to sign in", "Use a different address", "Change email", each
+ * followed by asking again).
+ */
+export async function putBindingToSleep(flow: OtpFlow): Promise<void> {
+  const binding = await readBinding(COOKIE_OF[flow], { includeDormant: true });
+  if (!binding || binding.dormant) return;
+  await setBinding(COOKIE_OF[flow], { ...binding, dormant: true });
+}
+
+/**
+ * A code was redeemed. The backend keeps one code for both flows, so the
+ * other flow's binding may name the same, now spent, code — both go.
+ */
+export async function clearAllBindings(): Promise<void> {
+  await clearBinding(OTP_NONCE_COOKIE);
+  await clearBinding(PWRESET_NONCE_COOKIE);
+}
+
+/**
+ * `refused` is how many attempts the kept code has already lost, so the flow
+ * resumes with the budget the backend actually has left, not a fresh five.
+ */
+export type ReissueDecision = { expiresAt: number; spent?: true; refused?: number } | undefined;
+
+/**
+ * The code-request step, for either flow: whether the backend can issue a
+ * code for this address right now, and if not, which code the flow is bound to.
+ *
+ * The backend keeps ONE code per user for sign-in and password reset alike,
+ * verifies it the same way for both, and while that code holds the slot it
+ * answers a request 202 with no email and a nonce that matches nothing. It
+ * holds the slot in two cases, and both are visible from this browser's two
+ * bindings, awake or asleep, for the same address:
+ *
+ * - the code is burnt — `OTP_MAX_ATTEMPTS` refused, counted in the binding —
+ *   until it expires: answered `spent`, so the flow says "in a few minutes"
+ *   instead of promising an email (and a reload cannot forget it);
+ * - the code is younger than the reissue cooldown: the flow is bound to it —
+ *   its own binding woken, or the other flow's copied (BUG-14: sign-in code
+ *   requested, then "Forgot password?" within the minute).
+ *
+ * `undefined` means ask the backend. Cooldowns in OTHER browsers are
+ * invisible here; that gap is the backend's to close.
+ */
+export async function bindWithinReissueCooldown(flow: OtpFlow, email: string): Promise<ReissueDecision> {
+  const other: OtpFlow = flow === "sign-in" ? "reset" : "sign-in";
+  const own = await readBinding(COOKIE_OF[flow], { includeDormant: true });
+  const sibling = await readBinding(COOKIE_OF[other], { includeDormant: true });
+  const now = Date.now();
+  const forThisAddress = (b: OtpBinding | undefined): b is OtpBinding & { expiresAt: number } =>
+    b?.expiresAt !== undefined && b.email === normalizeEmail(email) && b.expiresAt > now;
+
+  // The backend's budget is per code, not per flow: refusals are summed over
+  // every binding naming the same code.
+  const live = [own, sibling].filter(forThisAddress);
+  const refusedOf = (nonce: string) =>
+    live.filter((b) => b.nonce === nonce).reduce((n, b) => n + (b.fails ?? 0), 0);
+  const kept = (expiresAt: number, nonce: string) => {
+    const refused = refusedOf(nonce);
+    return refused > 0 ? { expiresAt, refused } : { expiresAt };
+  };
+
+  for (const binding of live) {
+    if (refusedOf(binding.nonce) >= OTP_MAX_ATTEMPTS) return { expiresAt: binding.expiresAt, spent: true };
+  }
+  if (isWithinReissueCooldown(own, email, now)) {
+    if (own.dormant) await setBinding(COOKIE_OF[flow], { ...own, dormant: false });
+    return kept(own.expiresAt, own.nonce);
+  }
+  if (isWithinReissueCooldown(sibling, email, now)) {
+    // The copy starts at zero refusals: the sibling keeps counting its own,
+    // and the sum above is what the backend sees.
+    const expiresAt = await setBinding(COOKIE_OF[flow], { ...sibling, fails: undefined, dormant: false });
+    return kept(expiresAt, sibling.nonce);
+  }
+  return undefined;
 }

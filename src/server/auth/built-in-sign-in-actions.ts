@@ -2,12 +2,7 @@
 
 import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
-import {
-  clearOtpBinding,
-  isWithinReissueCooldown,
-  readOtpBinding,
-  setOtpBinding,
-} from "@/server/auth/otp-nonce-cookie";
+import { bindWithinReissueCooldown, putBindingToSleep, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
 import { safeNext } from "@/server/auth/safe-next";
@@ -31,6 +26,8 @@ export interface SignInActionResult {
    * binding was kept rather than replaced.
    */
   expiresAt?: number;
+  /** On a kept code: attempts it has already lost (see `ReissueDecision`). */
+  refused?: number;
 }
 
 /**
@@ -47,12 +44,20 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
   }
 
   // A code for this address was issued less than the backend's reissue
-  // cooldown ago: the backend would answer 202, send nothing, and hand back a
-  // nonce that matches nothing. Keep the binding the user's one code needs, and
-  // do not spend a request on a guaranteed no-op. See `isWithinReissueCooldown`.
-  const existing = await readOtpBinding();
-  if (isWithinReissueCooldown(existing, trimmed)) {
-    return { expiresAt: existing.expiresAt };
+  // cooldown ago — by this flow or by password reset, which shares the code:
+  // the backend would answer 202, send nothing, and hand back a nonce that
+  // matches nothing. Stay bound to the code the user has, and do not spend a
+  // request on a guaranteed no-op. See `bindWithinReissueCooldown`.
+  const decision = await bindWithinReissueCooldown("sign-in", trimmed);
+  if (decision?.spent) {
+    // Burnt, and holding the backend's slot until it expires: a request now
+    // would send nothing. Said plainly, with the time it clears.
+    return { error: "otp_attempts_spent", expiresAt: decision.expiresAt };
+  }
+  if (decision) {
+    return decision.refused
+      ? { expiresAt: decision.expiresAt, refused: decision.refused }
+      : { expiresAt: decision.expiresAt };
   }
 
   try {
@@ -133,7 +138,11 @@ export async function credentialsSignInAction(
   }
 }
 
-/** Abandons the current OTP flow so the user can start over with another address. */
+/**
+ * Leaves the code step so the user can use another address. The binding is
+ * put to sleep, not deleted: coming back to the same address inside the
+ * reissue cooldown must find the one live code (see `putBindingToSleep`).
+ */
 export async function changeEmailAction(): Promise<void> {
-  await clearOtpBinding();
+  await putBindingToSleep("sign-in");
 }

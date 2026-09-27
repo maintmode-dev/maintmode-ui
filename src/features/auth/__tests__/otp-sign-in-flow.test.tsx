@@ -208,6 +208,35 @@ describe("the local attempt budget", () => {
     expect(send().hasAttribute("disabled")).toBe(false);
   });
 
+  it("resumes a kept code with the attempts it has left", async () => {
+    // Back out of step two after four refusals and ask again inside the
+    // minute: the server keeps the same code, which has one attempt left.
+    const submitCode = wrongCode();
+    await reachCodeStep({
+      submitCode,
+      requestCode: vi.fn(async () => ({ expiresAt: Date.now() + 240_000, refused: 4 })),
+    });
+
+    await failTimes(submitCode, 1);
+
+    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeDefined());
+    expect(screen.getByRole("alert").textContent).toContain("Too many attempts");
+  });
+
+  it("holds an address the server reports burnt, after a reload or from the reset flow", async () => {
+    const requestCode = vi.fn(async () => ({ error: "otp_attempts_spent", expiresAt: Date.now() + 120_000 }));
+    setup({ requestCode });
+
+    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "someone@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("in a few minutes"));
+    const send = () => screen.getByRole("button", { name: "Email me a code" });
+    expect(send().hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "other@example.test" } });
+    expect(send().hasAttribute("disabled")).toBe(false);
+  });
+
   it("counts down from the deadline the server bound", async () => {
     // A request inside the backend's reissue cooldown keeps the existing code,
     // already part-way through its life; a fresh five minutes would overstate it.

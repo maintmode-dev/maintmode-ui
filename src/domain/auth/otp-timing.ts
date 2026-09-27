@@ -17,3 +17,10 @@
  * backend's 60s, and every request overwrote the binding.
  */
 export const OTP_REISSUE_COOLDOWN_SECONDS = 60;
+
+/**
+ * The backend's `auth.otp_max_attempts`: refused codes before a code is burnt.
+ * A burnt code keeps the user's slot until it expires, so both the browser's
+ * attempt budget and the server's "is this code burnt" check count to this.
+ */
+export const OTP_MAX_ATTEMPTS = 5;

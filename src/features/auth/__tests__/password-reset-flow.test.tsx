@@ -246,6 +246,38 @@ describe("the local attempt budget", () => {
     expect(send().hasAttribute("disabled")).toBe(false);
   });
 
+  it("resumes a kept code with the attempts it has left", async () => {
+    // A code already refused four times — in this flow before backing out, or
+    // in the sign-in flow — has one attempt left, not five.
+    const props = setup({
+      requestCode: vi.fn(async () => ({ expiresAt: Date.now() + 240_000, refused: 4 })),
+      confirm: vi.fn(async () => ({ error: "password_reset_failed" })),
+    });
+    await reachCodeStep(props);
+
+    await submitCode("000000", LONG_ENOUGH);
+
+    await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("Too many attempts");
+  });
+
+  it("holds an address the server reports burnt", async () => {
+    const props = setup({
+      requestCode: vi.fn(async () => ({ error: "otp_attempts_spent", expiresAt: Date.now() + 120_000 })),
+    });
+    fireEvent.change(screen.getByLabelText("Reset your password"), { target: { value: "op@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => expect(props.requestCode).toHaveBeenCalled());
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("in a few minutes"));
+    const send = () => screen.getByRole("button", { name: "Email me a code" });
+    expect(send().hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Reset your password"), {
+      target: { value: "other@example.test" },
+    });
+    expect(send().hasAttribute("disabled")).toBe(false);
+  });
+
   it("does not spend the budget on a locally rejected password", async () => {
     const props = setup();
     await reachCodeStep(props);

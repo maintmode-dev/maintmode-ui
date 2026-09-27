@@ -1,7 +1,13 @@
 import "server-only";
 
 import { fetchBackendMe, loginWithPassword, verifyOtpCode } from "@/server/auth/backend-token-exchange";
-import { clearOtpBinding, normalizeEmail, readOtpBinding } from "@/server/auth/otp-nonce-cookie";
+import {
+  clearAllBindings,
+  clearOtpBinding,
+  normalizeEmail,
+  readOtpBinding,
+  recordRefusedCode,
+} from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
 
 /**
@@ -57,12 +63,15 @@ export async function runBuiltInSignIn(
       }
       // Wrong, expired, attempts exhausted, or a nonce the backend does not
       // recognise — one uniform 401 by contract, and the binding survives so
-      // any remaining attempts stay usable.
+      // any remaining attempts stay usable. Counted in the binding, so a burnt
+      // code stays recognisable after a reload (`bindWithinReissueCooldown`).
+      await recordRefusedCode("sign-in");
       throw new BuiltInSignInError(AUTH_ERROR_CODES.otpVerificationFailed);
     }
 
-    // Single-use: a verified code must not be replayable.
-    await clearOtpBinding();
+    // Single-use: a verified code must not be replayable — and the backend's
+    // one code may be bound by the reset flow too.
+    await clearAllBindings();
   } else {
     try {
       tokens = await loginWithPassword({ email, password: user.password ?? "" });

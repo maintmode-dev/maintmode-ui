@@ -14,6 +14,8 @@ const loginWithPassword = vi.fn();
 const fetchBackendMe = vi.fn();
 const readOtpBinding = vi.fn();
 const clearOtpBinding = vi.fn();
+const clearAllBindings = vi.fn();
+const recordRefusedCode = vi.fn();
 
 vi.mock("@/server/auth/backend-token-exchange", () => ({
   verifyOtpCode: (...args: unknown[]) => verifyOtpCode(...args),
@@ -27,6 +29,8 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
 vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   readOtpBinding: () => readOtpBinding(),
   clearOtpBinding: () => clearOtpBinding(),
+  clearAllBindings: () => clearAllBindings(),
+  recordRefusedCode: (...args: unknown[]) => recordRefusedCode(...args),
   setOtpBinding: vi.fn(),
   // The real implementation: normalization is part of the behaviour under test,
   // so stubbing it would hide the case-variant bug this file now covers.
@@ -65,6 +69,8 @@ beforeEach(() => {
   fetchBackendMe.mockReset();
   readOtpBinding.mockReset();
   clearOtpBinding.mockReset();
+  clearAllBindings.mockReset();
+  recordRefusedCode.mockReset();
 });
 
 /**
@@ -140,8 +146,10 @@ describe("BUG-2 — every verify failure is one answer", () => {
 
     expect(code).toBe(AUTH_ERROR_CODES.otpVerificationFailed);
     // The user has five attempts per code; clearing the cookie here would spend
-    // the rest of them for no reason.
+    // the rest of them for no reason. The refusal is counted in it instead, so
+    // a burnt code stays recognisable after a reload.
     expect(clearOtpBinding).not.toHaveBeenCalled();
+    expect(recordRefusedCode).toHaveBeenCalledWith("sign-in");
   });
 });
 
@@ -154,14 +162,17 @@ describe("AC-4 — the binding is cleared exactly when the flow is over", () => 
     expect(clearOtpBinding).toHaveBeenCalled();
   });
 
-  it("clears it after a successful verify so a code cannot be replayed", async () => {
+  it("clears every binding after a successful verify so a code cannot be replayed", async () => {
+    // The backend keeps one code for sign-in and reset: the reset flow may be
+    // bound to the code just spent.
     readOtpBinding.mockResolvedValue({ nonce: "n-1", email: "someone@example.test" });
     verifyOtpCode.mockResolvedValue(TOKENS);
     fetchBackendMe.mockResolvedValue(ME);
 
     await callSignIn({ provider: "backend-login" }, OTP_USER);
 
-    expect(clearOtpBinding).toHaveBeenCalledTimes(1);
+    expect(clearAllBindings).toHaveBeenCalledTimes(1);
+    expect(recordRefusedCode).not.toHaveBeenCalled();
   });
 });
 

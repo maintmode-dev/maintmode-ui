@@ -11,6 +11,10 @@ const confirmPasswordReset = vi.fn();
 const setPasswordResetBinding = vi.fn();
 const readPasswordResetBinding = vi.fn();
 const clearPasswordResetBinding = vi.fn();
+const bindWithinReissueCooldown = vi.fn();
+const putBindingToSleep = vi.fn();
+const recordRefusedCode = vi.fn();
+const clearAllBindings = vi.fn();
 const signOut = vi.fn();
 const clearActiveSession = vi.fn();
 
@@ -25,7 +29,10 @@ vi.mock("@/server/auth/otp-nonce-cookie", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/auth/otp-nonce-cookie")>();
   return {
     normalizeEmail: actual.normalizeEmail,
-    isWithinReissueCooldown: actual.isWithinReissueCooldown,
+    bindWithinReissueCooldown: (...args: unknown[]) => bindWithinReissueCooldown(...args),
+    putBindingToSleep: (...args: unknown[]) => putBindingToSleep(...args),
+    recordRefusedCode: (...args: unknown[]) => recordRefusedCode(...args),
+    clearAllBindings: () => clearAllBindings(),
     setPasswordResetBinding: (...args: unknown[]) => setPasswordResetBinding(...args),
     readPasswordResetBinding: () => readPasswordResetBinding(),
     clearPasswordResetBinding: () => clearPasswordResetBinding(),
@@ -46,6 +53,7 @@ const DEADLINE = Date.parse("2026-09-27T12:05:00Z");
 beforeEach(() => {
   vi.clearAllMocks();
   setPasswordResetBinding.mockResolvedValue(DEADLINE);
+  bindWithinReissueCooldown.mockResolvedValue(undefined);
   console.error = vi.fn();
 });
 
@@ -143,6 +151,9 @@ describe("confirming a reset", () => {
 
     expect(signOut).toHaveBeenCalledWith({ redirect: false });
     expect(clearActiveSession).toHaveBeenCalled();
+    // One code serves both flows on the backend: the sign-in binding may hold
+    // the code just spent, so both go.
+    expect(clearAllBindings).toHaveBeenCalledTimes(1);
   });
 
   // AC-4, the half that matters more. The backend has already committed the
@@ -221,6 +232,9 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "password_reset_failed" });
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+    // Counted in the cookie, so a code burnt by five refusals is still known
+    // to be burnt after a reload.
+    expect(recordRefusedCode).toHaveBeenCalledWith("reset");
   });
 
   it("answers a withdrawn mismatch code uniformly, and keeps the binding", async () => {
@@ -254,6 +268,8 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "otp_rate_limited" });
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+    // A throttled request never reached the code: no attempt was spent.
+    expect(recordRefusedCode).not.toHaveBeenCalled();
   });
 
   // §3.4's rule, made executable. A substring implementation would match the
@@ -290,6 +306,7 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "password_reset_unavailable" });
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+    expect(recordRefusedCode).not.toHaveBeenCalled();
   });
 
   // The teardown error can be a BackendAuthError whose `responseBody` is the
@@ -330,65 +347,47 @@ describe("confirming a reset", () => {
 });
 
 describe("abandoning the flow", () => {
-  it("clears only the reset binding", async () => {
+  it("puts the reset binding to sleep rather than deleting it", async () => {
+    // Deleted, coming back to the same address inside the reissue cooldown
+    // asked the backend again: 202, no email, and a nonce that matches nothing
+    // (QA regress of BUG-13).
     await abandonPasswordResetAction();
 
-    expect(clearPasswordResetBinding).toHaveBeenCalledTimes(1);
+    expect(putBindingToSleep).toHaveBeenCalledWith("reset");
+    expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 });
 
-/**
- * The backend's reissue cooldown (60s): inside it a request is answered 202
- * with NO email and a fresh nonce that matches nothing — the live code keeps
- * the nonce it was issued with. Overwriting the binding then left the user's
- * one code unverifiable (measured on the stand: code1 + nonce2 → 401). Reached
- * by a reload or a second tab. The real `isWithinReissueCooldown` decides.
- */
+/** As for sign-in: a live bound code means no backend call (BUG-13/BUG-14). */
 describe("requestPasswordResetAction — inside the backend's reissue cooldown", () => {
-  const TTL_MS = 300_000;
-  const bindingIssued = (secondsAgo: number, email = "someone@example.test") => ({
-    nonce: "live-nonce",
-    email,
-    expiresAt: Date.now() - secondsAgo * 1000 + TTL_MS,
-  });
+  it("skips the backend and reports the kept code's deadline", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000 });
 
-  it("keeps the binding and skips the call for the same address", async () => {
-    const live = bindingIssued(20);
-    readPasswordResetBinding.mockResolvedValue(live);
+    const result = await requestPasswordResetAction("  op@example.test ");
 
-    const result = await requestPasswordResetAction("  SomeOne@Example.test ");
-
-    expect(result).toEqual({ expiresAt: live.expiresAt });
+    expect(bindWithinReissueCooldown).toHaveBeenCalledWith("reset", "op@example.test");
+    expect(result).toEqual({ expiresAt: DEADLINE - 60_000 });
     expect(requestPasswordResetCode).not.toHaveBeenCalled();
     expect(setPasswordResetBinding).not.toHaveBeenCalled();
   });
 
-  it("requests normally for another address", async () => {
-    readPasswordResetBinding.mockResolvedValue(bindingIssued(20, "other@example.test"));
-    requestPasswordResetCode.mockResolvedValue({ session_nonce: "fresh" });
+  it("passes on how many attempts the kept code has already lost", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000, refused: 2 });
 
-    await requestPasswordResetAction("someone@example.test");
-
-    expect(requestPasswordResetCode).toHaveBeenCalledTimes(1);
-    expect(setPasswordResetBinding).toHaveBeenCalledWith({ nonce: "fresh", email: "someone@example.test" });
+    await expect(requestPasswordResetAction("op@example.test")).resolves.toEqual({
+      expiresAt: DEADLINE - 60_000,
+      refused: 2,
+    });
   });
 
-  it("requests normally once the cooldown has passed", async () => {
-    readPasswordResetBinding.mockResolvedValue(bindingIssued(61));
-    requestPasswordResetCode.mockResolvedValue({ session_nonce: "fresh" });
+  it("says the bound code is burnt instead of pretending a new one was sent", async () => {
+    // Five refusals burn the code until its TTL; the backend's 202 in that
+    // window sends nothing, so "check your inbox" would be a lie.
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000, spent: true });
 
-    await requestPasswordResetAction("someone@example.test");
+    const result = await requestPasswordResetAction("op@example.test");
 
-    expect(requestPasswordResetCode).toHaveBeenCalledTimes(1);
-  });
-
-  it("requests normally when the binding's age is unknown", async () => {
-    // Written before the deadline field existed: behave as before.
-    readPasswordResetBinding.mockResolvedValue({ nonce: "old", email: "someone@example.test" });
-    requestPasswordResetCode.mockResolvedValue({ session_nonce: "fresh" });
-
-    await requestPasswordResetAction("someone@example.test");
-
-    expect(requestPasswordResetCode).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ error: "otp_attempts_spent", expiresAt: DEADLINE - 60_000 });
+    expect(requestPasswordResetCode).not.toHaveBeenCalled();
   });
 });

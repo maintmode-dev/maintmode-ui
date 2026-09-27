@@ -31,7 +31,7 @@ export interface PasswordResetFlowProps {
   /** The resumed code's deadline (epoch ms), when the binding carries one. */
   initialExpiresAt?: number;
   /** Resolves with the bound code's deadline (epoch ms) on success. */
-  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number }>;
+  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number; refused?: number }>;
   confirm: (args: {
     email: string;
     code: string;
@@ -90,6 +90,11 @@ export function PasswordResetFlow({
 
     if (result.error) {
       setError(result.error);
+      // The server recognised a burnt code for this address — after a reload,
+      // or burnt in the sign-in flow — and says when it clears.
+      if (result.error === "otp_attempts_spent" && result.expiresAt !== undefined) {
+        spentHold.holdFor(address, Math.ceil((result.expiresAt - Date.now()) / 1000));
+      }
       timers.startCooldown();
       return;
     }
@@ -97,7 +102,9 @@ export function PasswordResetFlow({
     // inside the backend's reissue cooldown kept the existing code.
     timers.start(result.expiresAt);
     setCode("");
-    setAttempts(0);
+    // A kept code resumes with what it has left, not a fresh five: back out of
+    // step two after four refusals, ask again, and one attempt remains.
+    setAttempts(result.refused ?? 0);
     setStep("code");
   }
 

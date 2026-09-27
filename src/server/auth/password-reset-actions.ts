@@ -4,9 +4,12 @@ import { signOut } from "@/server/auth/auth-config";
 import { confirmPasswordReset, requestPasswordResetCode } from "@/server/auth/backend-token-exchange";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import {
+  bindWithinReissueCooldown,
+  clearAllBindings,
   clearPasswordResetBinding,
-  isWithinReissueCooldown,
   normalizeEmail,
+  putBindingToSleep,
+  recordRefusedCode,
   readPasswordResetBinding,
   setPasswordResetBinding,
 } from "@/server/auth/otp-nonce-cookie";
@@ -29,6 +32,8 @@ export interface PasswordResetActionResult {
   done?: boolean;
   /** On a code request: the bound code's deadline (epoch ms). */
   expiresAt?: number;
+  /** On a kept code: attempts it has already lost (see `ReissueDecision`). */
+  refused?: number;
 }
 
 /** A backend failure's HTTP status, when it carried one. */
@@ -55,12 +60,20 @@ export async function requestPasswordResetAction(email: string): Promise<Passwor
     return { error: "invalid_email" };
   }
 
-  // Inside the backend's reissue cooldown for this address: keep the binding
-  // the one code needs rather than overwrite it with a nonce that matches
-  // nothing (see `isWithinReissueCooldown`).
-  const existing = await readPasswordResetBinding();
-  if (isWithinReissueCooldown(existing, trimmed)) {
-    return { expiresAt: existing.expiresAt };
+  // Inside the backend's reissue cooldown for this address — after a reset
+  // request or a sign-in request, which shares the code: stay bound to the
+  // code the user has rather than to a nonce that matches nothing (see
+  // `bindWithinReissueCooldown`).
+  const decision = await bindWithinReissueCooldown("reset", trimmed);
+  if (decision?.spent) {
+    // Burnt, and holding the backend's slot until it expires — a request now
+    // would send nothing.
+    return { error: "otp_attempts_spent", expiresAt: decision.expiresAt };
+  }
+  if (decision) {
+    return decision.refused
+      ? { expiresAt: decision.expiresAt, refused: decision.refused }
+      : { expiresAt: decision.expiresAt };
   }
 
   try {
@@ -146,13 +159,16 @@ export async function confirmPasswordResetAction(args: {
     // Everything else is the deliberate collapse, by contract a single 401:
     // wrong code, expired, attempts exhausted, a nonce the backend does not
     // recognise. The binding is KEPT — attempts may remain, and discarding a
-    // still-usable code is worse than a retry.
+    // still-usable code is worse than a retry — and the refusal is counted in
+    // it, so a burnt code stays recognisable after a reload.
+    await recordRefusedCode("reset");
     return { error: AUTH_ERROR_CODES.passwordResetFailed };
   }
 
   // Past this point the password IS changed and every session is revoked. The
-  // teardown below can fail; the confirmation cannot be conditional on it.
-  await clearPasswordResetBinding();
+  // teardown below can fail; the confirmation cannot be conditional on it. The
+  // code is spent, and the sign-in flow may be bound to the same one.
+  await clearAllBindings();
 
   try {
     // Without this the NextAuth cookie outlives the backend session: `proxy.ts`
@@ -173,7 +189,12 @@ export async function confirmPasswordResetAction(args: {
   return { done: true };
 }
 
-/** Abandons the reset flow so the user can start again with another address. */
+/**
+ * Leaves the reset flow ("Back to sign in", "Use a different address", a spent
+ * budget). The binding is put to sleep, not deleted: it no longer resumes the
+ * flow, but asking again for the same address inside the reissue cooldown must
+ * find the one live code (see `putBindingToSleep`).
+ */
 export async function abandonPasswordResetAction(): Promise<void> {
-  await clearPasswordResetBinding();
+  await putBindingToSleep("reset");
 }

@@ -11,8 +11,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requestOtpCode = vi.fn();
 const signIn = vi.fn();
 const setOtpBinding = vi.fn();
-const readOtpBinding = vi.fn();
+const bindWithinReissueCooldown = vi.fn();
 const clearOtpBinding = vi.fn();
+const putBindingToSleep = vi.fn();
 
 /** The deadline the mocked cookie write reports back. */
 const DEADLINE = Date.parse("2026-09-27T12:05:00Z");
@@ -23,26 +24,25 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
 vi.mock("@/server/auth/auth-config", () => ({
   signIn: (...args: unknown[]) => signIn(...args),
 }));
-vi.mock("@/server/auth/otp-nonce-cookie", async (importOriginal) => {
-  // The keep-the-binding rule is the real one: stubbing it would make the
-  // cooldown tests agree with themselves.
-  const actual = await importOriginal<typeof import("@/server/auth/otp-nonce-cookie")>();
-  return {
-    isWithinReissueCooldown: actual.isWithinReissueCooldown,
-    setOtpBinding: (...args: unknown[]) => setOtpBinding(...args),
-    readOtpBinding: () => readOtpBinding(),
-    clearOtpBinding: () => clearOtpBinding(),
-  };
-});
+// The keep-the-binding decision itself is tested on the real module in
+// otp-nonce-cookie.test.ts; here only what the action does with its answer.
+vi.mock("@/server/auth/otp-nonce-cookie", () => ({
+  bindWithinReissueCooldown: (...args: unknown[]) => bindWithinReissueCooldown(...args),
+  setOtpBinding: (...args: unknown[]) => setOtpBinding(...args),
+  clearOtpBinding: () => clearOtpBinding(),
+  putBindingToSleep: (...args: unknown[]) => putBindingToSleep(...args),
+}));
 
-const { credentialsSignInAction, requestOtpAction } = await import("@/server/auth/built-in-sign-in-actions");
+const { changeEmailAction, credentialsSignInAction, requestOtpAction } =
+  await import("@/server/auth/built-in-sign-in-actions");
 
 beforeEach(() => {
   requestOtpCode.mockReset();
   signIn.mockReset();
   setOtpBinding.mockReset().mockResolvedValue(DEADLINE);
-  readOtpBinding.mockReset().mockResolvedValue(undefined);
+  bindWithinReissueCooldown.mockReset().mockResolvedValue(undefined);
   clearOtpBinding.mockReset();
+  putBindingToSleep.mockReset();
 });
 
 describe("requestOtpAction — the address must stay unknowable", () => {
@@ -175,33 +175,42 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
 });
 
 /**
- * The backend's reissue cooldown (60s): inside it a request is answered 202
- * with NO email and a fresh nonce that matches nothing — the live code keeps
- * the nonce it was issued with. Overwriting the binding then left the user's
- * one code unverifiable (measured on the stand: code1 + nonce2 → 401). Reached
- * by a reload or a second tab. The real `isWithinReissueCooldown` decides.
+ * Inside the backend's reissue cooldown a request is answered 202 with NO
+ * email and a nonce that matches nothing (BUG-13/BUG-14). When the cookie
+ * module says the flow is already bound to a live code, the action must not
+ * call the backend and must report that code's deadline.
  */
 describe("requestOtpAction — inside the backend's reissue cooldown", () => {
-  const TTL_MS = 300_000;
-  const bindingIssued = (secondsAgo: number, email = "someone@example.test") => ({
-    nonce: "live-nonce",
-    email,
-    expiresAt: Date.now() - secondsAgo * 1000 + TTL_MS,
-  });
+  it("skips the backend and reports the kept code's deadline", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000 });
 
-  it("keeps the binding and skips the call for the same address", async () => {
-    const live = bindingIssued(20);
-    readOtpBinding.mockResolvedValue(live);
+    const result = await requestOtpAction("  someone@example.test ");
 
-    const result = await requestOtpAction("  SomeOne@Example.test ");
-
-    expect(result).toEqual({ expiresAt: live.expiresAt });
+    expect(bindWithinReissueCooldown).toHaveBeenCalledWith("sign-in", "someone@example.test");
+    expect(result).toEqual({ expiresAt: DEADLINE - 60_000 });
     expect(requestOtpCode).not.toHaveBeenCalled();
     expect(setOtpBinding).not.toHaveBeenCalled();
   });
 
-  it("requests normally for another address", async () => {
-    readOtpBinding.mockResolvedValue(bindingIssued(20, "other@example.test"));
+  it("passes on how many attempts the kept code has already lost", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000, refused: 4 });
+
+    await expect(requestOtpAction("someone@example.test")).resolves.toEqual({
+      expiresAt: DEADLINE - 60_000,
+      refused: 4,
+    });
+  });
+
+  it("says the bound code is burnt instead of pretending a new one was sent", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000, spent: true });
+
+    const result = await requestOtpAction("someone@example.test");
+
+    expect(result).toEqual({ error: "otp_attempts_spent", expiresAt: DEADLINE - 60_000 });
+    expect(requestOtpCode).not.toHaveBeenCalled();
+  });
+
+  it("requests a code when nothing live is bound", async () => {
     requestOtpCode.mockResolvedValue({ session_nonce: "fresh" });
 
     await requestOtpAction("someone@example.test");
@@ -209,23 +218,15 @@ describe("requestOtpAction — inside the backend's reissue cooldown", () => {
     expect(requestOtpCode).toHaveBeenCalledTimes(1);
     expect(setOtpBinding).toHaveBeenCalledWith({ nonce: "fresh", email: "someone@example.test" });
   });
+});
 
-  it("requests normally once the cooldown has passed", async () => {
-    readOtpBinding.mockResolvedValue(bindingIssued(61));
-    requestOtpCode.mockResolvedValue({ session_nonce: "fresh" });
+describe("changeEmailAction — leaving step two", () => {
+  it("puts the binding to sleep rather than deleting it", async () => {
+    // Deleted, coming back to the same address inside the reissue cooldown
+    // asked the backend again: 202, no email, a nonce that matches nothing.
+    await changeEmailAction();
 
-    await requestOtpAction("someone@example.test");
-
-    expect(requestOtpCode).toHaveBeenCalledTimes(1);
-  });
-
-  it("requests normally when the binding's age is unknown", async () => {
-    // Written before the deadline field existed: behave as before.
-    readOtpBinding.mockResolvedValue({ nonce: "old", email: "someone@example.test" });
-    requestOtpCode.mockResolvedValue({ session_nonce: "fresh" });
-
-    await requestOtpAction("someone@example.test");
-
-    expect(requestOtpCode).toHaveBeenCalledTimes(1);
+    expect(putBindingToSleep).toHaveBeenCalledWith("sign-in");
+    expect(clearOtpBinding).not.toHaveBeenCalled();
   });
 });

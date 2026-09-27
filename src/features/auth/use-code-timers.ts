@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
+import { OTP_MAX_ATTEMPTS, OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
 
 /**
  * The countdown, resend cooldown and double-submit guard shared by the two
@@ -27,17 +27,16 @@ export const CODE_TTL_SECONDS = 300;
 export const RESEND_COOLDOWN_SECONDS = OTP_REISSUE_COOLDOWN_SECONDS;
 
 /**
- * The backend's `auth.otp_max_attempts`. It claims an attempt BEFORE comparing
- * the code, so a submit with a stale nonce spends one exactly like a wrong
- * digit does — which is why the caller counts every submit rather than only the
- * plausible ones.
+ * The backend's `auth.otp_max_attempts` (`OTP_MAX_ATTEMPTS`, shared with the
+ * server's burnt-code check). Only a refused code counts: a 429 or an outage
+ * never reached the code.
  *
  * Deliberately the configured value (5) and not the backend's ceiling for that
  * setting (10). Erring high would hand the user five doomed submits against an
  * exhausted code; erring low costs at worst one premature "request a new code",
  * which is the state they were heading for anyway.
  */
-export const MAX_CODE_ATTEMPTS = 5;
+export const MAX_CODE_ATTEMPTS = OTP_MAX_ATTEMPTS;
 
 export interface CodeTimers {
   /** Seconds until the code is presumed dead. Zero means expired. */
