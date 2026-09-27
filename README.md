@@ -102,95 +102,71 @@ Two local-only flags, both ignored when `NODE_ENV=production`:
 Neither can be turned on in a production build; that is deliberate. See
 [SECURITY.md](SECURITY.md).
 
-### Provider sign-in is configured on the backend
+### Sign-in methods
 
-This app is no longer an OAuth client. The dance runs on the backend, which
-holds the client secret; the button on `/login` redirects the browser to the
-backend and `/auth/oauth/callback` receives the result. There is nothing to
-configure here beyond `MAINTMODE_AUTH_PUBLIC_BASE_URL` above — the provider
-client, its secret and its redirect URI are all backend configuration.
+Two kinds of sign-in exist, and they are configured in different places.
 
-### Upgrading to the backend OAuth dance
+**Built-in methods** — email + password and a one-time code sent by email — are
+switched on and off by an administrator under **Admin → Sign-in methods**. A fresh
+install has email + password **on** and email code **off**. Turning a method off
+removes it from `/login`; turning email + password off also removes "Forgot
+password?", which lives inside the password form.
 
-If you are upgrading an existing installation, four things need doing, and the
-order matters.
+**Providers** — Google, GitHub, or any OpenID Connect IdP as "Custom OIDC" — are
+created by an administrator under **Admin → Integrations → Sign-in providers**.
+Every provider that is enabled and healthy appears on `/login` and on invitation
+pages by its display name; nothing in this app lists them by hand.
 
-**1. Arm the backend first, and check it.** The dance routes register only when
-**seven** values are set: four under `oauth_providers.google` — `client_secret`,
-`redirect_uri`, `auth_url`, `token_url` — plus `app.frontend_url`,
-`app.oauth_callback_path` and `app.oauth_cookie_path`.
+It is legitimate to run with every built-in method off (SSO only). But with no
+built-in method and no working provider, nobody can sign in; the Sign-in methods
+screen warns when every built-in method is off.
 
-What that means in the shipped samples, which is not symmetric:
+### Setting up a sign-in provider
 
-- **All four provider keys ship commented out. Uncomment all four** — two are not
-  enough, and the gate rejects an empty `auth_url` or `token_url` even though
-  those lines already carry Google's own endpoints. Uncomment the four _key_
-  lines: the same block holds prose comments that begin with the word `auth_url`.
-- **`redirect_uri` ships as a placeholder in the prod sample**
-  (`https://<your-domain>/…`; the local, dev and test samples carry a working
-  `localhost` value) and must
-  be the **external** URL, including the gateway's `/auth` prefix. Uncommented
-  verbatim it is still a non-empty string, so the gate passes, the routes
-  register, and the check below reports success — while every sign-in dies at the
-  provider with `redirect_uri_mismatch`, which never reaches our logs.
-- **`app.frontend_url` is also a prod-sample placeholder**
-  (`https://maintmode.example.com`) and is the most dangerous value here. The dance's success redirect — carrying a
-  live one-time code — is built from it. Left at the sample value, every completed
-  sign-in hands an auth code to a domain you do not control. The `redirect_uri`
-  placeholder fails safely because the provider rejects it; this one does not fail
-  at all, it just goes somewhere else.
-- **`app.oauth_callback_path` and `app.oauth_cookie_path` ship correct.** Leave
-  them unless you have a reason.
+This app is not an OAuth client. The backend runs the whole dance and holds the
+client secret; the provider button redirects the browser to the backend, and
+`/auth/oauth/callback` here receives the result. On this side the only setting is
+`MAINTMODE_AUTH_PUBLIC_BASE_URL` (see above).
 
-Then verify by hand, because the frontend cannot: the call is a browser
-navigation, not a request this app makes. The backend is up, **and**
-`GET <MAINTMODE_AUTH_PUBLIC_BASE_URL>/api/v1/login/oauth/google/start` answers a
-redirect rather than 404.
+**1. Arm the dance on the backend.** Three values in the backend's
+`app.config.yaml`, all required — leave any of them empty and the dance routes do
+not register, so every provider button leads to a 404:
 
-That check proves the routes are **registered**, not that they are **correct** —
-a placeholder passes it. It can also answer 429: that rate-limit bucket is shared
-with password sign-in, so a burst there makes this report a false negative.
+- `app.frontend_url` — the external URL of **this** app. The dance's success
+  redirect, carrying a live one-time code, is built from it. The prod sample ships
+  `https://maintmode.example.com`: left as it is, every completed sign-in hands an
+  auth code to a domain you do not control, and nothing fails to tell you.
+- `app.oauth_callback_path` — this app's receiver route, `/auth/oauth/callback`.
+  The two must agree; the shipped values already do.
+- `app.oauth_cookie_path` — the external path prefix of the backend's OAuth routes
+  as the browser sees them (`/auth/api/v1/login/oauth` behind the shipped gateway).
 
-Deploying this frontend first breaks provider sign-in until the backend is armed.
-It is not a lockout: email + password stays on the login page.
+**2. Create the provider in the app.** Admin → Integrations → Sign-in providers →
+Set up. You supply the client ID, the client secret and the redirect URI; for
+Google and GitHub the deployment fills in the rest (the preset catalog under
+`oauth_providers.presets` in the backend config). The redirect URI is the
+backend's external callback:
 
-**2. A half-filled block fails silently — do not wait for an error.** Setting
-some of the four but not all leaves the dance unregistered and `/start` still
-answering 404, on an instance that booted cleanly. There is no panic, and there
-is no warning: every shipped `app.config.yaml` sample claims a partial block
-"logs a warning and registers nothing", and **no such warning exists** — that
-sample comment is a known upstream inaccuracy, tracked separately. The `/start`
-check above is the only signal you get.
+```
+<MAINTMODE_AUTH_PUBLIC_BASE_URL>/api/v1/login/oauth/<provider>/callback
+```
 
-One genuine boot failure does exist nearby: `client_secret` is a `<secret:…>`
-reference, and the resolver hard-fails on a **missing key**, not on a placeholder
-value. Every sample secrets file already ships that key, so this bites only a
-secrets file that predates the dance, or a store built from an older key set —
-there, add the key by hand first. Note the sampled values are themselves
-placeholders: they boot fine and then fail every token exchange.
+where `<provider>` is `google`, `github` or `custom` — for example
+`https://maintmode.example.com/auth/api/v1/login/oauth/google/callback`.
 
-**3. Re-register the redirect URI** in the provider's console, from
-`<MAINTMODE_APP_BASE_URL>/api/auth/callback/google` to the backend's external
-callback. This is manual and outside both repositories. A mismatch is rejected by
-the provider on its own side and **never appears in any of our logs**.
+**3. Register the same redirect URI with the provider** (Google Cloud Console, the
+GitHub OAuth app, your IdP). A mismatch is rejected on the provider's side and
+never appears in any of our logs.
 
-Because of this, rolling back is three steps, not two: revert the frontend,
-restore `MAINTMODE_GOOGLE_OAUTH_CLIENT_ID` and `MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET`
-(without them the older build will not boot), and re-register the old redirect
-URI.
+The row's status on the Integrations screen says whether the backend has picked
+the provider up ("Active"), has not yet ("Not picked up yet"), or cannot read its
+secret.
 
-**4. Keep the callback paths in agreement.** The backend's
-`app.oauth_callback_path` and this app's receiver route are one shared value. The
-shipped default (`/auth/oauth/callback`) already agrees; if you customized it,
-change both.
-
-> **Accepting an invitation goes through the dance too.** Opening an invitation
-> link and choosing the provider starts the same dance as an ordinary sign-in,
-> carrying the invitation; the backend applies the invitation's roles and spends
-> the invitation from inside it. So invitation acceptance needs the dance armed
-> exactly as provider sign-in does — see step 1 above. Until then the button
-> leads to the same 404, and the invited person has no other route: unlike
-> `/login`, this page has no password form to fall back to.
+> **Accepting an invitation needs a provider.** An invitation is accepted by
+> signing in through a provider, which applies the invitation's roles inside the
+> dance; the invitation page offers every enabled provider. On an instance with
+> no provider, invitations cannot be accepted — the page says so and the
+> invitation stays valid.
 
 ## First login (bootstrap admin)
 
@@ -198,9 +174,8 @@ On a fresh installation the **first person to sign in becomes the
 administrator**. This is first-login-wins: there is no invite, no claim code, and
 no lock on the window.
 
-Note for a fresh install: provider sign-in requires the backend dance to be
-armed (see above). Until it is, use email + password, which is always available
-on the login page.
+Until a provider is set up (above), sign in with email + password, which is on by
+default.
 
 **Sign in yourself before the instance is reachable from anywhere else.** If a
 stranger reaches your `/login` first, they get the admin account. Bring the app
