@@ -38,6 +38,46 @@ async function submitCode(code: string, password: string) {
   fireEvent.click(screen.getByRole("button", { name: "Set new password" }));
 }
 
+/** UX-2 (v0.2.0-rc): step two kept no name and no way out. */
+describe("step two keeps its context and an exit", () => {
+  it("keeps the flow's name on screen", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+
+    expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
+  });
+
+  it("goes back to sign-in, discarding the binding FIRST", async () => {
+    // Order matters: leaving with the binding alive would rehydrate the next
+    // visit to /login straight back into this step.
+    const order: string[] = [];
+    const props = setup({
+      abandon: vi.fn(async () => {
+        order.push("abandon");
+      }),
+      onCancel: vi.fn(() => {
+        order.push("cancel");
+      }),
+    });
+    await reachCodeStep(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    await waitFor(() => expect(props.onCancel).toHaveBeenCalled());
+    expect(order).toEqual(["abandon", "cancel"]);
+  });
+
+  it("lets the new password be shown before it is set", async () => {
+    // UX-3: a typo here means another code and another reset.
+    const props = setup();
+    await reachCodeStep(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+
+    expect((screen.getByLabelText("New password") as HTMLInputElement).type).toBe("text");
+  });
+});
+
 describe("the reset flow's two steps", () => {
   it("asks for an address, then for a code and a new password", async () => {
     const props = setup();

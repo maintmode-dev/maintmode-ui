@@ -8,6 +8,7 @@ import { BffError } from "@/features/_shared/api/bff-fetch";
 import { useChangePassword } from "@/features/_shared/queries/use-me-query";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
+import { PasswordInput } from "@/shared/ui/domain/password-input";
 import { Label } from "@/shared/ui/shadcn/label";
 
 /**
@@ -142,10 +143,11 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
       ) : null}
 
       <Label htmlFor="new-password">New password</Label>
-      <Input
+      {/* Show/hide rather than a confirm field (UX-3): the new password is typed
+          once with nothing to compare it against. */}
+      <PasswordInput
         id="new-password"
         name="new-password"
-        type="password"
         autoComplete="new-password"
         value={next}
         onChange={(e) => setNext(e.target.value)}
