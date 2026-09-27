@@ -20,8 +20,9 @@ import type { ConfigFieldMeta, IntegrationKindMeta, SecretMeta } from "./integra
  *    form blocks `http://` instead of warning;
  *  - `allowed_hosted_domains` is nested under `jwtverifier`.
  *
- * `github` is absent. The backend serves it as of `7a6565d`; this frontend has
- * no descriptor for it, which fails closed — see `LOGIN_INTEGRATION_NAMES`.
+ * `github` is the plain OAuth 2.0 sibling, from `internal/integrationkinds/
+ * oauth2.go`: no issuer and no scopes, and three endpoint URLs the preset owns
+ * in place of an issuer.
  *
  * ## The preset flags mirror a backend deployment file
  *
@@ -159,6 +160,59 @@ export const LOGIN_KIND_META: Record<LoginIntegrationName, IntegrationKindMeta> 
         // Both fields are operator-editable here, and both are part of the
         // secret's cryptographic binding on the backend.
         rebindsOn: ["issuer_url", "client_id"],
+      },
+    ],
+  },
+  github: {
+    label: "GitHub",
+    description: "Lets people sign in with a GitHub account.",
+    brand: "github",
+    statusHint: STATUS_HINT,
+    // Mirrors `OAuth2Settings`. Everything but the client id and the callback is
+    // the deployment's: `login.presets.github` in the backend's app.config.yaml
+    // fixes the label and the three endpoints, so an existing provider name
+    // cannot be re-pointed at a host someone else controls.
+    configFields: [
+      {
+        name: "display_name",
+        label: "Display name",
+        optional: false,
+        preset: true,
+        help: "Set by this deployment.",
+      },
+      { name: "client_id", label: "Client ID", optional: false },
+      REDIRECT_URI,
+      {
+        name: "authorize_url",
+        label: "Authorization URL",
+        optional: false,
+        url: true,
+        preset: true,
+        help: "Set by this deployment.",
+      },
+      {
+        name: "token_url",
+        label: "Token URL",
+        optional: false,
+        url: true,
+        preset: true,
+        help: "Set by this deployment.",
+      },
+      {
+        name: "api_base_url",
+        label: "API base URL",
+        optional: false,
+        url: true,
+        preset: true,
+        help: "Set by this deployment.",
+      },
+    ],
+    secrets: [
+      {
+        ...CLIENT_SECRET,
+        // GitHub has no issuer, so the AAD binds the client id alone
+        // (`OAuth2Settings.AADBinding`).
+        rebindsOn: ["client_id"],
       },
     ],
   },
