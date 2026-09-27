@@ -246,12 +246,12 @@ describe("IntegrationsPage — the sign-in providers section", () => {
   it("drops an unknown login provider and says so", async () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, id: "i-gh", name: "github" }]);
+      renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, id: "i-gl", name: "gitlab" }]);
       await screen.findByText("Google");
 
-      expect(screen.queryByText("github")).toBeNull();
+      expect(screen.queryByText("gitlab")).toBeNull();
       expect(spy).toHaveBeenCalled();
-      expect(JSON.stringify(spy.mock.calls)).toContain("github");
+      expect(JSON.stringify(spy.mock.calls)).toContain("gitlab");
     } finally {
       spy.mockRestore();
     }

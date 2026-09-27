@@ -28,12 +28,11 @@ describe("integration vocabulary", () => {
 
   /**
    * The replacements for `oidc`/`github_oauth`, which named nothing. These are
-   * the backend's own names. `github` is absent because it lives only on an
-   * backend registry entry this frontend has no descriptor for — see the
-   * constant's docblock.
+   * the backend's own names — including `github` (BUG-5), which the backend
+   * served for a whole release while this screen could not show it.
    */
-  it("names the two sign-in providers the backend serves", () => {
-    expect([...LOGIN_INTEGRATION_NAMES]).toEqual(["google", "custom"]);
+  it("names the three sign-in providers the backend serves", () => {
+    expect([...LOGIN_INTEGRATION_NAMES]).toEqual(["google", "custom", "github"]);
   });
 });
 
@@ -71,13 +70,17 @@ describe("isLoginIntegrationName", () => {
     expect(isLoginIntegrationName("custom")).toBe(true);
   });
 
+  it("accepts github, now that it has a descriptor (BUG-5)", () => {
+    expect(isLoginIntegrationName("github")).toBe(true);
+  });
+
   /**
-   * `github` IS served by the backend now. It is refused here because this
-   * frontend has no descriptor for it, and failing closed — invisible rather
-   * than half-configured — is the right side to err on until one exists.
+   * A name the backend may add next — its OAuth 2.0 kind is written to take
+   * `gitlab` as a new preset — must still fail closed until this frontend has a
+   * descriptor for it: invisible rather than half-configured.
    */
-  it("rejects github, which this frontend has no descriptor for", () => {
-    expect(isLoginIntegrationName("github")).toBe(false);
+  it("rejects a provider name this frontend has no descriptor for", () => {
+    expect(isLoginIntegrationName("gitlab")).toBe(false);
   });
 
   it("rejects a transport name and a category", () => {
@@ -119,7 +122,7 @@ describe("isRoutableIntegrationPair — the BFF route whitelist", () => {
   });
 
   it("refuses an unknown name in a known category", () => {
-    expect(isRoutableIntegrationPair("login", "github")).toBe(false);
+    expect(isRoutableIntegrationPair("login", "gitlab")).toBe(false);
     expect(isRoutableIntegrationPair("notify", "carrier_pigeon")).toBe(false);
   });
 

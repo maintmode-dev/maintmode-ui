@@ -47,23 +47,18 @@ export type NotificationIntegrationName = (typeof NOTIFICATION_INTEGRATION_NAMES
  * The system half for the sign-in providers this UI renders.
  *
  * These ARE names in the backend's vocabulary, unlike the `oidc`/`github_oauth`
- * placeholders they replace, which named nothing. The backend's registry admits
- * `(login, google)` and `(login, custom)`; both are OIDC, differing only in
- * which fields the deployment preset owns.
+ * placeholders they replace, which named nothing. `google` and `custom` are
+ * OIDC, differing only in which fields the deployment preset owns; `github` is
+ * plain OAuth 2.0 (`internal/integrationkinds/oauth2.go`) — no issuer, no
+ * scopes, and its three endpoints owned by the preset.
  *
- * `github` is deliberately absent, and the reason has changed since this was
- * written. It was absent because the backend did not serve it; the backend
- * merged it (`7a6565d`) while this work was in review, so it is now a pair the
- * registry admits and this frontend simply has no descriptor for.
- *
- * That fails CLOSED — an omitted name is refused by `isRoutableIntegrationPair`
- * and the provider is invisible, rather than reachable and half-configured. It
- * is a gap to fill, not a hazard to rush: its field set is a different struct
- * (no issuer, no scopes, four preset-owned URLs), so it is a descriptor plus
- * one entry here, which is why this is a named constant rather than an inline
- * list.
+ * A name missing here fails CLOSED: `isRoutableIntegrationPair` refuses it and
+ * the screen skips the row with a logged warning, rather than drawing a
+ * half-configured form. That was `github`'s state until v0.2.0-rc (BUG-5), and
+ * it is the cost of that state worth remembering: a live sign-in provider the
+ * admin screen could neither turn off nor delete.
  */
-export const LOGIN_INTEGRATION_NAMES = ["google", "custom"] as const;
+export const LOGIN_INTEGRATION_NAMES = ["google", "custom", "github"] as const;
 export type LoginIntegrationName = (typeof LOGIN_INTEGRATION_NAMES)[number];
 
 /**
