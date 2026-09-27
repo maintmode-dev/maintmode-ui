@@ -336,6 +336,63 @@ describe("Disconnect — and the rule that can lock a person out", () => {
   });
 });
 
+/** Step 9 (web-perf) of the post-implementation pass on the v0.2.0-rc fixes. */
+describe("while the instance's list is still loading", () => {
+  const pending = () => new Promise(() => {});
+
+  it("draws no provider rows yet — a linked one would read as 'No longer offered'", () => {
+    bffFetch.mockImplementation(pending);
+    renderCard({ connectedProviders: ["google", "custom"] });
+
+    expect(row("google")).toBeNull();
+    expect(screen.queryByText(/no longer offered/i)).toBeNull();
+  });
+
+  it("scrolls to a returned outcome only once the list has settled", async () => {
+    // Scrolled to while still a skeleton, the card grew inside the viewport —
+    // a layout shift on exactly the page load the link flow adds.
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      bffFetch.mockImplementation(pending);
+      renderCard({ linkOutcome: "link_conflict" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      cleanup();
+
+      answer({ "GET /api/sign-in-methods": METHODS });
+      renderCard({ linkOutcome: "link_conflict" });
+      await screen.findByText("Corporate SSO");
+      await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1));
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+});
+
+describe("a successful Connect is terminal", () => {
+  it("keeps every action disabled while the page leaves for the provider", async () => {
+    // Between the POST resolving and the page unloading, a second click would
+    // mint a second single-use link ticket.
+    answer({
+      "GET /api/sign-in-methods": METHODS,
+      "POST /api/me/providers/custom/connect": { url: "https://auth.example/start?link=t" },
+    });
+    renderCard();
+
+    fireEvent.click(await within(await findRow("custom")).findByRole("button", { name: /Connect/ }));
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        within(row("custom"))
+          .getByRole("button", { name: /Connect/ })
+          .hasAttribute("disabled"),
+      ).toBe(true),
+    );
+  });
+});
+
 describe("the outcome of a link that just came back", () => {
   it("brings the card into view, since the person arrives at the top of the page", async () => {
     const scrollIntoView = vi.fn();

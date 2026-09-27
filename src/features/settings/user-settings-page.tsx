@@ -22,6 +22,7 @@ import { MessengerTagsFields } from "./messenger-tags-card";
 import { TimezoneCard } from "./timezone-card";
 import { PasswordCard } from "./password-card";
 import { SignInMethodsCard } from "./sign-in-methods-card";
+import { useSignInMethodsQuery } from "./queries/use-sign-in-methods";
 import type { LinkOutcome } from "@/domain/auth/link-outcome";
 import type { Role } from "@/domain/auth/permissions";
 
@@ -42,6 +43,10 @@ function initials(name: string): string {
 
 export function UserSettingsPage({ linkOutcome }: { linkOutcome?: LinkOutcome } = {}) {
   const meQuery = useMeQuery();
+  // Started here, beside `/me`, rather than only when the card mounts: the card
+  // mounts after `/me` resolves (the early return below), which made the two
+  // independent reads a waterfall. The card's own call shares this cache entry.
+  useSignInMethodsQuery();
   const [signOutAllOpen, setSignOutAllOpen] = useState(false);
 
   if (meQuery.isPending || !meQuery.data) {

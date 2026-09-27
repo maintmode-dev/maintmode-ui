@@ -61,20 +61,29 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
   const [returned] = useState(linkOutcome);
   const [actionError, setActionError] = useState<string>();
   const cardRef = useRef<HTMLDivElement>(null);
+  const scrolled = useRef(false);
 
   useEffect(() => {
     if (!returned) return;
     // A fixed id, so the toast is shown once even when the effect runs twice
     // (React StrictMode in development mounts effects twice).
     if (returned === "linked") toast.success("Sign-in method connected.", { id: "link-outcome" });
-    // The card sits below the fold, and the person arrives at the top of the
-    // page straight from the provider — without this, a failure explained here
-    // is a failure they never see. Optional-called: jsdom has no scrolling.
-    cardRef.current?.scrollIntoView?.({ block: "center" });
     // Stripped from the address bar once read, so a reload does not announce
     // the same outcome again. Not a navigation: nothing re-renders for it.
     window.history.replaceState(null, "", window.location.pathname);
   }, [returned]);
+
+  // The card sits below the fold, and the person arrives at the top of the
+  // page straight from the provider — without this, a failure explained here
+  // is a failure they never see. Once, and only after the list has settled:
+  // scrolled to while still a skeleton, the card grew inside the viewport,
+  // a layout shift on exactly the page load this flow adds. Optional-called:
+  // jsdom has no scrolling.
+  useEffect(() => {
+    if (!returned || methodsQuery.isPending || scrolled.current) return;
+    scrolled.current = true;
+    cardRef.current?.scrollIntoView?.({ block: "center" });
+  }, [returned, methodsQuery.isPending]);
 
   const connected = new Set(connectedProviders);
   const offered = (methodsQuery.data ?? []).filter((m) => m.type === "redirect");
@@ -142,7 +151,9 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
     });
   }
 
-  const busy = connect.isPending || disconnect.isPending;
+  // A successful connect is terminal: the page is leaving for the provider,
+  // and a second click in that window would mint a second link ticket.
+  const busy = connect.isPending || connect.isSuccess || disconnect.isPending;
 
   return (
     <div ref={cardRef} className="space-y-3">
@@ -165,11 +176,18 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
       ) : null}
 
       <div className="space-y-2">
-        {methodsQuery.isPending ? <Skeleton type="row" /> : null}
+        {/* While the list loads: one placeholder per linked provider (at least
+            one), so the card starts near its final height, and no rows yet —
+            drawn before the list, a linked provider read as "No longer offered". */}
+        {methodsQuery.isPending
+          ? Array.from({ length: Math.max(connectedProviders.length, 1) }, (_, i) => (
+              <Skeleton key={i} type="row" />
+            ))
+          : null}
         {!methodsQuery.isPending && rows.length === 0 ? (
           <p className="caption">This instance offers no sign-in providers to link.</p>
         ) : null}
-        {rows.map((row) => {
+        {(methodsQuery.isPending ? [] : rows).map((row) => {
           const isConnected = connected.has(row.id);
           return (
             <div
