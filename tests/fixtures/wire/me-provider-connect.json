@@ -1,0 +1,4 @@
+{
+  "_masked": "The link ticket after `link=` is a secret that attaches a sign-in method to an account; replaced with <link-ticket>. Everything else is as the backend builds it.",
+  "link_url": "/api/v1/login/oauth/github/start?link=<link-ticket>"
+}
