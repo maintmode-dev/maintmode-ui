@@ -159,7 +159,11 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
        * so a non-ASCII password shorter than the hint is still accepted.
        */}
       <p id="new-password-hint" className="caption">
-        At least 12 characters. {asChange ? "Changing it signs you out of your other devices." : null}
+        {/* "Within minutes", not "now" (NOTE-2): the backend revokes the other
+            devices' refresh tokens at once, but an access token already issued
+            stays valid until it expires. No number: that lifetime is backend
+            configuration, and a figure here would go stale silently. */}
+        At least 12 characters. {asChange ? "Changing it signs your other devices out within minutes." : null}
       </p>
 
       {error ? (

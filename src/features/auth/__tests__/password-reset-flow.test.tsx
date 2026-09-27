@@ -434,9 +434,11 @@ describe("rehydration after a reload", () => {
 describe("the destructive consequence is stated before the submit", () => {
   it("warns on both steps that this signs the user out everywhere", async () => {
     const props = setup();
-    expect(screen.getByText(/signs you out everywhere/i)).toBeTruthy();
+    // NOTE-2: "within minutes", never an instant claim — access tokens already
+    // issued outlive the revocation until they expire.
+    expect(screen.getByText(/signs you out everywhere within minutes/i)).toBeTruthy();
 
     await reachCodeStep(props);
-    expect(screen.getByText(/signs you out of every device/i)).toBeTruthy();
+    expect(screen.getByText(/signs you out of every device within minutes/i)).toBeTruthy();
   });
 });

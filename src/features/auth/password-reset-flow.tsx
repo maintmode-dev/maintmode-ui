@@ -185,7 +185,7 @@ export function PasswordResetFlow({
         <Label htmlFor="reset-email">Reset your password</Label>
         <p className="caption">
           We&apos;ll email you a code if that address has an account. Setting a new password signs you out
-          everywhere.
+          everywhere within minutes.
         </p>
         <Input
           id="reset-email"
@@ -266,7 +266,7 @@ export function PasswordResetFlow({
        * password was taken when the hint implied otherwise, never the reverse.
        */}
       <p id="reset-password-hint" className="caption">
-        At least 12 characters. This signs you out of every device.
+        At least 12 characters. This signs you out of every device within minutes.
       </p>
       {dead ? (
         <ResetError code="expired" />

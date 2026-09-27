@@ -259,6 +259,8 @@ describe("the destructive consequence is stated before the submit", () => {
   it("warns that changing a password signs other devices out", () => {
     renderCard(true);
 
-    expect(screen.getByText(/signs you out of your other devices/i)).toBeTruthy();
+    // NOTE-2: "within minutes", never an instant claim — access tokens already
+    // issued outlive the revocation until they expire.
+    expect(screen.getByText(/signs your other devices out within minutes/i)).toBeTruthy();
   });
 });
