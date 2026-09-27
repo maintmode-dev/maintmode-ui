@@ -31,8 +31,8 @@ import { cookies } from "next/headers";
  *
  * ONE COOKIE PER FLOW, not one overall (revised in RUK-289). Within a single
  * flow a second tab still overwrites the first, and that remains deliberate:
- * the first tab then fails with `otp_session_mismatch`, which renders the
- * honest "request a new code" state that exists for exactly this situation.
+ * the first tab then fails with the uniform "wrong or expired — request a new
+ * code" answer, which is the right advice in that situation too.
  *
  * Across flows it was a defect. Sign-in and password-reset both bind a nonce,
  * and with one cookie a reset request overwrote the sign-in binding while the

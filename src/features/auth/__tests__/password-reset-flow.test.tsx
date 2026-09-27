@@ -133,7 +133,22 @@ describe("the local attempt budget", () => {
     }
 
     await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
-    expect(screen.getByRole("alert")).toBeTruthy();
+    // The reason, not just an alert: asserting only that one exists let the
+    // generic failure stand in for it, which cannot say the budget is gone.
+    expect(screen.getByRole("alert").textContent).toContain("Too many attempts");
+  });
+
+  it("does not call a first mistake a spent code", async () => {
+    // The old copy said "used too many times" on every failure, so a user on
+    // their first typo was told to give up on a code with four attempts left.
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+
+    await submitCode("000000", LONG_ENOUGH);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("wrong or has expired"));
+    expect(screen.getByRole("alert").textContent).not.toMatch(/too many/i);
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
   });
 
   it("does not spend the budget on a locally rejected password", async () => {
@@ -179,17 +194,6 @@ describe("the double-submit guard", () => {
 });
 
 describe("failures the user must be able to tell apart", () => {
-  it("sends the user back to step one when the binding is gone", async () => {
-    const props = setup({
-      confirm: vi.fn(async () => ({ error: "password_reset_session_mismatch" })),
-    });
-    await reachCodeStep(props);
-    await submitCode("123456", LONG_ENOUGH);
-
-    await waitFor(() => expect(props.abandon).toHaveBeenCalled());
-    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
-  });
-
   // An outage is a fact about the service. Folding it into the wrong-code copy
   // tells every user their input was wrong while nothing of theirs was.
   it("says the service is unavailable rather than blaming the code", async () => {
@@ -310,11 +314,14 @@ describe("leaving the flow", () => {
   // password forward: the user would submit for that account a secret they
   // never knowingly re-entered.
   it("clears the typed password when returning to step one", async () => {
-    const props = setup({
-      confirm: vi.fn(async () => ({ error: "password_reset_session_mismatch" })),
-    });
+    // Spending the budget is the one way back to step one now that a lost
+    // binding is not its own answer (BUG-2).
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
     await reachCodeStep(props);
-    await submitCode("123456", LONG_ENOUGH);
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("000000", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
 
     await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
 

@@ -114,11 +114,11 @@ export async function requestOtpCode(email: string): Promise<{ session_nonce: st
 /**
  * Step two: trade the code plus its binding for a token pair.
  *
- * Two failures are distinguishable, both 401: `otp_session_mismatch` (the nonce
- * is missing or does not match — the tab that requested the code is gone) and
- * `unauthorized` (everything else: wrong code, expired, attempts exhausted).
- * The backend checks the nonce BEFORE the code, so a user who lost their tab
- * gets the actionable answer even if they also mistyped.
+ * Every failure is ONE 401 `unauthorized` — wrong code, expired, attempts
+ * exhausted, a nonce that does not match — plus 429 from the limiter. The
+ * backend used to answer a nonce mismatch with its own `otp_session_mismatch`
+ * and withdrew it (BUG-2, v0.2.0-rc): telling it apart revealed whether an
+ * account exists. A mismatched nonce no longer spends an attempt either.
  */
 export async function verifyOtpCode(args: {
   email: string;
@@ -212,8 +212,9 @@ export async function requestPasswordResetCode(email: string): Promise<{ session
  * session, so the caller signs in again afterwards. It cannot go through
  * `postBackendJson`, which requires a JSON payload it can shape-check.
  *
- * Failures collapse into one 401 "authentication failed", with
- * `otp_session_mismatch` as the sole distinguishable case. A password that
+ * Failures collapse into one 401 "authentication failed" with no exception —
+ * the distinct `otp_session_mismatch` was withdrawn (see `verifyOtpCode`). A
+ * password that
  * breaks the length policy is INSIDE that collapse and is reported as a wrong
  * code — which is why the client checks the length before calling this.
  */

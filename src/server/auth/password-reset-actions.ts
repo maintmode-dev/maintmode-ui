@@ -35,25 +35,6 @@ function statusOf(error: unknown): number | undefined {
 }
 
 /**
- * Whether the backend's body named a specific code.
- *
- * Reads the `code` FIELD rather than substring-matching the raw text: a
- * whitespace difference in the encoder (`"code": "..."`) would defeat a
- * substring match, and it would fail open into the generic collapse — showing
- * sign-in recovery copy on a reset screen. Never reads `message`, which is
- * prose and is not a contract.
- */
-function codeIs(error: unknown, code: string): boolean {
-  const body = (error as { responseBody?: unknown } | null)?.responseBody;
-  if (typeof body !== "string") return false;
-  try {
-    return (JSON.parse(body) as { code?: unknown }).code === code;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Step one: ask the backend to mail a reset code, and bind it to this browser.
  *
  * The backend answers 202 for every outcome — unknown address, blocked user,
@@ -122,11 +103,12 @@ export async function confirmPasswordResetAction(args: {
   const binding = await readPasswordResetBinding();
   if (!binding || binding.email !== normalizeEmail(args.email)) {
     // No binding means this browser cannot prove it asked for the code, so the
-    // request would be refused anyway. Answered locally with the reset flow's
-    // own mismatch code — not sign-in's, whose copy sends the user somewhere
-    // they are not trying to go.
+    // request would be refused anyway and is not sent. Answered with the same
+    // uniform failure as the backend's 401 — a distinct answer for a lost
+    // binding is what the backend withdrew as an account-existence signal
+    // (BUG-2), and this must not be a second copy of it.
     await clearPasswordResetBinding();
-    return { error: AUTH_ERROR_CODES.passwordResetSessionMismatch };
+    return { error: AUTH_ERROR_CODES.passwordResetFailed };
   }
 
   try {
@@ -150,13 +132,10 @@ export async function confirmPasswordResetAction(args: {
     if (status === undefined || status >= 500 || status === 404) {
       return { error: AUTH_ERROR_CODES.passwordResetUnavailable };
     }
-    if (codeIs(error, "otp_session_mismatch")) {
-      await clearPasswordResetBinding();
-      return { error: AUTH_ERROR_CODES.passwordResetSessionMismatch };
-    }
-    // Everything else is the deliberate collapse: wrong code, expired,
-    // attempts exhausted. The binding is KEPT — attempts may remain, and
-    // discarding a still-usable code is worse than a retry.
+    // Everything else is the deliberate collapse, by contract a single 401:
+    // wrong code, expired, attempts exhausted, a nonce the backend does not
+    // recognise. The binding is KEPT — attempts may remain, and discarding a
+    // still-usable code is worse than a retry.
     return { error: AUTH_ERROR_CODES.passwordResetFailed };
   }
 

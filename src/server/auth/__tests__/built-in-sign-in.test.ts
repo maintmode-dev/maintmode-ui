@@ -145,13 +145,13 @@ describe("loginWithPassword", () => {
 });
 
 describe("AUTH_ERROR_CODES — the codes /login renders from", () => {
-  it("carries a lost-binding code separate from a failed verification", () => {
-    // If these ever collapse to one value, a user with a correct code in a
-    // reopened tab gets told the code is wrong, which is the exact defect this
-    // ticket exists to remove.
-    expect(AUTH_ERROR_CODES.otpSessionMismatch).toBe("otp_session_mismatch");
+  it("carries ONE verify-failure code, with no separate lost-binding code", () => {
+    // BUG-2 (v0.2.0-rc): a distinct lost-binding code revealed whether an
+    // account exists, and the backend withdrew it. Reintroducing one here would
+    // put the signal back from this side.
     expect(AUTH_ERROR_CODES.otpVerificationFailed).toBe("otp_verification_failed");
-    expect(AUTH_ERROR_CODES.otpSessionMismatch).not.toBe(AUTH_ERROR_CODES.otpVerificationFailed);
+    expect(Object.values(AUTH_ERROR_CODES)).not.toContain("otp_session_mismatch");
+    expect(Object.values(AUTH_ERROR_CODES)).not.toContain("password_reset_session_mismatch");
   });
 
   it("names both fields in a password failure rather than one", () => {
