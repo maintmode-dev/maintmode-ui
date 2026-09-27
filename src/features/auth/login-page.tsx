@@ -5,8 +5,13 @@ import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
-import { BrandIcon, MaintMark, type BrandProvider } from "@/shared/ui/icons/brand-icons";
-import type { SignInMethod } from "@/domain/auth/sign-in-method";
+import {
+  BrandIcon,
+  IntegrationBrandIcon,
+  MaintMark,
+  type BrandProvider,
+} from "@/shared/ui/icons/brand-icons";
+import { signInProviders, type SignInMethod } from "@/domain/auth/sign-in-method";
 import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
 // Statically imported, deliberately. It looks like a candidate for `dynamic()`
@@ -72,64 +77,19 @@ type BuiltInMethodActions = Pick<
 >;
 
 /**
- * The branded provider buttons, drawn from the backend's list — with one
- * exception for a failed fetch (see `visibleOAuthProviders`).
+ * Provider buttons come from the backend's list — every advertised `redirect`
+ * method, via `signInProviders` — rather than from a table of ids this build
+ * happens to know. The table is what left a configured `custom` OIDC provider
+ * drawn as a disabled "coming soon" button, and GitHub as a permanent one
+ * whether or not it was configured: all providers start the same backend-owned
+ * dance, so nothing about drawing one is provider-specific.
  *
- * ## The comment that used to live here was wrong (RUK-304)
- *
- * It said Google "is not in the backend's list at all — it lives entirely in
- * NextAuth". That stopped being true with `b74a4536`, which moved sign-in
- * providers into the integration registry: `resolveAuthProviders()` now returns
- * one `methods[]` entry per live login row, so a configured Google appears there
- * as `{ id: "google", type: "redirect" }`.
- *
- * Rendering it unconditionally became a trap. The migration that shipped with
- * that change deletes the old provider rows, so a fresh deployment advertises
- * no Google at all — and the button leads to `startOAuthDanceAction`, which
- * `redirect()`s. The backend answers an unknown provider with a JSON error
- * rather than a redirect (deliberately: it has no trusted frontend address at
- * that point), so the user lands on raw JSON on another origin.
- *
- * ## Match on `id`, never on `type`
- *
- * `providers_list.go` stamps EVERY login row `type: "redirect"`, and this file
- * already overloads `redirect` twice more: as the coercion for an unrecognised
- * type (`resolve-auth-providers.ts`) and as the `ComingSoonButton` placeholder.
- * Only `id` tells a configured provider from those.
+ * The one id-aware thing left is the brand mark, which is decoration.
  */
-const OAUTH_PROVIDERS: { id: BrandProvider; label: string; enabled: boolean }[] = [
-  { id: "google", label: "Continue with Google", enabled: true },
-  { id: "github", label: "Continue with GitHub", enabled: false },
-];
+const BRAND_MARKS: ReadonlySet<string> = new Set<BrandProvider>(["google", "github", "microsoft", "okta"]);
 
-/**
- * Provider ids drawn as branded buttons above; a backend method repeating one is
- * skipped, so an advertised provider is never drawn twice — once branded and
- * once as a generic disabled row.
- */
-const OAUTH_IDS: ReadonlySet<string> = new Set(OAUTH_PROVIDERS.map((p) => p.id));
-
-/**
- * Which branded buttons to draw.
- *
- * An empty list and a failed fetch are different answers and must not collapse:
- *
- *  - `methods` resolved → draw a provider only if the backend advertises it.
- *    Nothing configured means no button, because a button to nowhere is worse.
- *  - `methods` undefined (transport failure) → draw them all. The list could
- *    not be READ, which is no evidence that a provider is missing; suppressing
- *    the button here would remove a working way in precisely when the auth
- *    service is already degraded. That is the break-glass case, and the only
- *    one that keeps the old unconditional behaviour.
- *
- * Disabled providers (GitHub today) stay as placeholders either way: sign-in
- * through them is not implemented on this frontend, so an advertised row must
- * not become a live button. RUK-302 wires that up.
- */
-function visibleOAuthProviders(methods: SignInMethod[] | undefined) {
-  if (methods === undefined) return OAUTH_PROVIDERS;
-  const advertised = new Set(methods.map((m) => m.id));
-  return OAUTH_PROVIDERS.filter((p) => !p.enabled || advertised.has(p.id));
+function isBrandProvider(id: string): id is BrandProvider {
+  return BRAND_MARKS.has(id);
 }
 
 /**
@@ -142,8 +102,18 @@ const BREAK_GLASS_METHODS: SignInMethod[] = [
   { id: "email_password", type: "password", display_name: "Password" },
 ];
 
-/** Disabled providers are gated until backend support ships. */
-const COMING_SOON_TOOLTIP = "Coming soon — additional providers are on the way";
+/**
+ * For a method whose `type` this build does not know — a backend newer than
+ * this frontend. Visible so it is not silently missing, inert so it cannot pose
+ * as a working way in.
+ */
+const UNSUPPORTED_TOOLTIP = "This sign-in method isn't supported by this version yet";
+
+/** The switch between the built-in forms, worded by what it switches TO. */
+const SWITCH_LABELS: Partial<Record<SignInMethod["type"], string>> = {
+  code: "Email me a code instead",
+  password: "Sign in with a password instead",
+};
 
 export function LoginPage({
   error,
@@ -156,7 +126,17 @@ export function LoginPage({
   ...actions
 }: LoginPageProps) {
   const resolvedFailed = methods === undefined;
-  const builtIn = (resolvedFailed ? BREAK_GLASS_METHODS : methods).filter((m) => !OAUTH_IDS.has(m.id));
+  const providers = signInProviders(methods);
+  const builtIn = (resolvedFailed ? BREAK_GLASS_METHODS : methods).filter((m) => m.type !== "redirect");
+  // Password and email code both start from an email address, so drawing both
+  // forms at once put two Email fields and two "Sign in" buttons on one screen.
+  // One is shown, with a switch to the other; the backend's order decides which
+  // comes first.
+  const forms = builtIn.filter((m) => m.type === "password" || m.type === "code");
+  const unsupported = builtIn.filter((m) => m.type === "unsupported");
+  const [activeFormId, setActiveFormId] = useState(forms[0]?.id);
+  const activeForm = forms.find((m) => m.id === activeFormId) ?? forms[0];
+  const otherForms = forms.filter((m) => m !== activeForm);
 
   const offersPassword = builtIn.some((m) => m.type === "password");
   // A live binding only rehydrates if this page is still drawing the form the
@@ -170,7 +150,10 @@ export function LoginPage({
   return (
     <TooltipProvider>
       <main className="min-h-screen grid place-items-center p-6 bg-bg">
-        <div className="w-full max-w-[420px] space-y-6 bg-bg-elev-1 border border-border-subtle rounded-xl p-8">
+        {/* `min-w-0`: a grid item defaults to `min-width: auto`, so the card
+            could not shrink below its widest nowrap button — a long provider
+            name pushed the page wider than a phone screen (UX-6). */}
+        <div className="w-full min-w-0 max-w-[420px] space-y-6 bg-bg-elev-1 border border-border-subtle rounded-xl p-8">
           <header className="space-y-2">
             <span
               className="flex size-8 items-center justify-center text-[var(--accent-fg)]"
@@ -218,35 +201,68 @@ export function LoginPage({
               onCancel={() => setResetting(false)}
             />
           ) : (
-            <div className="flex flex-col gap-2.5">
-              {visibleOAuthProviders(methods).map((p) =>
-                p.enabled ? (
-                  <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
-                    <Button type="submit" className="w-full justify-start gap-2.5 px-3">
-                      <ProviderMark id={p.id} />
-                      {p.label}
-                      <ChevronRight className="size-4 ml-auto" aria-hidden="true" />
-                    </Button>
-                  </form>
-                ) : (
-                  <ComingSoonButton key={p.id}>
-                    <ProviderMark id={p.id} />
-                    {p.label}
-                  </ComingSoonButton>
-                ),
-              )}
+            <div className="flex flex-col gap-4">
+              {providers.length > 0 ? (
+                <div className="flex flex-col gap-2.5">
+                  {providers.map((p) => {
+                    const label = `Continue with ${p.display_name}`;
+                    return (
+                      <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
+                        {/* A display name is whatever the operator typed. The
+                            label wraps to a second line rather than truncating
+                            at once — on a phone even "Corporate SSO" did not fit
+                            beside "Continue with" and the marks — and clamps
+                            there, with `title` carrying the full text. */}
+                        <Button
+                          type="submit"
+                          className="h-auto min-h-9 w-full min-w-0 justify-start gap-2.5 px-3 py-2"
+                          title={label}
+                          data-provider-id={p.id}
+                        >
+                          <ProviderMark id={p.id} />
+                          <span className="min-w-0 whitespace-normal break-words text-left line-clamp-2">
+                            {label}
+                          </span>
+                          <ChevronRight className="size-4 ml-auto" aria-hidden="true" />
+                        </Button>
+                      </form>
+                    );
+                  })}
+                </div>
+              ) : null}
 
-              {builtIn.map((method) => (
-                <BuiltInMethod
-                  key={method.id}
-                  method={method}
-                  onForgotPassword={() => {
-                    setResetDone(false);
-                    setResetting(true);
-                  }}
-                  {...actions}
-                />
-              ))}
+              {providers.length > 0 && (activeForm || unsupported.length > 0) ? <OrDivider /> : null}
+
+              {activeForm || unsupported.length > 0 ? (
+                <div className="flex flex-col gap-2.5">
+                  {activeForm ? (
+                    <BuiltInMethod
+                      key={activeForm.id}
+                      method={activeForm}
+                      onForgotPassword={() => {
+                        setResetDone(false);
+                        setResetting(true);
+                      }}
+                      {...actions}
+                    />
+                  ) : null}
+                  {otherForms.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className="caption underline self-center"
+                      onClick={() => setActiveFormId(m.id)}
+                    >
+                      {SWITCH_LABELS[m.type] ?? `Use ${m.display_name} instead`}
+                    </button>
+                  ))}
+                  {unsupported.map((m) => (
+                    <UnsupportedMethodButton key={m.id} data-method-type={m.type}>
+                      {m.display_name}
+                    </UnsupportedMethodButton>
+                  ))}
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -268,10 +284,11 @@ export function LoginPage({
 }
 
 /**
- * Renders one backend-advertised method by `type`, never by `id` — `id` is a
- * machine key the backend may extend, while `type` is the closed union this
- * build knows how to draw. An unknown type reaches `redirect` and renders inert
- * rather than crashing the page or pretending to be a working way in.
+ * Renders one built-in method by `type`, never by `id` — `id` is a machine key
+ * the backend may extend, while `type` is the closed union this build knows how
+ * to draw. Providers (`redirect`) are drawn above as buttons and never reach
+ * here; an `unsupported` type renders inert rather than crashing the page or
+ * pretending to be a working way in.
  */
 function BuiltInMethod({
   method,
@@ -306,15 +323,29 @@ function BuiltInMethod({
     );
   }
 
-  return <ComingSoonButton data-method-type={method.type}>{method.display_name}</ComingSoonButton>;
+  return (
+    <UnsupportedMethodButton data-method-type={method.type}>{method.display_name}</UnsupportedMethodButton>
+  );
+}
+
+/** Separates the provider buttons from the email-based forms below them. */
+function OrDivider() {
+  return (
+    <div className="flex items-center gap-3" role="separator" aria-label="or">
+      <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
+      <span className="caption" aria-hidden="true">
+        or
+      </span>
+      <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
+    </div>
+  );
 }
 
 /**
- * A gated control: rendered, disabled, and explained by the "coming soon"
- * tooltip. Used both for the OAuth providers NextAuth cannot serve yet and for
- * a backend method whose `type` this build does not know how to draw.
+ * A gated control: rendered, disabled, and explained by a tooltip. Used for a
+ * backend method whose `type` this build does not know how to draw.
  */
-function ComingSoonButton({ children, ...buttonProps }: React.ComponentProps<typeof Button>) {
+function UnsupportedMethodButton({ children, ...buttonProps }: React.ComponentProps<typeof Button>) {
   return (
     <Tooltip>
       {/* Disabled buttons don't emit pointer events — wrap in a span so the
@@ -333,7 +364,7 @@ function ComingSoonButton({ children, ...buttonProps }: React.ComponentProps<typ
           </Button>
         </span>
       </TooltipTrigger>
-      <TooltipContent>{COMING_SOON_TOOLTIP}</TooltipContent>
+      <TooltipContent>{UNSUPPORTED_TOOLTIP}</TooltipContent>
     </Tooltip>
   );
 }
@@ -356,11 +387,19 @@ function errorMessage(code: string): string {
   }
 }
 
-/** Fixed-size white brand tile — keeps the icon column aligned across buttons. */
-function ProviderMark({ id }: { id: BrandProvider }) {
+/**
+ * Fixed-size white brand tile — keeps the icon column aligned across buttons.
+ * A provider with no brand of its own (a `custom` OIDC IdP is whoever the
+ * operator points it at) gets a neutral key rather than someone else's logo.
+ */
+function ProviderMark({ id }: { id: string }) {
   return (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-white">
-      <BrandIcon name={id} size={14} />
+      {isBrandProvider(id) ? (
+        <BrandIcon name={id} size={14} />
+      ) : (
+        <IntegrationBrandIcon name="oidc" size={14} />
+      )}
     </span>
   );
 }

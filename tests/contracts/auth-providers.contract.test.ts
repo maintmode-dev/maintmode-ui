@@ -52,6 +52,14 @@ describe("auth providers — the recorded response still matches the contract", 
     expectWireFields(wire.methods as Record<string, unknown>[], REQUIRED_METHOD_FIELDS, "auth method");
   });
 
+  it("carries a provider, the shape /login draws as a button", () => {
+    // BUG-4: login rows of the integration registry arrive as `redirect`. A
+    // fixture with only the built-in methods left that shape untested, which is
+    // how a configured provider could render as a dead "coming soon" button
+    // with every contract test green.
+    expect((wire.methods as { type: string }[]).some((m) => m.type === "redirect")).toBe(true);
+  });
+
   it("advertises only method types this build knows how to render", () => {
     const types = (wire.methods as { type: string }[]).map((m) => m.type);
     for (const type of types) {
@@ -119,9 +127,10 @@ describe("auth providers — a parsed list is rendered as it stands", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     // Preserved, not dropped: a method this build cannot render must be
-    // visible-but-inert, never silently missing.
+    // visible-but-inert, never silently missing. And NOT `redirect`: that is a
+    // live provider button now, which an unknown method must never become.
     expect(result.methods).toHaveLength(1);
-    expect(result.methods[0]?.type).toBe("redirect");
+    expect(result.methods[0]?.type).toBe("unsupported");
   });
 
   it("drops a malformed entry rather than rendering a nameless button", async () => {

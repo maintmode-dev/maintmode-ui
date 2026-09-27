@@ -9,6 +9,11 @@
       "id": "email_otp",
       "type": "code",
       "display_name": "Email code"
+    },
+    {
+      "id": "github",
+      "type": "redirect",
+      "display_name": "github"
     }
   ]
 }

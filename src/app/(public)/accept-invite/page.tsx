@@ -2,6 +2,7 @@ import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { auth } from "@/server/auth/auth-config";
 import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
 import { resolveAuthProviders } from "@/server/backend/auth/resolve-auth-providers";
+import { signInProviders } from "@/domain/auth/sign-in-method";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
@@ -26,7 +27,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    *
    * `b74a4536` moved sign-in providers into the integration registry and its
    * migration deleted the existing rows, so a fresh deployment has none — while
-   * this page hard-codes "google" below. `startOAuthDanceAction` issues a
+   * this page used to hard-code "google". `startOAuthDanceAction` issues a
    * `redirect()`, and the backend answers an unknown provider with a JSON error
    * rather than a redirect (deliberately: it has no trusted frontend address at
    * that point), so the invitee lands on raw backend JSON on another origin
@@ -38,21 +39,25 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * alongside the preview is what keeps the cost to a shared wait rather than
    * an added one.
    *
-   * `{ ok: false }` (transport failure) is treated as AVAILABLE rather than
-   * unavailable. Unlike `/login` there is no break-glass path — an invitation
-   * can only be accepted through the dance — so hiding the button on a failed
-   * read would strand an invitee whose provider is fine. A dance that then
-   * fails is recoverable: the backend refuses before minting state, so the
-   * invitation is not spent.
+   * Every advertised provider gets a button (BUG-4): an organisation whose only
+   * way in is its own `custom` OIDC provider was told "sign-in isn't set up"
+   * here, because the page only ever looked for Google.
    *
-   * Only a RESOLVED list that lacks the provider suppresses the button, which
+   * `{ ok: false }` (transport failure) is treated as AVAILABLE rather than
+   * unavailable: `signInProviders` falls back to Google. Unlike `/login` there
+   * is no break-glass path — an invitation can only be accepted through the
+   * dance — so hiding the button on a failed read would strand an invitee whose
+   * provider is fine. A dance that then fails is recoverable: the backend
+   * refuses before minting state, so the invitation is not spent.
+   *
+   * Only a RESOLVED list with no provider in it suppresses the button, which
    * is the deterministic post-migration case.
    */
   const [preview, providers] = await Promise.all([
     resolveInvitationPreview(sp.token),
     resolveAuthProviders(),
   ]);
-  const signInAvailable = !providers.ok || providers.methods.some((m) => m.id === "google");
+  const offered = signInProviders(providers.ok ? providers.methods : undefined);
 
   /**
    * Accepting an invitation is now the ordinary OAuth dance with the invitation
@@ -63,10 +68,17 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * `"use client"` and may not import `src/server/**` — and because closing the
    * token over the action on the server is what stops a client supplying one of
    * its own.
+   *
+   * The provider id is an ARGUMENT, bound per button by the component, so it is
+   * client-reachable — deliberately, and the same as `/login`'s `signInAction`.
+   * A forged id can only start a dance for a provider the backend serves (it
+   * checks the segment against its registry before minting anything, and
+   * refuses an unknown one without spending the invitation); the token, which
+   * is the thing worth protecting, stays closed over here.
    */
-  async function acceptAction() {
+  async function acceptAction(providerId: string) {
     "use server";
-    await startOAuthDanceAction("google", undefined, sp.token);
+    await startOAuthDanceAction(providerId, undefined, sp.token);
   }
 
   /**
@@ -96,7 +108,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       preview={preview}
       acceptAction={acceptAction}
       signedInAs={signedInAs}
-      signInAvailable={signInAvailable}
+      providers={offered}
     />
   );
 }

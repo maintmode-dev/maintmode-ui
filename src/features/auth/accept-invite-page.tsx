@@ -6,6 +6,8 @@ import { AlertTriangle, Mail, RefreshCw } from "lucide-react";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Stack } from "@/shared/ui/domain/stack";
 
+import type { SignInMethod } from "@/domain/auth/sign-in-method";
+
 import type { InviteStatus, SuggestedProvider } from "./invitation-preview-types";
 
 export interface AcceptInvitePageProps {
@@ -20,13 +22,15 @@ export interface AcceptInvitePageProps {
    */
   preview: InvitationPreviewResult;
   /**
-   * Server action that starts the backend OAuth dance carrying the invitation.
-   * Bound with the token on the server, mirroring `/login`'s `signInAction`, so
-   * a client can never supply a token of its own.
+   * Server action that starts the backend OAuth dance for one provider,
+   * carrying the invitation. The token is closed over on the server, mirroring
+   * `/login`'s `signInAction`, so a client can never supply a token of its own.
    */
-  acceptAction: () => Promise<void>;
+  acceptAction: (providerId: string) => Promise<void>;
   /**
-   * Whether the backend advertises a sign-in provider, resolved on the server.
+   * The providers to offer, resolved on the server (`signInProviders`): every
+   * one the backend advertises, or the Google fallback when the list could not
+   * be read. Empty means none is configured.
    *
    * Its own prop rather than a widened `preview.status`: "your invitation is
    * bad" and "our sign-in is down" are different messages to a person holding a
@@ -34,12 +38,11 @@ export interface AcceptInvitePageProps {
    * cannot be resolved here — this component is `"use client"` and may not
    * import from `src/server/**`.
    *
-   * DEFAULTS to available, so a caller that does not pass it behaves exactly as
-   * before. Unlike `/login` there is no break-glass to fall back to: an
-   * invitation is only acceptable through the dance, so a page that cannot name
-   * a provider has nothing else to offer.
+   * Unlike `/login` there is no break-glass to fall back to: an invitation is
+   * only acceptable through the dance, so a page with no provider has nothing
+   * else to offer.
    */
-  signInAvailable?: boolean;
+  providers: SignInMethod[];
   /**
    * The signed-in visitor's own email, when there is a session. Not the invited
    * address — the frozen tone forbids surfacing that, and this is a fact about
@@ -63,17 +66,15 @@ export function AcceptInvitePage({
   preview,
   acceptAction,
   signedInAs,
-  signInAvailable,
+  providers,
 }: AcceptInvitePageProps) {
   return (
     <main className="min-h-screen grid place-items-center p-6 bg-bg">
-      <div className="w-full max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
+      {/* `min-w-0`, as on /login: a grid item cannot otherwise shrink below its
+          widest nowrap button. */}
+      <div className="w-full min-w-0 max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
         {preview.status === "valid" ? (
-          <ValidInvite
-            acceptAction={acceptAction}
-            signedInAs={signedInAs}
-            signInAvailable={signInAvailable}
-          />
+          <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} providers={providers} />
         ) : (
           <InvalidInvite status={preview.status} token={token} />
         )}
@@ -85,18 +86,15 @@ export function AcceptInvitePage({
 function ValidInvite({
   acceptAction,
   signedInAs,
-  signInAvailable = true,
-}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs" | "signInAvailable">) {
-  // ONE provider, named in one place.
+  providers,
+}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs" | "providers">) {
+  // Each button's label and the provider its action starts come from the SAME
+  // list entry, so they cannot disagree.
   //
-  // There used to be a label branch on `suggested_provider`, while the action
-  // that actually starts the dance passed "google" unconditionally — so a
-  // backend that ever returned "github" would have rendered a GitHub button
-  // that started a Google dance. Two opinions about one question, on an auth
-  // path, settled by a field the backend controls. The branch was unreachable
-  // (the backend always returns null today) and is gone rather than kept for a
-  // provider this app cannot start; adding a second provider means changing the
-  // action and the label together, which is the point.
+  // They once did: a label branch on `suggested_provider` sat beside an action
+  // that passed "google" unconditionally, so a backend returning "github" would
+  // have rendered a GitHub button that started a Google dance. This component
+  // names no provider of its own for that reason.
 
   // Centered composition — consistent with the error/terminal states' stack.
   return (
@@ -111,11 +109,7 @@ function ValidInvite({
         <h1 className="h2">You&apos;ve been invited</h1>
       </header>
       <p className="body-sm">Sign in with the email this invitation was sent to.</p>
-      <InviteCallToAction
-        acceptAction={acceptAction}
-        signedInAs={signedInAs}
-        signInAvailable={signInAvailable}
-      />
+      <InviteCallToAction acceptAction={acceptAction} signedInAs={signedInAs} providers={providers} />
     </div>
   );
 }
@@ -129,8 +123,8 @@ function ValidInvite({
 function InviteCallToAction({
   acceptAction,
   signedInAs,
-  signInAvailable,
-}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs"> & { signInAvailable: boolean }) {
+  providers,
+}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs" | "providers">) {
   // Signing in here means BECOMING the invited person, so an existing session
   // has to go first — and the stake is higher than a wrong identity. The
   // backend claims the invitation inside the dance, before this app sees the
@@ -155,7 +149,7 @@ function InviteCallToAction({
   // state, so the invitation is untouched and the link still works. Shown an
   // explanation with no button, an invitee would otherwise reasonably conclude
   // they had just spent it.
-  if (!signInAvailable) {
+  if (providers.length === 0) {
     return (
       <p role="status" className="caption">
         Sign-in isn&apos;t set up on this instance yet, so this invitation can&apos;t be accepted right now.
@@ -165,11 +159,23 @@ function InviteCallToAction({
   }
 
   return (
-    <form action={acceptAction} className="w-full">
-      <Button type="submit" className="w-full">
-        Continue with Google
-      </Button>
-    </form>
+    <div className="flex w-full flex-col gap-2.5">
+      {providers.map((p) => {
+        const label = `Continue with ${p.display_name}`;
+        return (
+          <form key={p.id} action={acceptAction.bind(null, p.id)} className="w-full">
+            <Button
+              type="submit"
+              className="h-auto min-h-9 w-full min-w-0 py-2"
+              title={label}
+              data-provider-id={p.id}
+            >
+              <span className="min-w-0 whitespace-normal break-words line-clamp-2">{label}</span>
+            </Button>
+          </form>
+        );
+      })}
+    </div>
   );
 }
 

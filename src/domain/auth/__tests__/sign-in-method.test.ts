@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isKnownSignInMethodType, isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
+import {
+  isKnownSignInMethodType,
+  isWellFormedOtpCode,
+  signInProviders,
+  type SignInMethod,
+} from "@/domain/auth/sign-in-method";
 
 /**
  * RUK-288 — the OTP code guard is shared by the client form and the server's
@@ -42,5 +47,35 @@ describe("isKnownSignInMethodType", () => {
     // Rendered inert rather than as a working way in.
     expect(isKnownSignInMethodType("webauthn")).toBe(false);
     expect(isKnownSignInMethodType("")).toBe(false);
+  });
+});
+
+/**
+ * BUG-4. Both `/login` and `/accept-invite` draw their provider buttons from
+ * this, so it decides whether a configured provider is reachable at all.
+ */
+describe("signInProviders", () => {
+  const PASSWORD: SignInMethod = { id: "email_password", type: "password", display_name: "Password" };
+  const CUSTOM: SignInMethod = { id: "custom", type: "redirect", display_name: "Corporate SSO" };
+  const GITHUB: SignInMethod = { id: "github", type: "redirect", display_name: "GitHub" };
+
+  it("offers every advertised redirect method, whatever its id, in the backend's order", () => {
+    expect(signInProviders([PASSWORD, GITHUB, CUSTOM]).map((m) => m.id)).toEqual(["github", "custom"]);
+  });
+
+  it("offers nothing for a list with no provider in it", () => {
+    expect(signInProviders([PASSWORD])).toEqual([]);
+    expect(signInProviders([])).toEqual([]);
+  });
+
+  it("never offers a method of an unsupported type", () => {
+    const future: SignInMethod = { id: "passkey", type: "unsupported", display_name: "Passkey" };
+    expect(signInProviders([future])).toEqual([]);
+  });
+
+  it("falls back to Google when the list could not be read", () => {
+    // A failed read is not evidence that a provider is missing; offering
+    // nothing would strand an invitee whose provider works.
+    expect(signInProviders(undefined)).toEqual([{ id: "google", type: "redirect", display_name: "Google" }]);
   });
 });
