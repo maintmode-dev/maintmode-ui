@@ -9,6 +9,7 @@ import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
 import { clearOAuthNext, readOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
 import { safeNext } from "@/server/auth/safe-next";
+import type { LinkFailure } from "@/domain/auth/link-outcome";
 
 /**
  * Server actions for the backend-driven OAuth dance (RUK-292).
@@ -91,6 +92,24 @@ function redirectToLoginError(code: AuthErrorCode): never {
 }
 
 /**
+ * Maps a failed LINK's backend code to the closed set the profile renders.
+ *
+ * Closed, and never the raw value: the parameter lands in the address bar, and
+ * an arbitrary string there would be text an attacker controls on our page.
+ *
+ * `link_conflict` keeps its own entry — it has its own advice. The backend
+ * folds three cases into it on purpose (linked here already, linked to someone
+ * else, another account of this provider already linked), so the profile's
+ * copy must not pick one. `access_denied` covers a declined consent screen.
+ * Everything else is "did not complete, try again".
+ */
+function mapLinkError(code: string): LinkFailure {
+  if (code === "link_conflict") return "link_conflict";
+  if (code === "access_denied" || code === "consent_cancelled") return "denied";
+  return "failed";
+}
+
+/**
  * Maps the backend's redirect error code to one this app already renders.
  *
  * The backend's set is closed and owned by it: `access_denied`, `email_mismatch`,
@@ -158,7 +177,21 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   // Refusing rather than signing out first: a signed-in user reaching the
   // receiver is either a stale tab or an attack, and neither wants a silent
   // identity swap. The unspent code simply expires.
+  //
+  // It is also, legitimately, how a LINK comes back (GAP-2): the profile starts
+  // a dance for an account that is already signed in, and the backend returns
+  // the browser here with `linked=1` or an `error`, never a code. Those go to
+  // the profile's sign-in methods, which is where the person started and where
+  // the outcome can be read. A `code` alongside a session still redeems
+  // nothing, exactly as before.
   if (await readActiveSession()) {
+    if (String(formData.get("linked") ?? "").trim() === "1") {
+      redirect("/settings/profile?linked=1");
+    }
+    const linkError = String(formData.get("error") ?? "").trim();
+    if (linkError) {
+      redirect(`/settings/profile?link_error=${encodeURIComponent(mapLinkError(linkError))}`);
+    }
     redirect(destination);
   }
 
