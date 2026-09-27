@@ -8,7 +8,7 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
 import { SemanticPill } from "@/shared/ui/domain/semantic-pill";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
-import { BrandIcon, IntegrationBrandIcon, type BrandProvider } from "@/shared/ui/icons/brand-icons";
+import { SignInProviderIcon } from "@/shared/ui/icons/brand-icons";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import type { LinkFailure, LinkOutcome } from "@/domain/auth/link-outcome";
 
@@ -28,8 +28,6 @@ const LINK_FAILURE_COPY: Record<LinkFailure, string> = {
   denied: "Linking was cancelled, or the provider refused it. Nothing was changed.",
   failed: "Linking didn't complete. Nothing was changed — try again.",
 };
-
-const BRANDS: ReadonlySet<string> = new Set<BrandProvider>(["google", "github", "microsoft", "okta"]);
 
 export interface SignInMethodsCardProps {
   /** `/me.connected_providers` — the providers this account can sign in with. */
@@ -196,11 +194,7 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
               className="flex items-center gap-3 px-3 py-2 rounded-sm bg-bg-elev-2 border border-border-subtle"
             >
               <span className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-white">
-                {BRANDS.has(row.id) ? (
-                  <BrandIcon name={row.id as BrandProvider} size={18} />
-                ) : (
-                  <IntegrationBrandIcon name="oidc" size={18} />
-                )}
+                <SignInProviderIcon id={row.id} size={18} />
               </span>
               <span className="min-w-0 flex-1">
                 <span

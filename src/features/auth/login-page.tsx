@@ -5,12 +5,7 @@ import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
-import {
-  BrandIcon,
-  IntegrationBrandIcon,
-  MaintMark,
-  type BrandProvider,
-} from "@/shared/ui/icons/brand-icons";
+import { MaintMark, SignInProviderIcon } from "@/shared/ui/icons/brand-icons";
 import { signInProviders, type SignInMethod } from "@/domain/auth/sign-in-method";
 import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
@@ -79,22 +74,6 @@ type BuiltInMethodActions = Pick<
 >;
 
 /**
- * Provider buttons come from the backend's list — every advertised `redirect`
- * method, via `signInProviders` — rather than from a table of ids this build
- * happens to know. The table is what left a configured `custom` OIDC provider
- * drawn as a disabled "coming soon" button, and GitHub as a permanent one
- * whether or not it was configured: all providers start the same backend-owned
- * dance, so nothing about drawing one is provider-specific.
- *
- * The one id-aware thing left is the brand mark, which is decoration.
- */
-const BRAND_MARKS: ReadonlySet<string> = new Set<BrandProvider>(["google", "github", "microsoft", "okta"]);
-
-function isBrandProvider(id: string): id is BrandProvider {
-  return BRAND_MARKS.has(id);
-}
-
-/**
  * What `/login` offers when the providers fetch fails at the transport level.
  * The backend guarantees its real list always contains a `password` element, so
  * this matches what a healthy fetch would have produced — and it is the
@@ -140,6 +119,7 @@ export function LoginPage({
   const [activeFormId, setActiveFormId] = useState(forms[0]?.id);
   const activeForm = forms.find((m) => m.id === activeFormId) ?? forms[0];
   const otherForms = forms.filter((m) => m !== activeForm);
+  const hasBuiltIn = activeForm !== undefined || unsupported.length > 0;
 
   const offersPassword = builtIn.some((m) => m.type === "password");
   // A live binding only rehydrates if this page is still drawing the form the
@@ -251,9 +231,9 @@ export function LoginPage({
                 </div>
               ) : null}
 
-              {providers.length > 0 && (activeForm || unsupported.length > 0) ? <OrDivider /> : null}
+              {providers.length > 0 && hasBuiltIn ? <OrDivider /> : null}
 
-              {activeForm || unsupported.length > 0 ? (
+              {hasBuiltIn ? (
                 <div className="flex flex-col gap-2.5">
                   {activeForm ? (
                     <BuiltInMethod
@@ -412,6 +392,15 @@ function errorMessage(code: string): string {
 }
 
 /**
+ * Provider buttons come from the backend's list — every advertised `redirect`
+ * method, via `signInProviders` — rather than from a table of ids this build
+ * happens to know. The table is what left a configured `custom` OIDC provider
+ * drawn as a disabled "coming soon" button, and GitHub as a permanent one
+ * whether or not it was configured: all providers start the same backend-owned
+ * dance, so nothing about drawing one is provider-specific.
+ *
+ * The one id-aware thing left is the brand mark, which is decoration.
+ *
  * Fixed-size white brand tile — keeps the icon column aligned across buttons.
  * A provider with no brand of its own (a `custom` OIDC IdP is whoever the
  * operator points it at) gets a neutral key rather than someone else's logo.
@@ -419,11 +408,7 @@ function errorMessage(code: string): string {
 function ProviderMark({ id }: { id: string }) {
   return (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-white">
-      {isBrandProvider(id) ? (
-        <BrandIcon name={id} size={14} />
-      ) : (
-        <IntegrationBrandIcon name="oidc" size={14} />
-      )}
+      <SignInProviderIcon id={id} size={14} />
     </span>
   );
 }
