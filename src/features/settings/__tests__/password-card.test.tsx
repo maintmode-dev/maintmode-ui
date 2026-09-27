@@ -48,6 +48,16 @@ function fill(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+describe("UX-12 — the link to the standalone page says what it opens", () => {
+  it("names the form it opens", () => {
+    renderCard(false);
+
+    expect(screen.getByRole("link", { name: "Open this form on a separate page" }).getAttribute("href")).toBe(
+      "/set-password",
+    );
+  });
+});
+
 describe("UX-3 — the new password can be checked before it is saved", () => {
   it("offers show/hide on the new password, on both forms", () => {
     for (const passwordSet of [true, false]) {

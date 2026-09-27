@@ -65,6 +65,8 @@ export interface LoginPageProps {
    * down would undo exactly that.
    */
   resetInProgressEmail?: string;
+  /** The resumed reset code's deadline (epoch ms), if the binding carries it. */
+  resetInProgressExpiresAt?: number;
 }
 
 /**
@@ -123,6 +125,7 @@ export function LoginPage({
   confirmPasswordResetAction,
   abandonPasswordResetAction,
   resetInProgressEmail,
+  resetInProgressExpiresAt,
   ...actions
 }: LoginPageProps) {
   const resolvedFailed = methods === undefined;
@@ -194,6 +197,7 @@ export function LoginPage({
             <PasswordResetFlow
               initialEmail={resetInProgressEmail}
               initialStep={resetInProgressEmail ? "code" : "email"}
+              initialExpiresAt={resetInProgressExpiresAt}
               requestCode={requestPasswordResetAction}
               confirm={confirmPasswordResetAction}
               abandon={abandonPasswordResetAction}

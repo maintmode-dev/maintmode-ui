@@ -9,12 +9,13 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function Probe({ active }: { active: boolean }) {
+function Probe({ active, deadline }: { active: boolean; deadline?: number }) {
   const timers = useCodeTimers(active);
   return (
     <div>
       <span data-testid="remaining">{timers.remaining}</span>
-      <button type="button" onClick={timers.start}>
+      <span data-testid="cooldown">{timers.cooldown}</span>
+      <button type="button" onClick={() => timers.start(deadline)}>
         start
       </button>
     </div>
@@ -53,6 +54,42 @@ describe("the countdown is derived from a deadline, not decremented", () => {
     // 120s of wall clock plus the 1s the tick itself advanced.
     expect(remaining()).toBe(CODE_TTL_SECONDS - 121);
     expect(remaining()).toBeLessThan(CODE_TTL_SECONDS - 100);
+  });
+
+  /**
+   * UX-12 (v0.2.0-rc). A reload used to restart the count at the full TTL for
+   * a code minutes into its life. A resumed flow now passes the deadline its
+   * binding carries.
+   */
+  it("counts down from a known deadline instead of starting afresh", () => {
+    const twoMinutesLeft = Date.parse("2026-09-07T12:02:00Z");
+    render(<Probe active deadline={twoMinutesLeft} />);
+    act(() => {
+      screen.getByRole("button", { name: "start" }).click();
+    });
+
+    expect(remaining()).toBe(120);
+    // Sent three minutes ago, so the 30s resend cooldown is long over.
+    expect(Number(screen.getByTestId("cooldown").textContent)).toBe(0);
+  });
+
+  it("never stretches a known deadline past a fresh code's lifetime", () => {
+    // A skewed or tampered value may shorten the count, not lengthen it.
+    render(<Probe active deadline={Date.parse("2026-09-07T13:00:00Z")} />);
+    act(() => {
+      screen.getByRole("button", { name: "start" }).click();
+    });
+
+    expect(remaining()).toBe(CODE_TTL_SECONDS);
+  });
+
+  it("reads a deadline already past as expired", () => {
+    render(<Probe active deadline={Date.parse("2026-09-07T11:59:00Z")} />);
+    act(() => {
+      screen.getByRole("button", { name: "start" }).click();
+    });
+
+    expect(remaining()).toBe(0);
   });
 
   it("floors at zero rather than going negative", () => {

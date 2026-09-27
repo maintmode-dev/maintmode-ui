@@ -28,6 +28,8 @@ export interface PasswordResetFlowProps {
   /** Rehydrated from the reset cookie by the server page, after a reload. */
   initialEmail?: string;
   initialStep?: Step;
+  /** The resumed code's deadline (epoch ms), when the binding carries one. */
+  initialExpiresAt?: number;
   requestCode: (email: string) => Promise<{ error?: string }>;
   confirm: (args: {
     email: string;
@@ -43,6 +45,7 @@ export interface PasswordResetFlowProps {
 export function PasswordResetFlow({
   initialEmail,
   initialStep,
+  initialExpiresAt,
   requestCode,
   confirm,
   abandon,
@@ -71,7 +74,7 @@ export function PasswordResetFlow({
   // and never returned; this is the same optimistic local clock the flow uses
   // after a fresh request, and the backend remains the authority.
   useEffect(() => {
-    if (initialStep === "code") timers.start();
+    if (initialStep === "code") timers.start(initialExpiresAt);
     // Once, on mount: `start` is stable and re-running it would reset the
     // countdown under a user who is mid-flow.
     // eslint-disable-next-line react-hooks/exhaustive-deps

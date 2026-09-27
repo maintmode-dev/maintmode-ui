@@ -88,6 +88,7 @@ export default async function Page({
       confirmPasswordResetAction={confirmPasswordResetAction}
       abandonPasswordResetAction={abandonPasswordResetAction}
       resetInProgressEmail={resetBinding?.email}
+      resetInProgressExpiresAt={resetBinding?.expiresAt}
     />
   );
 }

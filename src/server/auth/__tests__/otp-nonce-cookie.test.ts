@@ -83,7 +83,37 @@ describe("otp-nonce-cookie — the binding never reaches browser JavaScript", ()
   it("round-trips the nonce and the email", async () => {
     store.get.mockReturnValue({ value: encode({ nonce: "n-9", email: "user@example.test" }) });
 
+    // A binding written before the deadline existed still reads — with no
+    // deadline, which the flow treats as unknown.
     expect(await readOtpBinding()).toEqual({ nonce: "n-9", email: "user@example.test" });
+  });
+
+  /**
+   * UX-12 (v0.2.0-rc): the code's deadline travels in the binding so a flow
+   * resumed after a reload counts down from what is left. It is the write time
+   * plus the cookie's own maxAge, so the two cannot disagree.
+   */
+  it("writes the code's deadline and reads it back", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-27T10:00:00Z"));
+    try {
+      await setOtpBinding({ nonce: "n-1", email: "someone@example.test" });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    const written = store.set.mock.calls[0]?.[1] as string;
+    const decoded = JSON.parse(Buffer.from(written, "base64url").toString("utf8")) as { exp: number };
+    expect(decoded.exp).toBe(Date.parse("2026-09-27T10:05:00Z"));
+
+    store.get.mockReturnValue({ value: written });
+    expect((await readOtpBinding())?.expiresAt).toBe(Date.parse("2026-09-27T10:05:00Z"));
+  });
+
+  it("ignores a deadline that is not a number", async () => {
+    store.get.mockReturnValue({ value: encode({ nonce: "n", email: "a@b.test", exp: "soon" }) });
+
+    expect(await readOtpBinding()).toEqual({ nonce: "n", email: "a@b.test" });
   });
 
   /**

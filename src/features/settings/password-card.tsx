@@ -178,9 +178,11 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
         </Button>
         {!asChange ? (
           // The page is the same form on its own, for someone who came here to
-          // do this one thing. It is this card's only entry point.
+          // do this one thing. It is this card's only entry point. Said as
+          // "this form" (UX-12): "Open on its own page" left people asking
+          // what would open.
           <a href="/set-password" className="caption underline">
-            Open on its own page
+            Open this form on a separate page
           </a>
         ) : null}
       </div>

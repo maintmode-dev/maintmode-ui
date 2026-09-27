@@ -63,6 +63,12 @@ const MAX_AGE_SECONDS = 300;
 export interface OtpBinding {
   nonce: string;
   email: string;
+  /**
+   * When the code expires, epoch ms — written by `setBinding`, read back for
+   * a resumed flow (UX-12, v0.2.0-rc). Absent on a binding written before the
+   * field existed; readers must treat it as unknown.
+   */
+  expiresAt?: number;
 }
 
 function isBinding(value: unknown): value is OtpBinding {
@@ -93,7 +99,15 @@ export function normalizeEmail(email: string): string {
 
 async function setBinding(name: string, binding: OtpBinding): Promise<void> {
   const encoded = Buffer.from(
-    JSON.stringify({ nonce: binding.nonce, email: normalizeEmail(binding.email) }),
+    JSON.stringify({
+      nonce: binding.nonce,
+      email: normalizeEmail(binding.email),
+      // The code's deadline, so a flow resumed after a reload counts down from
+      // what is actually left instead of restarting at the full TTL — which
+      // showed "Expires in 4:59" for a code minutes into its life (UX-12). The
+      // cookie's own maxAge IS that TTL, so the two cannot disagree.
+      exp: Date.now() + MAX_AGE_SECONDS * 1000,
+    }),
     "utf8",
   ).toString("base64url");
   const store = await cookies();
@@ -126,7 +140,13 @@ async function readBinding(name: string): Promise<OtpBinding | undefined> {
 
   try {
     const parsed: unknown = JSON.parse(Buffer.from(raw, "base64url").toString("utf8"));
-    return isBinding(parsed) ? { nonce: parsed.nonce, email: parsed.email } : undefined;
+    if (!isBinding(parsed)) return undefined;
+    const exp = (parsed as { exp?: unknown }).exp;
+    return {
+      nonce: parsed.nonce,
+      email: parsed.email,
+      ...(typeof exp === "number" && Number.isFinite(exp) ? { expiresAt: exp } : {}),
+    };
   } catch {
     return undefined;
   }

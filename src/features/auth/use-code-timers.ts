@@ -43,8 +43,11 @@ export interface CodeTimers {
   cooldown: number;
   /** True once `remaining` has run out on the code step. */
   expired: boolean;
-  /** Starts both timers — call on a successful code request. */
-  start: () => void;
+  /**
+   * Starts both timers — call on a successful code request. A resumed flow
+   * passes the code's known deadline (epoch ms) instead of starting afresh.
+   */
+  start: (knownDeadline?: number) => void;
   /** Stops both — call when leaving the code step. */
   reset: () => void;
   /** Restarts only the cooldown, for a request that failed. */
@@ -93,15 +96,23 @@ export function useCodeTimers(active: boolean): CodeTimers {
     return () => clearInterval(id);
   }, [active]);
 
-  const start = useCallback(() => {
+  const start = useCallback((knownDeadline?: number) => {
     // Counted from response receipt, so the client is always slightly
     // optimistic relative to the server. That is the safe direction: the
     // backend, not this timer, decides whether a code is still valid.
+    //
+    // A resumed flow passes the deadline it was issued with (UX-12), so a
+    // reload does not restart the count; the cooldown is measured from the
+    // same moment the code was sent. Never later than a fresh start would
+    // give: a skewed or tampered value can shorten the count, not stretch it.
     const now = Date.now();
-    codeDeadline.current = now + CODE_TTL_SECONDS * 1000;
-    cooldownDeadline.current = now + RESEND_COOLDOWN_SECONDS * 1000;
-    setRemaining(CODE_TTL_SECONDS);
-    setCooldown(RESEND_COOLDOWN_SECONDS);
+    const fresh = now + CODE_TTL_SECONDS * 1000;
+    const deadline = knownDeadline === undefined ? fresh : Math.min(knownDeadline, fresh);
+    const sentAt = deadline - CODE_TTL_SECONDS * 1000;
+    codeDeadline.current = deadline;
+    cooldownDeadline.current = sentAt + RESEND_COOLDOWN_SECONDS * 1000;
+    setRemaining(secondsUntil(codeDeadline.current, now));
+    setCooldown(secondsUntil(cooldownDeadline.current, now));
   }, []);
 
   const reset = useCallback(() => {

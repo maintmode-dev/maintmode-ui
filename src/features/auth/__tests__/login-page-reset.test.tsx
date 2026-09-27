@@ -69,6 +69,17 @@ describe("rehydration after a reload", () => {
     expect(screen.getByText(/Sent to op@example.test/)).toBeTruthy();
   });
 
+  /**
+   * UX-12 (v0.2.0-rc): the resumed countdown starts from the deadline the
+   * binding carries, not from a fresh five minutes. A reload used to show
+   * "Expires in 4:59" for a code minutes into its life.
+   */
+  it("resumes the countdown from the binding's deadline", () => {
+    renderLogin({ resetInProgressEmail: "op@example.test", resetInProgressExpiresAt: Date.now() + 90_000 });
+
+    expect(screen.getByRole("timer").textContent).toMatch(/Expires in 1:(29|30)/);
+  });
+
   // SPEC §2.1: the advertised method list is the authority on what the page
   // offers. A cookie must not resurrect a method an operator has switched off.
   it("ignores a live binding when password sign-in is no longer offered", () => {
