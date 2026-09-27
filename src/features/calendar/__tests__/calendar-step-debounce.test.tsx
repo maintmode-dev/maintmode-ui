@@ -78,6 +78,20 @@ const windowOf = (i: number) => {
   return { from: q.get("from"), to: q.get("to") };
 };
 
+/**
+ * Day of the month `n` days after the date in `iso`, by calendar arithmetic.
+ *
+ * Not `Number(iso.slice(8, 10)) + n`: that has no month end, so every
+ * expectation here failed whenever the run started within a few days of one —
+ * `26 + 5` is 31, while the page correctly steps from 30 September to 1 October.
+ * The zone is mocked to UTC, so the date part of `from` is the viewed day and
+ * `Date.UTC` rolls the month over for us.
+ */
+function dayAfter(iso: string | null | undefined, n: number): number {
+  const [y, m, d] = (iso ?? "").slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).getUTCDate();
+}
+
 describe("CalendarPage — stepping", () => {
   it("moves the header on the click while the request waits", async () => {
     render(<CalendarPage />, { wrapper });
@@ -94,7 +108,9 @@ describe("CalendarPage — stepping", () => {
     // one day — "changed" is too weak, it would also accept a jump of two or a
     // step the wrong way...
     const dayIn = (t: string | null) => Number(t?.match(/\b(\d{1,2}),/)?.[1]);
-    expect(dayIn(screen.getByRole("heading", { level: 1 }).textContent)).toBe(dayIn(before) + 1);
+    const opened = windowOf(0).from;
+    expect(dayIn(before)).toBe(dayAfter(opened, 0));
+    expect(dayIn(screen.getByRole("heading", { level: 1 }).textContent)).toBe(dayAfter(opened, 1));
     // ...and no request has gone out for it yet.
     expect(calendarCalls()).toBe(callsBefore);
   });
@@ -135,8 +151,7 @@ describe("CalendarPage — stepping", () => {
     // many times it stepped — NOT read back out of the requests the run happened
     // to make. Four clicks from the start day land four days on, and its warmed
     // neighbour is the day after that.
-    const startDay = Number(firstWindow.from?.slice(8, 10));
-    expect(landedOn).toBe(String(startDay + 4));
+    expect(landedOn).toBe(String(dayAfter(firstWindow.from, 4)));
 
     // And the exact tally: the window opened on, the window landed on, and one
     // neighbour warmed ahead. Three — not seven, which is what one request per
@@ -145,7 +160,11 @@ describe("CalendarPage — stepping", () => {
     // callback is cancelled when the window moves on.
     await new Promise((r) => setTimeout(r, 150));
     const fetched = calls.map((c) => new URL(c, "http://x").searchParams.get("from"));
-    expect(fetched.map(dayOf)).toEqual([String(startDay), String(startDay + 4), String(startDay + 5)]);
+    expect(fetched.map(dayOf)).toEqual([
+      String(dayAfter(firstWindow.from, 0)),
+      String(dayAfter(firstWindow.from, 4)),
+      String(dayAfter(firstWindow.from, 5)),
+    ]);
   });
 
   it("warms the window AFTER the one stepped into, and only after fetching it", async () => {
@@ -158,7 +177,7 @@ describe("CalendarPage — stepping", () => {
     // request it exists to make unnecessary.
     render(<CalendarPage />, { wrapper });
     await waitFor(() => expect(calendarCalls()).toBe(1));
-    const startDay = Number(windowOf(0).from?.slice(8, 10));
+    const opened = windowOf(0).from;
 
     act(() => {
       fireEvent.click(screen.getByRole("button", { name: "Next" }));
@@ -166,11 +185,11 @@ describe("CalendarPage — stepping", () => {
 
     await waitFor(() => expect(calendarCalls()).toBe(2));
     // The stepped-into window is fetched BEFORE anything is warmed ahead.
-    expect(Number(windowOf(1).from?.slice(8, 10))).toBe(startDay + 1);
+    expect(Number(windowOf(1).from?.slice(8, 10))).toBe(dayAfter(opened, 1));
 
     await waitFor(() => expect(calendarCalls()).toBe(3));
     // ...and the warmed one is its neighbour, not the window beyond it.
-    expect(Number(windowOf(2).from?.slice(8, 10))).toBe(startDay + 2);
+    expect(Number(windowOf(2).from?.slice(8, 10))).toBe(dayAfter(opened, 2));
   });
 
   it("costs exactly one request when the calendar is opened but never stepped", async () => {
