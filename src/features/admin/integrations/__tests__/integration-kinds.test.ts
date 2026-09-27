@@ -23,6 +23,21 @@ const INTEGRATION_KIND_META = Object.fromEntries(ALL_META_KEYS.map((k) => [k, ki
  * renames one, this test is what fails. Reading the names back out of the
  * metadata would survive any rename and prove nothing.
  */
+/**
+ * UX-9 (v0.2.0-rc). The backend maps an unset TLS policy to mandatory STARTTLS
+ * (`tlsPolicy` in notifytransport/email/client.go). The label said "server
+ * decides", and an operator whose relay lacks STARTTLS went looking at the relay.
+ */
+describe("email TLS policy — Default says what it does", () => {
+  const field = kindMeta("email")?.configFields.find((f: ConfigFieldMeta) => f.name === "tls_policy");
+
+  it("names the backend's default in the option itself", () => {
+    const unset = field?.options?.[0];
+    expect(unset?.label).toBe("Default (mandatory STARTTLS)");
+    expect(JSON.stringify(field)).not.toMatch(/server decides/i);
+  });
+});
+
 describe("INTEGRATION_KIND_META", () => {
   it("covers every system the UI renders", () => {
     for (const key of ALL_META_KEYS) {

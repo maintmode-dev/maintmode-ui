@@ -87,7 +87,7 @@ describe("buildConfig", () => {
 
   it("clearing tls_policy back to Default in edit mode removes the stored value", () => {
     // The load-bearing case: a stored dangerous value ("none") must not survive
-    // when the operator returns the Select to "Default (server decides)".
+    // when the operator returns the Select to "Default (mandatory STARTTLS)".
     expect(buildConfig(email, { tls_policy: "" }, { tls_policy: "none" })).toEqual({});
   });
 });
