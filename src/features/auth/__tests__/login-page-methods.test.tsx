@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LoginPage } from "@/features/auth/login-page";
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
@@ -30,22 +30,50 @@ const PASSWORD: SignInMethod = { id: "email_password", type: "password", display
 const OTP: SignInMethod = { id: "email_otp", type: "code", display_name: "Email code" };
 
 /**
- * A live Google provider as the backend now advertises it. Every login row is
- * stamped `type: "redirect"` (`providers_list.go`), so `id` is the only thing
- * that distinguishes a configured provider from an unknown method type.
+ * Providers as the backend advertises them: every login row in the integration
+ * registry is stamped `type: "redirect"`. An unknown wire type never arrives as
+ * `redirect` — the resolver maps it to `unsupported` — so `redirect` means a
+ * provider this page must draw as a working button.
  */
 const GOOGLE: SignInMethod = { id: "google", type: "redirect", display_name: "Google" };
+const CUSTOM: SignInMethod = { id: "custom", type: "redirect", display_name: "Corporate SSO" };
+const GITHUB: SignInMethod = { id: "github", type: "redirect", display_name: "GitHub" };
+
+const providerButton = (name: string) => screen.getByRole("button", { name: `Continue with ${name}` });
 
 describe("AC-1 — the method list comes from the backend, not from a literal", () => {
-  it("renders every method the backend advertises", () => {
+  it("renders every method the backend advertises, one form at a time", () => {
     render(<LoginPage methods={[PASSWORD, OTP]} {...actions} />);
 
     // Asserted by rendered component, not by label text: both forms render
     // `display_name` as their label, so matching text alone would pass even if
     // a `password` method rendered the OTP flow.
     expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
-    expect(document.querySelector('[data-method-type="code"]')).not.toBeNull();
     expect(document.querySelector('input[type="password"]')).not.toBeNull();
+    // Both start from an email address: drawing them together put two Email
+    // fields and two "Sign in" buttons on one screen (UX-1).
+    expect(document.querySelector('[data-method-type="code"]')).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Sign in" })).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code instead" }));
+
+    expect(document.querySelector('[data-method-type="code"]')).not.toBeNull();
+    expect(document.querySelector('[data-method-type="password"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with a password instead" }));
+    expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
+  });
+
+  it("shows the form the backend lists first", () => {
+    render(<LoginPage methods={[OTP, PASSWORD]} {...actions} />);
+
+    expect(document.querySelector('[data-method-type="code"]')).not.toBeNull();
+    expect(document.querySelector('[data-method-type="password"]')).toBeNull();
+  });
+
+  it("offers no switch when only one form is advertised", () => {
+    render(<LoginPage methods={[OTP]} {...actions} />);
+
+    expect(screen.queryByRole("button", { name: /instead/ })).toBeNull();
   });
 
   it("drops a method the backend stops advertising, with no frontend change", () => {
@@ -97,29 +125,89 @@ describe("RUK-304 — a provider button only for a provider that exists", () => 
     expect(screen.queryByText("Continue with Google")).toBeNull();
   });
 
-  /**
-   * `OAUTH_IDS` subtracts the branded ids from the generic list. Without that,
-   * an advertised Google appears twice — once branded, once as a disabled
-   * `redirect` placeholder.
-   */
-  it("renders an advertised Google exactly once", () => {
+  it("renders an advertised provider exactly once", () => {
     render(<LoginPage methods={[GOOGLE]} {...actions} />);
 
     expect(screen.queryAllByText("Continue with Google")).toHaveLength(1);
-    expect(screen.queryByText("Google")).toBeNull();
+  });
+});
+
+/**
+ * BUG-4. The page used to know providers by id — Google live, GitHub a
+ * permanent placeholder, everything else a disabled "coming soon" row — so an
+ * operator who configured a `custom` OIDC provider got a button nobody could
+ * press, on an instance where that provider was the only way in.
+ */
+describe("BUG-4 — every advertised provider is a working button", () => {
+  it("draws a custom provider by its display name, enabled", () => {
+    render(<LoginPage methods={[CUSTOM, PASSWORD]} {...actions} />);
+
+    const button = providerButton("Corporate SSO");
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("type")).toBe("submit");
   });
 
-  /**
-   * GitHub sign-in is not wired up on this frontend, so an advertised row must
-   * not become a live button. Enabling it is RUK-302's work; until then the
-   * placeholder is the honest answer.
-   */
-  it("keeps GitHub a disabled placeholder even if the backend advertises it", () => {
-    const github: SignInMethod = { id: "github", type: "redirect", display_name: "GitHub" };
-    render(<LoginPage methods={[github]} {...actions} />);
+  it("starts the dance for the provider that was clicked", async () => {
+    // Two providers, so a button wired to the wrong one — or to a literal —
+    // cannot pass by coincidence.
+    const signInAction = vi.fn<(providerId: string) => Promise<void>>(async () => {});
+    render(<LoginPage methods={[GOOGLE, CUSTOM]} {...actions} signInAction={signInAction} />);
 
-    const button = screen.getByText("Continue with GitHub").closest("button");
-    expect(button?.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(providerButton("Corporate SSO"));
+
+    await waitFor(() => expect(signInAction).toHaveBeenCalledTimes(1));
+    expect(signInAction.mock.calls[0]?.[0]).toBe("custom");
+  });
+
+  it("draws an advertised GitHub as a working button", () => {
+    render(<LoginPage methods={[GITHUB]} {...actions} />);
+
+    expect(providerButton("GitHub").hasAttribute("disabled")).toBe(false);
+  });
+
+  it("draws no GitHub when the backend does not advertise it", () => {
+    render(<LoginPage methods={[PASSWORD]} {...actions} />);
+
+    expect(screen.queryByText(/GitHub/)).toBeNull();
+  });
+
+  it("keeps a long display name inside the button and in its title", () => {
+    const long: SignInMethod = { id: "custom", type: "redirect", display_name: "A".repeat(80) };
+    render(<LoginPage methods={[long]} {...actions} />);
+
+    const button = providerButton("A".repeat(80));
+    // UX-6: the label wraps and clamps at two lines; the full text stays
+    // reachable through `title`.
+    expect(button.getAttribute("title")).toBe(`Continue with ${"A".repeat(80)}`);
+    expect(button.querySelector(".line-clamp-2")?.textContent?.trim()).toBe(
+      `Continue with ${"A".repeat(80)}`,
+    );
+  });
+});
+
+describe("UX-1 — providers and the email forms are separated", () => {
+  it("puts an 'or' divider between providers and a form", () => {
+    render(<LoginPage methods={[GOOGLE, PASSWORD]} {...actions} />);
+
+    expect(screen.getByRole("separator", { name: "or" })).toBeDefined();
+  });
+
+  it("draws the providers above the form", () => {
+    render(<LoginPage methods={[PASSWORD, GOOGLE]} {...actions} />);
+
+    const provider = providerButton("Google");
+    const form = document.querySelector('[data-method-type="password"]');
+    // Backend order puts the password first; the layout does not follow it.
+    expect(provider.compareDocumentPosition(form as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("draws no divider when there is nothing on one side of it", () => {
+    render(<LoginPage methods={[PASSWORD]} {...actions} />);
+    expect(screen.queryByRole("separator")).toBeNull();
+    cleanup();
+
+    render(<LoginPage methods={[GOOGLE]} {...actions} />);
+    expect(screen.queryByRole("separator")).toBeNull();
   });
 });
 
@@ -135,13 +223,16 @@ describe("AC-2 — rendering dispatches on `type`, never on `id`", () => {
     expect(screen.getByPlaceholderText("you@example.com")).toBeDefined();
   });
 
-  it("renders a redirect-type method inert instead of crashing", () => {
-    const sso: SignInMethod = { id: "acme-sso", type: "redirect", display_name: "Acme SSO" };
-    render(<LoginPage methods={[sso]} {...actions} />);
+  it("renders a method of an unsupported type inert instead of crashing", () => {
+    // What the resolver makes of a wire type this build does not know. It must
+    // stay visible and disabled — never a "Continue with …" provider button.
+    const future: SignInMethod = { id: "passkey", type: "unsupported", display_name: "Passkey" };
+    render(<LoginPage methods={[future]} {...actions} />);
 
-    const button = screen.getByText("Acme SSO").closest("button");
-    expect(button?.getAttribute("data-method-type")).toBe("redirect");
+    const button = screen.getByText("Passkey").closest("button");
+    expect(button?.getAttribute("data-method-type")).toBe("unsupported");
     expect(button?.hasAttribute("disabled")).toBe(true);
+    expect(screen.queryByText(/Continue with/)).toBeNull();
   });
 });
 
@@ -157,6 +248,12 @@ describe("AC-11 — a broken auth service must not lock everyone out", () => {
     render(<LoginPage methods={undefined} {...actions} />);
 
     expect(screen.getByText("Continue with Google")).toBeDefined();
+  });
+
+  it("offers only Google then — a list it could not read names no other provider", () => {
+    render(<LoginPage methods={undefined} {...actions} />);
+
+    expect(screen.getAllByText(/^Continue with/)).toHaveLength(1);
   });
 
   it("offers the break-glass password form when the providers fetch failed", () => {
@@ -175,18 +272,5 @@ describe("AC-11 — a broken auth service must not lock everyone out", () => {
     render(<LoginPage methods={[PASSWORD]} {...actions} />);
 
     expect(screen.queryByRole("status")).toBeNull();
-  });
-});
-
-describe("Google is owned by NextAuth, not by the backend list", () => {
-  it("does not render Google twice if the backend ever advertises it", () => {
-    const googleFromBackend: SignInMethod = {
-      id: "google",
-      type: "redirect",
-      display_name: "Google",
-    };
-    render(<LoginPage methods={[googleFromBackend, PASSWORD]} {...actions} />);
-
-    expect(screen.getAllByText(/Google/)).toHaveLength(1);
   });
 });

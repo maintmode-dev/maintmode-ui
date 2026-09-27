@@ -48,6 +48,7 @@ describe("public pages render without a QueryClientProvider", () => {
             token={status === "missing" ? undefined : "tok-1"}
             preview={{ status }}
             acceptAction={async () => {}}
+            providers={[{ id: "google", type: "redirect", display_name: "Google" }]}
           />,
         ),
       ).not.toThrow();

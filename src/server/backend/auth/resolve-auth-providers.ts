@@ -23,10 +23,11 @@ function toMethod(raw: unknown): SignInMethod | null {
   }
   // An unrecognised `type` is preserved, not dropped: the page renders it as a
   // disabled placeholder so a newly-advertised method is visible-but-inert
-  // rather than silently missing. Narrowing happens at the render site.
+  // rather than silently missing. It becomes `unsupported`, never `redirect` —
+  // `redirect` is a live provider button now (see `SignInMethodType`).
   return {
     id,
-    type: isKnownSignInMethodType(type) ? type : ("redirect" as const),
+    type: isKnownSignInMethodType(type) ? type : ("unsupported" as const),
     display_name: displayName,
   };
 }
