@@ -2,12 +2,7 @@ import "server-only";
 
 import { fetchBackendMe, loginWithPassword, verifyOtpCode } from "@/server/auth/backend-token-exchange";
 import { clearOtpBinding, normalizeEmail, readOtpBinding } from "@/server/auth/otp-nonce-cookie";
-import {
-  AUTH_ERROR_CODES,
-  BackendAuthError,
-  type AuthSessionUser,
-  type BackendTokenPair,
-} from "@/server/auth/contracts";
+import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
 
 /**
  * Built-in sign-in exchange — email OTP and email+password (RUK-288).
@@ -31,13 +26,16 @@ export async function runBuiltInSignIn(
     const binding = await readOtpBinding();
 
     // No binding, a corrupted one, or one issued for a different address: this
-    // browser cannot check this code. Surfaced as its own error — NOT as a
-    // wrong code — because the user may well be holding a perfectly good code
-    // and would otherwise have no idea why it keeps failing. The cookie is
-    // cleared so the next attempt starts from a clean step one.
+    // browser cannot check this code, and nothing is sent. Reported as the SAME
+    // uniform failure as the backend's 401, not as its own error: the backend
+    // dropped its distinct `otp_session_mismatch` because telling a lost binding
+    // apart from a wrong code revealed whether an account exists (BUG-2), and a
+    // distinct answer here would be a second copy of that signal. The copy for
+    // the uniform failure already says "or request a new one", and the client's
+    // attempt budget returns the user to step one.
     if (!binding || binding.email !== email) {
       await clearOtpBinding();
-      throw new BuiltInSignInError(AUTH_ERROR_CODES.otpSessionMismatch);
+      throw new BuiltInSignInError(AUTH_ERROR_CODES.otpVerificationFailed);
     }
 
     try {
@@ -51,21 +49,15 @@ export async function runBuiltInSignIn(
         sessionNonce: binding.nonce,
       });
     } catch (error) {
-      // The backend checks the nonce before the code, so it can also report a
-      // mismatch we could not detect locally (a nonce this browser holds but the
-      // backend has since retired).
-      if (backendErrorCode(error) === "otp_session_mismatch") {
-        await clearOtpBinding();
-        throw new BuiltInSignInError(AUTH_ERROR_CODES.otpSessionMismatch);
-      }
       // A 429 is not a verdict on the code. Telling someone to re-check a
       // correct code drives more requests into the limiter already refusing
       // them — the same misattributed-failure loop this ticket exists to end.
       if ((error as { status?: number } | null)?.status === 429) {
         throw new BuiltInSignInError(AUTH_ERROR_CODES.otpRateLimited);
       }
-      // Wrong, expired, or attempts exhausted — one uniform answer, and the
-      // binding survives so the remaining attempts stay usable.
+      // Wrong, expired, attempts exhausted, or a nonce the backend does not
+      // recognise — one uniform 401 by contract, and the binding survives so
+      // any remaining attempts stay usable.
       throw new BuiltInSignInError(AUTH_ERROR_CODES.otpVerificationFailed);
     }
 
@@ -96,20 +88,6 @@ export async function runBuiltInSignIn(
     // Credentials were accepted but loading the profile did not: the one
     // genuine identity-lookup failure.
     throw new BuiltInSignInError(AUTH_ERROR_CODES.identityLookupFailed);
-  }
-}
-
-/** Reads the backend's `code` out of a failed request, if it sent one. */
-function backendErrorCode(error: unknown): string | undefined {
-  if (!(error instanceof BackendAuthError)) {
-    return undefined;
-  }
-  try {
-    const parsed: unknown = JSON.parse(error.responseBody);
-    const code = (parsed as { code?: unknown } | null)?.code;
-    return typeof code === "string" ? code : undefined;
-  } catch {
-    return undefined;
   }
 }
 

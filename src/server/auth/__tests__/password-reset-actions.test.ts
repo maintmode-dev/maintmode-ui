@@ -173,7 +173,7 @@ describe("confirming a reset", () => {
     });
   });
 
-  it("reports a lost binding with the reset flow's own code, not sign-in's", async () => {
+  it("reports a lost binding as the uniform failure, without calling the backend", async () => {
     readPasswordResetBinding.mockResolvedValue(undefined);
 
     const result = await confirmPasswordResetAction({
@@ -182,9 +182,9 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    // Not `otp_session_mismatch`: its copy returns the user to sign-in, which
-    // is not where someone mid-reset is trying to go.
-    expect(result).toEqual({ error: "password_reset_session_mismatch" });
+    // BUG-2: no distinct lost-binding code — the backend withdrew its own for
+    // revealing whether an account exists, and this must not be a second copy.
+    expect(result).toEqual({ error: "password_reset_failed" });
     expect(confirmPasswordReset).not.toHaveBeenCalled();
   });
 
@@ -197,7 +197,7 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    expect(result).toEqual({ error: "password_reset_session_mismatch" });
+    expect(result).toEqual({ error: "password_reset_failed" });
     expect(confirmPasswordReset).not.toHaveBeenCalled();
   });
 
@@ -218,10 +218,9 @@ describe("confirming a reset", () => {
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
-  it("clears the binding when the backend reports a session mismatch", async () => {
-    // Spaced exactly as a pretty-printing encoder would emit it: a substring
-    // match on `"code":"..."` would miss this and fail open into the generic
-    // collapse, showing sign-in recovery copy on a reset screen.
+  it("answers a withdrawn mismatch code uniformly, and keeps the binding", async () => {
+    // An older backend may still send the code the contract withdrew. It must
+    // not be surfaced, and the binding stays — attempts may remain.
     confirmPasswordReset.mockRejectedValueOnce(
       backendError(401, '{ "code": "otp_session_mismatch", "message": "authentication failed" }'),
     );
@@ -232,8 +231,8 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    expect(result).toEqual({ error: "password_reset_session_mismatch" });
-    expect(clearPasswordResetBinding).toHaveBeenCalled();
+    expect(result).toEqual({ error: "password_reset_failed" });
+    expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
   // §3.6 requires the rate limit to keep its own copy on BOTH endpoints. The

@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
+import { flowErrorMessage, OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
+import { MAX_CODE_ATTEMPTS } from "@/features/auth/use-code-timers";
 
 /**
  * RUK-288 AC-4 / AC-5 / AC-6 — the two-step code flow and its state table.
@@ -110,41 +111,88 @@ describe("step two — entering the code", () => {
   });
 });
 
-describe("AC-4 — a lost binding is not a wrong code", () => {
-  it("tells the user to request a new code, never that the code is wrong", async () => {
-    await reachCodeStep({ submitCode: vi.fn(async () => ({ error: "otp_session_mismatch" })) });
-
-    submitCodeValue("123456");
-
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("can't be checked in this browser");
-    // The whole point of the ticket: a correct code in a reopened tab must not
-    // be reported as incorrect.
-    expect(alert.textContent).not.toContain("isn't valid");
-  });
-
-  it("returns to step one so the recovery it advises is actually reachable", async () => {
-    // The binding is gone, so step two is a dead end: "Sign in" would fire more
-    // doomed calls, and the residual cooldown greys out the very button the
-    // message tells the user to press.
-    await reachCodeStep({ submitCode: vi.fn(async () => ({ error: "otp_session_mismatch" })) });
-
-    submitCodeValue("123456");
-
-    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeDefined());
-    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
-    // And asking again is available immediately, not throttled.
-    expect(screen.getByRole("button", { name: "Email me a code" }).hasAttribute("disabled")).toBe(false);
-  });
-
-  it("reports a wrong code distinctly, and keeps the user on step two", async () => {
+/**
+ * BUG-2 (v0.2.0-rc). Every verify failure is one answer — the backend withdrew
+ * its distinct lost-binding code for revealing whether an account exists — so
+ * the copy has to be right for all of them at once: a wrong code, an expired
+ * one, one whose attempts are spent, and a tab that lost its binding.
+ */
+describe("BUG-2 — one answer for every verify failure", () => {
+  it("names both likely causes and the action that fixes all of them", async () => {
     await reachCodeStep({ submitCode: vi.fn(async () => ({ error: "otp_verification_failed" })) });
 
     submitCodeValue("000000");
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("isn't valid");
+    expect(alert.textContent).toContain("wrong or has expired");
+    expect(alert.textContent).toContain("request a new one");
     // Still on step two: the remaining attempts are only usable from here.
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeDefined();
+  });
+
+  it("has no separate copy for a lost binding any more", () => {
+    // A distinct message would be the withdrawn signal, rebuilt in the UI.
+    expect(flowErrorMessage("otp_session_mismatch")).toBe(flowErrorMessage("some_unknown_code"));
+  });
+});
+
+describe("the local attempt budget", () => {
+  // The backend answers an exhausted code with the same 401 as a wrong one, so
+  // nothing in a response says the budget is gone: without a local count the
+  // sixth submit — correct code included — is told "that code isn't valid", and
+  // the user keeps retyping a code that can no longer work. The literal 5 is
+  // pinned beside the constant in `use-code-timers.test.tsx`; the loops below
+  // use the constant, and the four-failure case is hard-coded so an off-by-one
+  // cannot hide behind it.
+  const wrongCode = () => vi.fn(async () => ({ error: "otp_verification_failed" }));
+
+  async function failTimes(submitCode: ReturnType<typeof wrongCode>, times: number, from = 0) {
+    for (let i = from; i < from + times; i++) {
+      submitCodeValue("000000");
+      await waitFor(() => expect(submitCode).toHaveBeenCalledTimes(i + 1));
+    }
+  }
+
+  it("keeps the user on step two until the budget is spent", async () => {
+    const submitCode = wrongCode();
+    await reachCodeStep({ submitCode });
+
+    await failTimes(submitCode, 4);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("wrong or has expired"));
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeDefined();
+  });
+
+  it("returns to step one once the budget is spent, and says why", async () => {
+    const submitCode = wrongCode();
+    await reachCodeStep({ submitCode });
+
+    await failTimes(submitCode, MAX_CODE_ATTEMPTS);
+
+    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeDefined());
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Too many attempts");
+    // The one message that must not appear: the last code may have been right.
+    expect(alert.textContent).not.toContain("wrong or has expired");
+    // Asking again is the way forward, so it is not throttled.
+    expect(screen.getByRole("button", { name: "Email me a code" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("starts a fresh budget for a newly requested code", async () => {
+    const submitCode = wrongCode();
+    await reachCodeStep({ submitCode });
+    await failTimes(submitCode, 4);
+
+    fireEvent.click(screen.getByRole("button", { name: "Change email" }));
+    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeDefined());
+    await enterAddress("someone@example.test");
+
+    // Four more on the new code: a budget carried over would already have
+    // thrown the user out after the first of them.
+    await failTimes(submitCode, 4, 4);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("wrong or has expired"));
     expect(screen.getByLabelText("Enter the 6-digit code")).toBeDefined();
   });
 });

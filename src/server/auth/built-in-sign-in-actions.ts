@@ -97,10 +97,6 @@ export async function credentialsSignInAction(
     const code =
       typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
 
-    if (code === AUTH_ERROR_CODES.otpSessionMismatch) {
-      await clearOtpBinding();
-      return { error: AUTH_ERROR_CODES.otpSessionMismatch };
-    }
     if (code === AUTH_ERROR_CODES.identityLookupFailed) {
       return { error: AUTH_ERROR_CODES.identityLookupFailed };
     }

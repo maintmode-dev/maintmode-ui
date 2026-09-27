@@ -6,7 +6,7 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
-import { useCodeTimers } from "@/features/auth/use-code-timers";
+import { MAX_CODE_ATTEMPTS, useCodeTimers } from "@/features/auth/use-code-timers";
 
 /**
  * Two-step email one-time-code sign-in (RUK-288).
@@ -32,6 +32,12 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
+  // Counts THIS browser's submits against the backend's per-code budget. The
+  // backend answers an exhausted code with the same 401 as a wrong one, so
+  // without a local count the sixth submit — even with the right code — is told
+  // "that code isn't valid", and every one after it spends nothing but the
+  // user's patience. Same rule the password-reset flow already follows.
+  const [attempts, setAttempts] = useState(0);
 
   // Shared with the password-reset flow (RUK-289): the TTL and the attempt
   // budget are contract facts about the same backend mechanism, and two copies
@@ -53,6 +59,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
       }
       timers.start();
       setCode("");
+      setAttempts(0);
       setStep("code");
     },
     [requestCode, timers],
@@ -75,15 +82,26 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     });
     if (!result || !result.error) return;
 
-    if (result.error === "otp_session_mismatch") {
-      // The binding is gone — the server has already cleared it — so step two
-      // is now a dead end: "Sign in" would fire further doomed calls, and the
-      // copy tells the user to request a new code while the residual cooldown
-      // greys that button out. Return to step one, where asking for a new code
-      // is the primary action and nothing is throttled.
+    // Counted for every answer the server gave: it claims an attempt BEFORE it
+    // compares the code, so no failure here is free.
+    const spent = attempts + 1;
+    setAttempts(spent);
+
+    if (spent >= MAX_CODE_ATTEMPTS) {
+      // Whatever the last answer said, the code is now dead, so step two is a
+      // dead end: "Sign in" would fire further doomed calls, and the residual
+      // cooldown would grey out the "Request a new code" button the copy points
+      // at. Return to step one, where asking again is the primary action and
+      // nothing is throttled — and say why, since the backend's answer cannot.
+      //
+      // This is also the only way back from a lost browser binding: the
+      // backend no longer tells that case apart from a wrong code (BUG-2), so
+      // it runs out the same budget.
       setStep("email");
       setCode("");
       timers.reset();
+      setError("otp_attempts_spent");
+      return;
     }
     setError(result.error);
   }
@@ -199,10 +217,15 @@ export function flowErrorMessage(code: string): string {
     // can no longer work is a dead end.
     case "expired":
       return "This code has expired. Request a new one.";
-    case "otp_session_mismatch":
-      return "This code can't be checked in this browser. Request a new one to continue.";
     case "otp_verification_failed":
-      return "That code isn't valid. Check it and try again, or request a new one.";
+      // Covers every verify failure by contract — wrong, expired, exhausted, a
+      // lost browser binding — so it names both likely causes and the one
+      // action that fixes all of them.
+      return "That code is wrong or has expired. Check it, or request a new one.";
+    case "otp_attempts_spent":
+      // Client-side: the local budget ran out. Says nothing about whether the
+      // last code was right — the backend's answer cannot tell us that.
+      return "Too many attempts for this code. Request a new one.";
     case "invalid_credentials":
       // Names both fields deliberately: saying which one was wrong would
       // enumerate accounts.

@@ -150,12 +150,14 @@ export function PasswordResetFlow({
       const spent = attempts + 1;
       setAttempts(spent);
 
-      if (result.error === "password_reset_session_mismatch" || spent >= MAX_CODE_ATTEMPTS) {
-        // Either the binding is already gone server-side, or the attempts are
-        // spent — both make step two a dead end, and leaving a live cookie
-        // behind would rehydrate the user onto a code that can never be
-        // redeemed.
-        await restart(result.error);
+      if (spent >= MAX_CODE_ATTEMPTS) {
+        // The attempts are spent, so step two is a dead end, and leaving a live
+        // cookie behind would rehydrate the user onto a code that can never be
+        // redeemed. A lost binding ends up here too: the backend no longer
+        // tells it apart from a wrong code (BUG-2).
+        // The cause, in the sign-in flow's words: the backend's answer cannot
+        // say the budget is gone, so the generic failure would not either.
+        await restart("otp_attempts_spent");
         return;
       }
       setError(result.error);
@@ -298,16 +300,18 @@ function ResetError({ code }: { code: string }) {
 
 /**
  * Reset-specific copy, falling through to the shared map for the codes both
- * flows raise. Kept separate where the wording has to differ: sign-in's
- * mismatch copy tells the user to go back and sign in, which is not where
- * someone mid-reset is trying to go.
+ * flows raise. Kept separate where the wording has to differ: a failed confirm
+ * can also mean the attempts are spent, and the password-policy and outage
+ * cases exist only here.
  */
 export function resetErrorMessage(code: string): string {
   switch (code) {
-    case "password_reset_session_mismatch":
-      return "This code can't be checked in this browser. Request a new one to continue.";
     case "password_reset_failed":
-      return "That code isn't valid, or it has been used too many times. Request a new one.";
+      // The same words as sign-in's uniform failure, for the same contract:
+      // one 401 for wrong, expired, exhausted and a lost binding. It used to add
+      // "used too many times", which told a user on their first typo that the
+      // code was spent while four attempts remained.
+      return flowErrorMessage("otp_verification_failed");
     case "password_policy_violation":
       return "Choose a longer password — at least 12 characters.";
     case "password_reset_unavailable":

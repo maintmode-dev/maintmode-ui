@@ -135,7 +135,10 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
     ).rejects.toBe(redirect);
   });
 
-  it("clears the binding when the backend reports a lost one", async () => {
+  it("answers a withdrawn mismatch code with the uniform failure, and keeps the binding", async () => {
+    // BUG-2: the lost-binding code is gone from the contract. Should one still
+    // arrive, it must not be surfaced — and the binding stays, since the user
+    // may have attempts left on a code the backend still honours.
     signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "otp_session_mismatch" }));
 
     const result = await credentialsSignInAction({
@@ -144,7 +147,7 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
       code: "123456",
     });
 
-    expect(result.error).toBe("otp_session_mismatch");
-    expect(clearOtpBinding).toHaveBeenCalled();
+    expect(result.error).toBe("otp_verification_failed");
+    expect(clearOtpBinding).not.toHaveBeenCalled();
   });
 });
