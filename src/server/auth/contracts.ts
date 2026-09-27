@@ -73,6 +73,12 @@ export const AUTH_ERROR_CODES = {
   // nothing and lets the UI say "wrong account". Other accept failures stay
   // generic for anti-enumeration.
   emailMismatch: "email_mismatch",
+  // OAuth dance: the person declined at the provider's consent screen (UX-10,
+  // v0.2.0-rc). Split out of `access_denied` by the backend because it is a
+  // fact about the person's own action, decided before the backend knows who
+  // they are — so it reveals nothing about an account, and "ask for an
+  // invitation" is the wrong advice for someone who simply clicked Cancel.
+  consentCancelled: "consent_cancelled",
   // Every verify failure — wrong code, expired, attempts exhausted, a lost or
   // foreign browser binding. The backend collapses them into one 401 on purpose
   // (anti-enumeration) and so do we; the copy tells the user to re-check or

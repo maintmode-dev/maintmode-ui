@@ -385,6 +385,10 @@ function errorMessage(code: string): string {
   switch (code) {
     case "email_mismatch":
       return "This account isn't the one this invitation was sent to. Sign in with the right account.";
+    case "consent_cancelled":
+      // The person's own Cancel at the provider (UX-10) — nothing is wrong
+      // with their account, so nothing here should suggest it.
+      return "Sign-in was cancelled. Choose a way to sign in to try again.";
     case "signup_disabled":
     case "AccessDenied":
       return "This account is not provisioned. Ask an admin for an invitation.";

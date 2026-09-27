@@ -112,19 +112,25 @@ function mapLinkError(code: string): LinkFailure {
 /**
  * Maps the backend's redirect error code to one this app already renders.
  *
- * The backend's set is closed and owned by it: `access_denied`, `email_mismatch`,
- * `state_invalid`, `provider_error`, `internal_error`. Three of them collapse
+ * The backend's set is closed and owned by it: `access_denied`,
+ * `consent_cancelled`, `email_mismatch`, `state_invalid`, `link_conflict`,
+ * `provider_error`, `internal_error` (`link_conflict` only ever returns to a
+ * signed-in browser and is handled by `mapLinkError`). Three of them collapse
  * onto one message
  * because the user's action is identical in all three — try again — and the
  * detail that distinguishes them lives in the backend's audit trail, where it
  * was put deliberately.
  *
+ * `consent_cancelled` gets its own message: the person clicked Cancel at the
+ * provider, and the backend now says so separately (UX-10) because that
+ * reveals nothing about an account.
+ *
  * `access_denied` is the one that earns a different message, because it is the
- * one where retrying does not help. It covers three backend causes: signup
- * closed, a blocked user, and a consent screen the user cancelled. Telling all
- * three to ask for an invitation is wrong for the last two and right for the
- * first — and the first is the only one where the user cannot act without being
- * told. A blocked user being sent to an admin is a tolerable second-best; the
+ * one where retrying does not help. It still covers two causes: signup closed
+ * and a blocked user (and, on a backend older than `consent_cancelled`, a
+ * cancelled consent screen). Telling them to ask for an invitation is right for
+ * the first, and the first is the only one where the user cannot act without
+ * being told. A blocked user being sent to an admin is a tolerable second-best; the
  * message must not say more than that, since whether an account is blocked is
  * not a fact to volunteer to whoever holds the browser.
  *
@@ -132,6 +138,9 @@ function mapLinkError(code: string): LinkFailure {
  * rendering blank.
  */
 function mapDanceError(code: string): AuthErrorCode {
+  if (code === "consent_cancelled") {
+    return AUTH_ERROR_CODES.consentCancelled;
+  }
   if (code === "access_denied") {
     return AUTH_ERROR_CODES.signupDisabled;
   }

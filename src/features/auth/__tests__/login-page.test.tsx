@@ -42,6 +42,17 @@ describe("LoginPage error messages", () => {
     expect(screen.getByRole("alert").textContent).toContain("Ask an admin for an invitation");
   });
 
+  /**
+   * UX-10: someone who clicked Cancel at the provider was told their account
+   * "is not provisioned" and sent to an admin. Their account is fine.
+   */
+  it("says a cancelled consent was cancelled, and nothing about the account", () => {
+    renderLogin("consent_cancelled");
+    const text = screen.getByRole("alert").textContent ?? "";
+    expect(text).toContain("Sign-in was cancelled");
+    expect(text).not.toMatch(/provisioned|admin|invitation/i);
+  });
+
   it("shows the wrong-account message for email_mismatch", () => {
     renderLogin("email_mismatch");
     expect(screen.getByRole("alert").textContent).toContain("Sign in with the right account");

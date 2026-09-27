@@ -117,7 +117,8 @@ describe("completeOAuthDanceAction", () => {
   });
 
   /**
-   * All five backend codes plus an unknown one.
+   * The sign-in codes of the backend's set plus an unknown one
+   * (`link_conflict` returns only to a signed-in browser — see the link cases).
    *
    * The three middle codes collapsing onto the generic message is a DECISION,
    * not an omission — the user's action is the same for all three and the detail
@@ -126,6 +127,7 @@ describe("completeOAuthDanceAction", () => {
    */
   it.each([
     ["access_denied", "/login?code=signup_disabled"],
+    ["consent_cancelled", "/login?code=consent_cancelled"],
     ["email_mismatch", "/login?code=email_mismatch"],
     ["state_invalid", "/login?code=oauth_handoff_failed"],
     ["provider_error", "/login?code=oauth_handoff_failed"],
