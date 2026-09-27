@@ -86,12 +86,26 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
       .map((id) => ({ id, label: id, offered: false })),
   ];
 
-  // The last way in cannot be removed. A password is a way in too — the old
-  // card counted providers alone, so an account with Google AND a password
-  // could not unlink Google. `undefined` (a backend that predates the field)
-  // is treated as no password: guessing wrong the other way offers a click the
-  // backend refuses, which is the worse of the two.
-  const lastWayIn = connectedProviders.length <= 1 && passwordSet !== true;
+  // The last way in cannot be removed — the same rule the backend applies
+  // (BUG-10/BUG-11, v0.2.0-rc). A built-in method keeps an account reachable
+  // when the INSTANCE offers it and the account can use it: email code needs
+  // nothing but the mailbox, while a password needs both the method on and a
+  // password set. The instance's offer is the public list the rows come from,
+  // which carries only enabled methods.
+  //
+  // Until that list is known, only a set password counts, and `undefined`
+  // (a backend that predates the field) counts as none: guessing wrong that
+  // way offers a click the backend refuses, which is the worse of the two.
+  const methods = methodsQuery.data;
+  const codeOffered = methods?.some((m) => m.type === "code") ?? false;
+  const passwordOffered = methods ? methods.some((m) => m.type === "password") : true;
+  const passwordUsable = passwordOffered && passwordSet === true;
+  const lastWayIn = connectedProviders.length <= 1 && !codeOffered && !passwordUsable;
+  // What to suggest instead depends on what the instance offers: advising a
+  // password on an instance with password sign-in off sends people in a circle.
+  const lockoutAdvice = passwordOffered
+    ? "Set a password or connect another provider first."
+    : "Connect another provider first.";
 
   function onConnect(id: string) {
     setActionError(undefined);
@@ -121,7 +135,7 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
           error instanceof BffError && error.status === 400
             ? passwordSet === true
               ? "The server refused to remove this sign-in method. Nothing was changed."
-              : "This is your only way to sign in, so it can't be removed. Set a password or connect another provider first."
+              : `This is your only way to sign in, so it can't be removed. ${lockoutAdvice}`
             : "Couldn't disconnect. Try again.",
         );
       },
@@ -195,9 +209,7 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
                         </Button>
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>
-                      It&apos;s your only way to sign in. Set a password or connect another provider first.
-                    </TooltipContent>
+                    <TooltipContent>It&apos;s your only way to sign in. {lockoutAdvice}</TooltipContent>
                   </Tooltip>
                 ) : (
                   <Button size="xs" variant="outline" disabled={busy} onClick={() => onDisconnect(row.id)}>

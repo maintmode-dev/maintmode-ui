@@ -200,6 +200,37 @@ describe("Disconnect — and the rule that can lock a person out", () => {
     expect(button.hasAttribute("disabled")).toBe(true);
   });
 
+  /**
+   * BUG-11 (v0.2.0-rc): the backend lets the last provider go when a built-in
+   * method keeps the account reachable — email code offered on the instance,
+   * or password offered AND set. The card was stricter and disabled a
+   * disconnect the backend would have accepted.
+   */
+  it("lets the only provider go when the instance offers email code, password or not", async () => {
+    answer({
+      "GET /api/sign-in-methods": {
+        methods: [...METHODS.methods, { id: "email_otp", type: "code", display_name: "Email code" }],
+      },
+    });
+    renderCard({ connectedProviders: ["google"], passwordSet: false });
+
+    const button = await within(await findRow("google")).findByRole("button", { name: "Disconnect" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("does not count a password the instance no longer accepts", async () => {
+    // Password sign-in switched off: a set password is no way in.
+    answer({
+      "GET /api/sign-in-methods": {
+        methods: METHODS.methods.filter((m) => m.type !== "password"),
+      },
+    });
+    renderCard({ connectedProviders: ["google"], passwordSet: true });
+
+    const button = await within(await findRow("google")).findByRole("button", { name: "Disconnect" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+  });
+
   it("explains the backend's lockout refusal instead of failing silently", async () => {
     answer({
       "GET /api/sign-in-methods": METHODS,
