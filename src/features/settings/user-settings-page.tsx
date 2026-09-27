@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Plug } from "lucide-react";
+import { LogOut } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
@@ -14,25 +14,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/shared/ui/shadcn/alert-dialog";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
-import { SemanticPill } from "@/shared/ui/domain/semantic-pill";
+import { TooltipProvider } from "@/shared/ui/shadcn/tooltip";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
-import { BrandIcon, type BrandProvider } from "@/shared/ui/icons/brand-icons";
 
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 import { MessengerTagsFields } from "./messenger-tags-card";
 import { TimezoneCard } from "./timezone-card";
 import { PasswordCard } from "./password-card";
+import { SignInMethodsCard } from "./sign-in-methods-card";
+import { useSignInMethodsQuery } from "./queries/use-sign-in-methods";
+import type { LinkOutcome } from "@/domain/auth/link-outcome";
 import type { Role } from "@/domain/auth/permissions";
 
 /** Role chips render admin-first, consistent with users-management. */
 const ROLE_ORDER: Role[] = ["admin", "reviewer", "editor", "guest"];
-
-/** Provider rows, in the contract's order, with their display label. */
-const PROVIDERS: { id: BrandProvider; label: string }[] = [
-  { id: "google", label: "Google" },
-  { id: "github", label: "GitHub" },
-];
 
 /** First letters of the display name for the header avatar. */
 function initials(name: string): string {
@@ -46,8 +41,12 @@ function initials(name: string): string {
   );
 }
 
-export function UserSettingsPage() {
+export function UserSettingsPage({ linkOutcome }: { linkOutcome?: LinkOutcome } = {}) {
   const meQuery = useMeQuery();
+  // Started here, beside `/me`, rather than only when the card mounts: the card
+  // mounts after `/me` resolves (the early return below), which made the two
+  // independent reads a waterfall. The card's own call shares this cache entry.
+  useSignInMethodsQuery();
   const [signOutAllOpen, setSignOutAllOpen] = useState(false);
 
   if (meQuery.isPending || !meQuery.data) {
@@ -59,10 +58,6 @@ export function UserSettingsPage() {
     );
   }
   const user = meQuery.data;
-  // Lockout guard: disconnecting your only sign-in method would lock you out,
-  // so the action is disabled when a single provider is connected (the backend
-  // also rejects it with 400 — this is the proactive half).
-  const onlyProvider = user.connected_providers.length === 1;
 
   return (
     <TooltipProvider>
@@ -115,71 +110,12 @@ export function UserSettingsPage() {
 
         <TimezoneCard savedZone={user.timezone} />
 
-        <Card title="Sign-in method">
-          <p className="caption">
-            Connect another provider so you can sign in with whichever one is handy. The one marked Connected
-            is what you used this session.
-          </p>
-          <div className="space-y-2">
-            {PROVIDERS.map((p) => {
-              const connected = user.connected_providers.includes(p.id);
-              const supportedNow = p.id === "google";
-              const disconnectGuarded = connected && onlyProvider;
-              return (
-                <div
-                  key={p.id}
-                  className="flex items-center gap-3 px-3 py-2 rounded-sm bg-bg-elev-2 border border-border-subtle"
-                >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-sm bg-white">
-                    <BrandIcon name={p.id} size={18} />
-                  </span>
-                  <span className={connected ? "text-sm flex-1" : "text-sm flex-1 text-fg-muted"}>
-                    {p.label}
-                  </span>
-                  {connected ? (
-                    // The session-authenticating provider is tagged "current
-                    // session" (frozen decision), not a maintenance status word.
-                    supportedNow ? (
-                      <SemanticPill tone="positive">Current session</SemanticPill>
-                    ) : (
-                      <SemanticPill tone="neutral">Connected</SemanticPill>
-                    )
-                  ) : (
-                    <span className="caption">Not connected</span>
-                  )}
-                  {connected ? (
-                    disconnectGuarded ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="inline-block" tabIndex={0}>
-                            <Button size="xs" variant="outline" disabled className="pointer-events-none">
-                              Disconnect
-                            </Button>
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          Connect another method first so you don&apos;t lock yourself out.
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <Button size="xs" variant="outline">
-                        Disconnect
-                      </Button>
-                    )
-                  ) : (
-                    <Button
-                      size="xs"
-                      variant="default"
-                      disabled={!supportedNow}
-                      title={supportedNow ? undefined : "Coming soon"}
-                    >
-                      <Plug className="size-3.5" aria-hidden="true" /> Connect
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        <Card title="Sign-in methods">
+          <SignInMethodsCard
+            connectedProviders={user.connected_providers}
+            passwordSet={user.password_set}
+            linkOutcome={linkOutcome}
+          />
         </Card>
 
         <Card title="Password">

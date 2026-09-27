@@ -48,6 +48,28 @@ function fill(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
 
+describe("UX-12 — the link to the standalone page says what it opens", () => {
+  it("names the form it opens", () => {
+    renderCard(false);
+
+    expect(screen.getByRole("link", { name: "Open this form on a separate page" }).getAttribute("href")).toBe(
+      "/set-password",
+    );
+  });
+});
+
+describe("UX-3 — the new password can be checked before it is saved", () => {
+  it("offers show/hide on the new password, on both forms", () => {
+    for (const passwordSet of [true, false]) {
+      renderCard(passwordSet);
+
+      fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+      expect((screen.getByLabelText("New password") as HTMLInputElement).type).toBe("text");
+      cleanup();
+    }
+  });
+});
+
 describe("which form is drawn — the three values of password_set", () => {
   // AC-5. `undefined` is NOT `false`: a backend that predates the field would
   // otherwise get the set-password form for every operator, and every save
@@ -247,6 +269,8 @@ describe("the destructive consequence is stated before the submit", () => {
   it("warns that changing a password signs other devices out", () => {
     renderCard(true);
 
-    expect(screen.getByText(/signs you out of your other devices/i)).toBeTruthy();
+    // NOTE-2: "within minutes", never an instant claim — access tokens already
+    // issued outlive the revocation until they expire.
+    expect(screen.getByText(/signs your other devices out within minutes/i)).toBeTruthy();
   });
 });

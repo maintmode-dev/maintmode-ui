@@ -23,7 +23,7 @@ import { completeOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ code?: string; error?: string }>;
+  searchParams: Promise<{ code?: string; error?: string; linked?: string }>;
 }) {
   const sp = await searchParams;
 
@@ -49,6 +49,9 @@ export default async function Page({
         */}
         <input type="hidden" name="code" value={sp.code ?? ""} />
         <input type="hidden" name="error" value={sp.error ?? ""} />
+        {/* The backend's answer to a completed LINK (GAP-2): no code, just this
+            flag, since nothing is signed in — the account already was. */}
+        <input type="hidden" name="linked" value={sp.linked ?? ""} />
         <Stack
           icon={<LoaderCircle className="animate-spin" aria-hidden="true" />}
           title="Signing you in…"

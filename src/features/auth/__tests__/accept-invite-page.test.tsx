@@ -1,21 +1,38 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AcceptInvitePage, type InvitationPreviewResult } from "../accept-invite-page";
+import type { SignInMethod } from "@/domain/auth/sign-in-method";
 
 // This config has no global testing-library auto-cleanup, so unmount between
 // tests to keep the document free of stale renders.
 afterEach(() => cleanup());
 
-const noopAccept = vi.fn(async () => {});
+const noopAccept = vi.fn<(providerId: string) => Promise<void>>(async () => {});
+
+const GOOGLE: SignInMethod = { id: "google", type: "redirect", display_name: "Google" };
+const CUSTOM: SignInMethod = { id: "custom", type: "redirect", display_name: "Corporate SSO" };
 
 function renderPage(
   preview: InvitationPreviewResult,
   token?: string,
-  extra: { signedInAs?: string; signInAvailable?: boolean } = {},
+  extra: {
+    signedInAs?: string;
+    providers?: SignInMethod[];
+    acceptAction?: (providerId: string) => Promise<void>;
+  } = {},
 ) {
-  render(<AcceptInvitePage token={token} preview={preview} acceptAction={noopAccept} {...extra} />);
+  const { providers = [GOOGLE], acceptAction = noopAccept, ...rest } = extra;
+  render(
+    <AcceptInvitePage
+      token={token}
+      preview={preview}
+      acceptAction={acceptAction}
+      providers={providers}
+      {...rest}
+    />,
+  );
 }
 
 describe("AcceptInvitePage token states", () => {
@@ -82,10 +99,13 @@ describe("AcceptInvitePage token states", () => {
     expect(document.body.textContent).not.toContain("admin");
   });
 
-  it("treats an unrecognized suggested_provider as the Google default", () => {
-    renderPage({ status: "valid", suggested_provider: "saml-corp" }, "tok-1");
+  it("draws its buttons from the advertised providers, never from suggested_provider", () => {
+    // The backend's hint names a provider that is not configured here; the
+    // button must come from what is, or it would start a dance for nothing.
+    renderPage({ status: "valid", suggested_provider: "google" }, "tok-1", { providers: [CUSTOM] });
 
-    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with Corporate SSO" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Continue with Google/ })).toBeNull();
   });
 
   /**
@@ -137,31 +157,22 @@ describe("AcceptInvitePage token states", () => {
 
 /**
  * RUK-304. `b74a4536` moved sign-in providers into the registry and its
- * migration deleted the existing rows, so a fresh deployment has no Google
- * provider. This page hard-coded one and handed it to a server action that
- * `redirect()`s, and the backend answers an unknown provider with a JSON error
- * rather than a redirect — so the invitee landed on raw JSON on another origin.
+ * migration deleted the existing rows, so a fresh deployment may have none. The
+ * page hard-coded Google and handed it to a server action that `redirect()`s,
+ * and the backend answers an unknown provider with a JSON error rather than a
+ * redirect — so the invitee landed on raw JSON on another origin.
  *
- * The provider is resolved on the server now and its availability arrives as a
- * prop. It DEFAULTS to available, which keeps the existing assertion above —
- * that a valid invite does not say "temporarily unavailable" — passing
- * untouched.
+ * The providers are resolved on the server now and arrive as a prop.
  */
 describe("RUK-304 — no button for a provider that is not there", () => {
-  it("offers the button when sign-in is available", () => {
-    renderPage({ status: "valid" }, "tok-1", { signInAvailable: true });
-
-    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
-  });
-
-  it("offers the button when availability is not stated, so today's callers are unaffected", () => {
-    renderPage({ status: "valid" }, "tok-1");
+  it("offers a button for the provider it is given", () => {
+    renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE] });
 
     expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
   });
 
   it("offers NO button when no sign-in provider is configured", () => {
-    renderPage({ status: "valid" }, "tok-1", { signInAvailable: false });
+    renderPage({ status: "valid" }, "tok-1", { providers: [] });
 
     // A button that navigates to raw backend JSON is worse than no button.
     expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
@@ -173,14 +184,14 @@ describe("RUK-304 — no button for a provider that is not there", () => {
    * explanation with no button will otherwise assume they burnt their invite.
    */
   it("says the invitation is still valid, so the invitee does not think it was spent", () => {
-    renderPage({ status: "valid" }, "tok-1", { signInAvailable: false });
+    renderPage({ status: "valid" }, "tok-1", { providers: [] });
 
     const status = screen.getByRole("status").textContent ?? "";
     expect(status).toMatch(/still (valid|works)/i);
   });
 
   it("explains that sign-in is unavailable rather than leaving the page mute", () => {
-    renderPage({ status: "valid" }, "tok-1", { signInAvailable: false });
+    renderPage({ status: "valid" }, "tok-1", { providers: [] });
 
     expect(screen.getByRole("status").textContent).toMatch(/sign[- ]in/i);
   });
@@ -190,9 +201,48 @@ describe("RUK-304 — no button for a provider that is not there", () => {
    * a provider is irrelevant when the token itself is no good.
    */
   it("still shows the invalid copy when the token is bad and no provider exists", () => {
-    renderPage({ status: "invalid" }, "tok-bad", { signInAvailable: false });
+    renderPage({ status: "invalid" }, "tok-bad", { providers: [] });
 
     expect(screen.getByText("Invalid invitation link")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
+  });
+});
+
+/**
+ * BUG-4. With Google switched off and a `custom` OIDC provider live, this page
+ * said "Sign-in isn't set up on this instance yet" — false, and for an
+ * organisation whose only way in is its own IdP, the end of onboarding.
+ */
+describe("BUG-4 — an invitation can be accepted through any advertised provider", () => {
+  it("offers a custom provider by its display name", () => {
+    renderPage({ status: "valid" }, "tok-1", { providers: [CUSTOM] });
+
+    const button = screen.getByRole("button", { name: "Continue with Corporate SSO" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("offers one button per provider", () => {
+    renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE, CUSTOM] });
+
+    expect(screen.getAllByRole("button", { name: /^Continue with/ })).toHaveLength(2);
+  });
+
+  it("starts the dance for the provider that was clicked", async () => {
+    // Two providers, so a button wired to the other one — or to a literal —
+    // cannot pass by coincidence.
+    const acceptAction = vi.fn<(providerId: string) => Promise<void>>(async () => {});
+    renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE, CUSTOM], acceptAction });
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Corporate SSO" }));
+
+    await waitFor(() => expect(acceptAction).toHaveBeenCalledTimes(1));
+    expect(acceptAction.mock.calls[0]?.[0]).toBe("custom");
+  });
+
+  it("still offers nothing to a signed-in visitor, whatever is configured", () => {
+    renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE, CUSTOM], signedInAs: "a@corp.test" });
+
     expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
   });
 });

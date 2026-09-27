@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { BffError } from "@/features/_shared/api/bff-fetch";
@@ -86,7 +87,11 @@ export function AuthMethodsPage() {
         <h1 className="text-fg-strong text-xl font-semibold">Sign-in methods</h1>
         <p className="text-fg-muted mt-1 text-sm">
           Which built-in methods this instance offers. Turning one off closes it for new sign-ins; people
-          already signed in stay signed in. Single sign-on providers are configured under Integrations.
+          already signed in stay signed in. Single sign-on providers are configured under{" "}
+          <Link href="/admin/integrations" className="underline">
+            Integrations
+          </Link>
+          .
         </p>
       </header>
 
@@ -104,6 +109,27 @@ export function AuthMethodsPage() {
             Try again
           </Button>
         </div>
+      ) : null}
+
+      {/*
+        Warns, never blocks (UX-4). An instance with every built-in method off
+        is a legitimate SSO-only setup — the backend dropped its last-method
+        guard for that reason — but if no provider is on either, nobody new can
+        sign in, and this screen cannot see the providers to know which. So it
+        says "may". Counted over the rows as shown, which includes a method
+        this build does not recognise: that is a live way in too.
+      */}
+      {query.isSuccess && rows.length > 0 && rows.every((row) => !row.enabled) ? (
+        <p
+          role="status"
+          className="mb-4 rounded-md border border-[var(--status-in_progress-fg)] px-3 py-2 text-sm text-[var(--status-in_progress-fg)]"
+        >
+          Every built-in method is off. People can sign in only through a provider under{" "}
+          <Link href="/admin/integrations" className="underline">
+            Integrations
+          </Link>{" "}
+          — if none is on, nobody may be able to sign in.
+        </p>
       ) : null}
 
       {query.isSuccess ? (

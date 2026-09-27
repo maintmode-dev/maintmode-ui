@@ -14,6 +14,8 @@ const loginWithPassword = vi.fn();
 const fetchBackendMe = vi.fn();
 const readOtpBinding = vi.fn();
 const clearOtpBinding = vi.fn();
+const clearAllBindings = vi.fn();
+const recordRefusedCode = vi.fn();
 
 vi.mock("@/server/auth/backend-token-exchange", () => ({
   verifyOtpCode: (...args: unknown[]) => verifyOtpCode(...args),
@@ -27,6 +29,8 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
 vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   readOtpBinding: () => readOtpBinding(),
   clearOtpBinding: () => clearOtpBinding(),
+  clearAllBindings: () => clearAllBindings(),
+  recordRefusedCode: (...args: unknown[]) => recordRefusedCode(...args),
   setOtpBinding: vi.fn(),
   // The real implementation: normalization is part of the behaviour under test,
   // so stubbing it would hide the case-variant bug this file now covers.
@@ -65,15 +69,24 @@ beforeEach(() => {
   fetchBackendMe.mockReset();
   readOtpBinding.mockReset();
   clearOtpBinding.mockReset();
+  clearAllBindings.mockReset();
+  recordRefusedCode.mockReset();
 });
 
-describe("AC-4 — a lost binding must never be reported as a wrong code", () => {
-  it("reports a mismatch when this browser holds no binding at all", async () => {
+/**
+ * BUG-2 (v0.2.0-rc). The backend withdrew its distinct `otp_session_mismatch`:
+ * telling a lost binding apart from a wrong code revealed whether an account
+ * exists. Every verify failure is now one answer, and the local binding check
+ * must answer with it too — a distinct code from this side would be a second
+ * copy of the signal the backend removed.
+ */
+describe("BUG-2 — every verify failure is one answer", () => {
+  it("reports the uniform failure when this browser holds no binding at all", async () => {
     readOtpBinding.mockResolvedValue(undefined);
 
     const code = await codeOf(callSignIn({ provider: "backend-login" }, OTP_USER));
 
-    expect(code).toBe(AUTH_ERROR_CODES.otpSessionMismatch);
+    expect(code).toBe(AUTH_ERROR_CODES.otpVerificationFailed);
     // Never reaches the backend: there is nothing to verify against.
     expect(verifyOtpCode).not.toHaveBeenCalled();
   });
@@ -100,21 +113,21 @@ describe("AC-4 — a lost binding must never be reported as a wrong code", () =>
     });
   });
 
-  it("reports a mismatch when the binding belongs to a different address", async () => {
+  it("refuses a binding issued for a different address, with the same answer", async () => {
     // The only thing stopping a nonce issued for one address being spent on
     // another. Without it the binding binds nothing.
     readOtpBinding.mockResolvedValue({ nonce: "n-1", email: "someone-else@example.test" });
 
     const code = await codeOf(callSignIn({ provider: "backend-login" }, OTP_USER));
 
-    expect(code).toBe(AUTH_ERROR_CODES.otpSessionMismatch);
+    expect(code).toBe(AUTH_ERROR_CODES.otpVerificationFailed);
     expect(verifyOtpCode).not.toHaveBeenCalled();
   });
 
-  it("reports a mismatch when the BACKEND says the binding is stale", async () => {
-    // The backend checks the nonce before the code, so it can reject a binding
-    // this browser still holds. Mapping that to a wrong-code error is precisely
-    // the defect RUK-288 exists to remove.
+  it("answers uniformly even if an older backend still names a mismatch", async () => {
+    // A backend deployed before the contract change still sends the withdrawn
+    // code. Surfacing it would keep the account-existence signal alive on
+    // exactly the instances that have not upgraded.
     readOtpBinding.mockResolvedValue({ nonce: "n-stale", email: "someone@example.test" });
     verifyOtpCode.mockRejectedValue(
       new BackendAuthError(401, JSON.stringify({ code: "otp_session_mismatch" })),
@@ -122,8 +135,7 @@ describe("AC-4 — a lost binding must never be reported as a wrong code", () =>
 
     const code = await codeOf(callSignIn({ provider: "backend-login" }, OTP_USER));
 
-    expect(code).toBe(AUTH_ERROR_CODES.otpSessionMismatch);
-    expect(code).not.toBe(AUTH_ERROR_CODES.otpVerificationFailed);
+    expect(code).toBe(AUTH_ERROR_CODES.otpVerificationFailed);
   });
 
   it("reports a wrong code as a wrong code, and keeps the binding alive", async () => {
@@ -134,8 +146,10 @@ describe("AC-4 — a lost binding must never be reported as a wrong code", () =>
 
     expect(code).toBe(AUTH_ERROR_CODES.otpVerificationFailed);
     // The user has five attempts per code; clearing the cookie here would spend
-    // the rest of them for no reason.
+    // the rest of them for no reason. The refusal is counted in it instead, so
+    // a burnt code stays recognisable after a reload.
     expect(clearOtpBinding).not.toHaveBeenCalled();
+    expect(recordRefusedCode).toHaveBeenCalledWith("sign-in");
   });
 });
 
@@ -148,14 +162,17 @@ describe("AC-4 — the binding is cleared exactly when the flow is over", () => 
     expect(clearOtpBinding).toHaveBeenCalled();
   });
 
-  it("clears it after a successful verify so a code cannot be replayed", async () => {
+  it("clears every binding after a successful verify so a code cannot be replayed", async () => {
+    // The backend keeps one code for sign-in and reset: the reset flow may be
+    // bound to the code just spent.
     readOtpBinding.mockResolvedValue({ nonce: "n-1", email: "someone@example.test" });
     verifyOtpCode.mockResolvedValue(TOKENS);
     fetchBackendMe.mockResolvedValue(ME);
 
     await callSignIn({ provider: "backend-login" }, OTP_USER);
 
-    expect(clearOtpBinding).toHaveBeenCalledTimes(1);
+    expect(clearAllBindings).toHaveBeenCalledTimes(1);
+    expect(recordRefusedCode).not.toHaveBeenCalled();
   });
 });
 

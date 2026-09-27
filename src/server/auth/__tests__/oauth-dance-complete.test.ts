@@ -69,6 +69,45 @@ describe("completeOAuthDanceAction", () => {
     expect(signIn).not.toHaveBeenCalled();
   });
 
+  /**
+   * GAP-2. A LINK returns to this receiver with the account already signed in —
+   * `linked=1` on success, `error` on failure, and never a code. It must land
+   * on the profile with its outcome, not on `/` with nothing said.
+   */
+  it("sends a completed link to the profile", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+
+    expect(await landsOn(form({ linked: "1" }))).toBe("/settings/profile?linked=1");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["link_conflict", "/settings/profile?link_error=link_conflict"],
+    ["access_denied", "/settings/profile?link_error=denied"],
+    ["consent_cancelled", "/settings/profile?link_error=denied"],
+    ["state_invalid", "/settings/profile?link_error=failed"],
+    ["<script>alert(1)</script>", "/settings/profile?link_error=failed"],
+  ])("sends a failed link (%s) to the profile with a closed code", async (error, expected) => {
+    // Never the raw value: it lands in the address bar and on the page.
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+
+    expect(await landsOn(form({ error }))).toBe(expected);
+  });
+
+  it("still redeems nothing for a code that arrives alongside a session", async () => {
+    // The fixation guard is unchanged by the link branch: a code with a
+    // session is refused, whatever else the form carries.
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    expect(await landsOn(form({ code: "attacker-code", linked: "" }))).toBe("/");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("does not treat linked=1 without a session as anything", async () => {
+    // Nobody is signed in, so no link happened here: the ordinary no-code path.
+    expect(await landsOn(form({ linked: "1" }))).toBe("/login?code=oauth_handoff_failed");
+  });
+
   it("still clears the destination cookie when it refuses", async () => {
     readActiveSession.mockResolvedValue({ user: { id: "victim" } });
 
@@ -78,7 +117,8 @@ describe("completeOAuthDanceAction", () => {
   });
 
   /**
-   * All five backend codes plus an unknown one.
+   * The sign-in codes of the backend's set plus an unknown one
+   * (`link_conflict` returns only to a signed-in browser — see the link cases).
    *
    * The three middle codes collapsing onto the generic message is a DECISION,
    * not an omission — the user's action is the same for all three and the detail
@@ -87,6 +127,7 @@ describe("completeOAuthDanceAction", () => {
    */
   it.each([
     ["access_denied", "/login?code=signup_disabled"],
+    ["consent_cancelled", "/login?code=consent_cancelled"],
     ["email_mismatch", "/login?code=email_mismatch"],
     ["state_invalid", "/login?code=oauth_handoff_failed"],
     ["provider_error", "/login?code=oauth_handoff_failed"],

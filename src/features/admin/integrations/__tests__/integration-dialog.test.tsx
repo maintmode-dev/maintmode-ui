@@ -461,6 +461,14 @@ describe("sign-in provider kinds", () => {
     expect(clientId?.textContent).toContain("*");
   });
 
+  /** UX-8: a read-only preset field read as an ordinary input to fill in. */
+  it("marks a preset field as set by the deployment, and only a preset field", () => {
+    renderDialog("google");
+
+    expect(screen.getByText("Issuer URL").closest("label")?.textContent).toMatch(/set by deployment/i);
+    expect(screen.getByText("Client ID").closest("label")?.textContent).not.toMatch(/set by deployment/i);
+  });
+
   /**
    * The credential gate, asserted against its own deletion.
    *
@@ -671,5 +679,60 @@ describe("transport status copy is preserved verbatim", () => {
     renderSlack();
     fireEvent.click(screen.getByLabelText("Integration enabled"));
     expect(screen.getByText("Delivery through this transport is paused; settings are kept.")).toBeTruthy();
+  });
+});
+
+/**
+ * UX-8 (v0.2.0-rc), the dialog's half. A turned-off provider reports
+ * `health: "disabled"`, and the edit dialog drew "Sign-in status: Turned off"
+ * right above a Status switch already reading "Disabled". The row's half is in
+ * `integrations-page.test.tsx`; the dialog carries its own copy of the check.
+ */
+describe("sign-in status in the edit dialog", () => {
+  const GOOGLE_CONFIGURED: Integration = {
+    id: "i-google",
+    kind: "login",
+    name: "google",
+    enabled: true,
+    config: { issuer_url: "https://accounts.google.com" },
+    secrets_set: { client_secret: true },
+    health: "ok",
+    created_at: "2026-07-01T10:00:00Z",
+    updated_at: "2026-07-02T14:21:00Z",
+  };
+
+  const status = () => screen.queryByText("Sign-in status:")?.parentElement?.textContent ?? null;
+
+  it("does not repeat 'Turned off' for a provider that is switched off", () => {
+    renderDialog({
+      kind: "login",
+      name: "google",
+      integration: { ...GOOGLE_CONFIGURED, enabled: false, health: "disabled" },
+    });
+
+    expect(screen.getByText("Disabled")).toBeTruthy();
+    expect(status()).toBeNull();
+    expect(screen.queryByText("Turned off")).toBeNull();
+  });
+
+  it("still reports health that is news on a switched-off provider", () => {
+    renderDialog({
+      kind: "login",
+      name: "google",
+      integration: { ...GOOGLE_CONFIGURED, enabled: false, health: "unreadable" },
+    });
+
+    expect(status()).toMatch(/Secret unreadable/);
+  });
+
+  it("says 'Turned off' when the provider claims to be enabled", () => {
+    // The backend has not caught up with the switch — that IS news.
+    renderDialog({
+      kind: "login",
+      name: "google",
+      integration: { ...GOOGLE_CONFIGURED, enabled: true, health: "disabled" },
+    });
+
+    expect(status()).toMatch(/Turned off/);
   });
 });

@@ -8,6 +8,7 @@ import { BffError } from "@/features/_shared/api/bff-fetch";
 import { useChangePassword } from "@/features/_shared/queries/use-me-query";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
+import { PasswordInput } from "@/shared/ui/domain/password-input";
 import { Label } from "@/shared/ui/shadcn/label";
 
 /**
@@ -142,10 +143,11 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
       ) : null}
 
       <Label htmlFor="new-password">New password</Label>
-      <Input
+      {/* Show/hide rather than a confirm field (UX-3): the new password is typed
+          once with nothing to compare it against. */}
+      <PasswordInput
         id="new-password"
         name="new-password"
-        type="password"
         autoComplete="new-password"
         value={next}
         onChange={(e) => setNext(e.target.value)}
@@ -157,7 +159,11 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
        * so a non-ASCII password shorter than the hint is still accepted.
        */}
       <p id="new-password-hint" className="caption">
-        At least 12 characters. {asChange ? "Changing it signs you out of your other devices." : null}
+        {/* "Within minutes", not "now" (NOTE-2): the backend revokes the other
+            devices' refresh tokens at once, but an access token already issued
+            stays valid until it expires. No number: that lifetime is backend
+            configuration, and a figure here would go stale silently. */}
+        At least 12 characters. {asChange ? "Changing it signs your other devices out within minutes." : null}
       </p>
 
       {error ? (
@@ -172,9 +178,11 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
         </Button>
         {!asChange ? (
           // The page is the same form on its own, for someone who came here to
-          // do this one thing. It is this card's only entry point.
+          // do this one thing. It is this card's only entry point. Said as
+          // "this form" (UX-12): "Open on its own page" left people asking
+          // what would open.
           <a href="/set-password" className="caption underline">
-            Open on its own page
+            Open this form on a separate page
           </a>
         ) : null}
       </div>

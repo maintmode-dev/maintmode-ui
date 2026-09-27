@@ -6,7 +6,7 @@ import type { Integration } from "@/domain/admin/integration";
 import { Button } from "@/shared/ui/shadcn/button";
 import { Switch } from "@/shared/ui/shadcn/switch";
 
-import { IntegrationHealthBadge } from "./integration-health";
+import { IntegrationHealthBadge, healthAddsInformation } from "./integration-health";
 import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
@@ -46,7 +46,10 @@ export function IntegrationRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3.5 rounded-md border border-border-subtle px-3.5 py-3",
+        // Wraps on a narrow screen (UX-5): the text keeps a minimum width and
+        // the controls drop to their own line, where they used to squeeze the
+        // name under the switch and cut the status to one letter.
+        "flex flex-wrap items-center gap-x-3.5 gap-y-2 rounded-md border border-border-subtle px-3.5 py-3",
         configured ? "bg-bg-elev-2" : "bg-transparent",
       )}
     >
@@ -59,8 +62,10 @@ export function IntegrationRow({
         <IntegrationBrandIcon name={meta.brand} size={18} />
       </span>
 
-      <div className="flex-1 min-w-0">
-        <div className={cn("text-sm font-semibold", configured ? "text-fg-strong" : "text-fg-muted")}>
+      <div className="flex-1 min-w-[12rem]">
+        <div
+          className={cn("truncate text-sm font-semibold", configured ? "text-fg-strong" : "text-fg-muted")}
+        >
           {meta.label}
         </div>
         {configured ? (
@@ -78,7 +83,7 @@ export function IntegrationRow({
                 (which has no such concept) and for a login row whose state it
                 could not read, so a truthiness check would make "transports
                 show nothing" an accident of the same empty string. */}
-            {integration.kind === "login" ? (
+            {integration.kind === "login" && healthAddsInformation(integration) ? (
               <>
                 <span className="text-fg-dim">·</span>
                 <IntegrationHealthBadge health={integration.health} />
@@ -94,38 +99,40 @@ export function IntegrationRow({
         )}
       </div>
 
-      {configured ? (
-        <Switch
-          checked={integration.enabled}
-          disabled={toggleBusy}
-          onCheckedChange={onToggle}
-          aria-label={`${meta.label} enabled`}
-        />
-      ) : null}
+      <div className="ml-auto flex shrink-0 items-center gap-2">
+        {configured ? (
+          <Switch
+            checked={integration.enabled}
+            disabled={toggleBusy}
+            onCheckedChange={onToggle}
+            aria-label={`${meta.label} enabled`}
+          />
+        ) : null}
 
-      {configured ? (
-        <Button variant="ghost" size="sm" onClick={onOpen}>
-          <SettingsIcon className="size-3.5" aria-hidden="true" /> Configure
-        </Button>
-      ) : (
-        <Button variant="outline" size="sm" onClick={onOpen}>
-          <Plug className="size-3.5" aria-hidden="true" /> Set up
-        </Button>
-      )}
+        {configured ? (
+          <Button variant="ghost" size="sm" onClick={onOpen}>
+            <SettingsIcon className="size-3.5" aria-hidden="true" /> Configure
+          </Button>
+        ) : (
+          <Button variant="outline" size="sm" onClick={onOpen}>
+            <Plug className="size-3.5" aria-hidden="true" /> Set up
+          </Button>
+        )}
 
-      {/* Only a configured row can be deleted — there is nothing to remove
+        {/* Only a configured row can be deleted — there is nothing to remove
           otherwise, and an always-present control would invite the question. */}
-      {configured && onDelete ? (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onDelete}
-          aria-label={`Delete ${meta.label}`}
-          className="text-fg-muted hover:text-[var(--destructive-fg)]"
-        >
-          <Trash2 className="size-3.5" aria-hidden="true" />
-        </Button>
-      ) : null}
+        {configured && onDelete ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDelete}
+            aria-label={`Delete ${meta.label}`}
+            className="text-fg-muted hover:text-[var(--destructive-fg)]"
+          >
+            <Trash2 className="size-3.5" aria-hidden="true" />
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }

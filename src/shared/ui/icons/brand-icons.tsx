@@ -102,6 +102,31 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
   );
 }
 
+const BRAND_PROVIDERS: ReadonlySet<string> = new Set<BrandProvider>([
+  "google",
+  "github",
+  "microsoft",
+  "okta",
+]);
+
+function isBrandProvider(id: string): id is BrandProvider {
+  return BRAND_PROVIDERS.has(id);
+}
+
+/**
+ * A sign-in provider's mark, by the backend's provider id. Brand marks are
+ * decoration, so this is the one place an id is matched: a provider with no
+ * brand of its own (a `custom` OIDC IdP is whoever the operator points it at)
+ * gets the neutral OIDC key rather than someone else's logo.
+ */
+export function SignInProviderIcon({ id, size }: { id: string; size: number }) {
+  return isBrandProvider(id) ? (
+    <BrandIcon name={id} size={size} />
+  ) : (
+    <IntegrationBrandIcon name="oidc" size={size} />
+  );
+}
+
 /**
  * Brand marks for the integrations registry (screen 19). Slack/Telegram keep
  * their vendor colours; email and OIDC are neutral glyphs, and GitHub reuses
@@ -113,7 +138,7 @@ export function MaintMark({ size = 24, className, ...props }: ComponentProps<"sv
  *
  * Source: the integrations-settings design snapshot.
  */
-export type IntegrationBrand = "slack" | "telegram" | "email" | "github" | "oidc";
+export type IntegrationBrand = "slack" | "telegram" | "email" | "github" | "google" | "oidc";
 
 export function IntegrationBrandIcon({
   name,
@@ -175,6 +200,10 @@ export function IntegrationBrandIcon({
     case "github":
       // Reuses the provider mark rather than a second copy of the path data.
       return <BrandIcon name="github" size={size} className={className} />;
+    case "google":
+      // Google has a mark of its own; the neutral OIDC key below is for a
+      // provider that is whoever the operator points it at (UX-8).
+      return <BrandIcon name="google" size={size} className={className} />;
     case "oidc":
       // No vendor mark: an OIDC provider is whoever the operator points it at.
       // A neutral key reads as "identity" without implying a brand.

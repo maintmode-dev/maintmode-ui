@@ -44,3 +44,16 @@ describe("the login page starts the dance with what the user clicked", () => {
     expect(page).not.toMatch(/signIn\(\s*providerId/);
   });
 });
+
+/**
+ * UX-12 (v0.2.0-rc): the resumed reset countdown needs the deadline the binding
+ * carries, and this page is the one place it is handed across. Dropping the
+ * prop compiles — it is optional — and quietly brings back the countdown that
+ * restarts at five minutes on every reload.
+ */
+describe("the login page hands a resumed reset its deadline", () => {
+  it("passes the binding's deadline alongside its address", () => {
+    expect(page).toMatch(/resetInProgressEmail=\{resetBinding\?\.email\}/);
+    expect(page).toMatch(/resetInProgressExpiresAt=\{resetBinding\?\.expiresAt\}/);
+  });
+});

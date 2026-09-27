@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { OTP_MAX_ATTEMPTS, OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
+
 /**
  * The countdown, resend cooldown and double-submit guard shared by the two
  * emailed-code flows: sign-in (RUK-288) and password reset (RUK-289).
@@ -16,25 +18,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export const CODE_TTL_SECONDS = 300;
 
 /**
- * Advisory only. The backend has no resend cooldown, and its per-IP bucket is
- * shared with the password and OAuth endpoints — so an unthrottled resend
- * button would lock the user out of the *other* ways in. The server's 429 is
- * the real backstop.
+ * The backend's reissue cooldown, not a guess. Inside it a resend is answered
+ * 202 with no email, so a shorter wait here offered "Request a new code" for a
+ * code that would never come (it was 30s against the backend's 60s). It also
+ * keeps retries away from the per-IP bucket the password and OAuth endpoints
+ * share.
  */
-export const RESEND_COOLDOWN_SECONDS = 30;
+export const RESEND_COOLDOWN_SECONDS = OTP_REISSUE_COOLDOWN_SECONDS;
 
 /**
- * The backend's `auth.otp_max_attempts`. It claims an attempt BEFORE comparing
- * the code, so a submit with a stale nonce spends one exactly like a wrong
- * digit does — which is why the caller counts every submit rather than only the
- * plausible ones.
+ * The backend's `auth.otp_max_attempts` (`OTP_MAX_ATTEMPTS`, shared with the
+ * server's burnt-code check). Only a refused code counts: a 429 or an outage
+ * never reached the code.
  *
  * Deliberately the configured value (5) and not the backend's ceiling for that
  * setting (10). Erring high would hand the user five doomed submits against an
  * exhausted code; erring low costs at worst one premature "request a new code",
  * which is the state they were heading for anyway.
  */
-export const MAX_CODE_ATTEMPTS = 5;
+export const MAX_CODE_ATTEMPTS = OTP_MAX_ATTEMPTS;
 
 export interface CodeTimers {
   /** Seconds until the code is presumed dead. Zero means expired. */
@@ -43,8 +45,11 @@ export interface CodeTimers {
   cooldown: number;
   /** True once `remaining` has run out on the code step. */
   expired: boolean;
-  /** Starts both timers — call on a successful code request. */
-  start: () => void;
+  /**
+   * Starts both timers — call on a successful code request. A resumed flow
+   * passes the code's known deadline (epoch ms) instead of starting afresh.
+   */
+  start: (knownDeadline?: number) => void;
   /** Stops both — call when leaving the code step. */
   reset: () => void;
   /** Restarts only the cooldown, for a request that failed. */
@@ -93,15 +98,23 @@ export function useCodeTimers(active: boolean): CodeTimers {
     return () => clearInterval(id);
   }, [active]);
 
-  const start = useCallback(() => {
+  const start = useCallback((knownDeadline?: number) => {
     // Counted from response receipt, so the client is always slightly
     // optimistic relative to the server. That is the safe direction: the
     // backend, not this timer, decides whether a code is still valid.
+    //
+    // A resumed flow passes the deadline it was issued with (UX-12), so a
+    // reload does not restart the count; the cooldown is measured from the
+    // same moment the code was sent. Never later than a fresh start would
+    // give: a skewed or tampered value can shorten the count, not stretch it.
     const now = Date.now();
-    codeDeadline.current = now + CODE_TTL_SECONDS * 1000;
-    cooldownDeadline.current = now + RESEND_COOLDOWN_SECONDS * 1000;
-    setRemaining(CODE_TTL_SECONDS);
-    setCooldown(RESEND_COOLDOWN_SECONDS);
+    const fresh = now + CODE_TTL_SECONDS * 1000;
+    const deadline = knownDeadline === undefined ? fresh : Math.min(knownDeadline, fresh);
+    const sentAt = deadline - CODE_TTL_SECONDS * 1000;
+    codeDeadline.current = deadline;
+    cooldownDeadline.current = sentAt + RESEND_COOLDOWN_SECONDS * 1000;
+    setRemaining(secondsUntil(codeDeadline.current, now));
+    setCooldown(secondsUntil(cooldownDeadline.current, now));
   }, []);
 
   const reset = useCallback(() => {
@@ -137,4 +150,37 @@ export function useCodeTimers(active: boolean): CodeTimers {
     startCooldown,
     guard,
   };
+}
+
+/**
+ * Holds back a new code request for an address whose code this browser has
+ * just burnt.
+ *
+ * After five refused codes the backend keeps the burnt code in the user's
+ * single slot until it expires: a request before then is answered 202 with no
+ * email. So offering "Email me a code" right away promised an email that would
+ * not come. The hold lasts what is left of the burnt code, applies only to the
+ * address it was burnt for (typing another address is not held), and lifts
+ * itself when the code expires.
+ */
+export function useSpentCodeHold() {
+  const [hold, setHold] = useState<{ email: string; until: number }>();
+
+  useEffect(() => {
+    if (!hold) return;
+    const id = setTimeout(() => setHold(undefined), Math.max(0, hold.until - Date.now()));
+    return () => clearTimeout(id);
+  }, [hold]);
+
+  const holdFor = useCallback((email: string, seconds: number) => {
+    if (seconds <= 0) return;
+    setHold({ email: email.trim().toLowerCase(), until: Date.now() + seconds * 1000 });
+  }, []);
+
+  const isHeld = useCallback(
+    (email: string) => hold !== undefined && hold.email === email.trim().toLowerCase(),
+    [hold],
+  );
+
+  return { holdFor, isHeld };
 }

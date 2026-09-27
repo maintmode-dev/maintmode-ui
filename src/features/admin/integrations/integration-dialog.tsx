@@ -25,7 +25,7 @@ import {
   type IntegrationKindMeta,
   type SecretMeta,
 } from "./integration-kinds";
-import { IntegrationHealthBadge } from "./integration-health";
+import { IntegrationHealthBadge, healthAddsInformation } from "./integration-health";
 import { buildSecretsCreate, buildSecretsPatch, type SecretFieldState } from "./secret-patch";
 import {
   buildConfig,
@@ -336,7 +336,7 @@ function IntegrationDialogBody({
             description slot already carries the updated-at line. Only for a
             configured login row — there is nothing to report about a provider
             that does not exist yet. */}
-        {isEdit && integration.kind === "login" ? (
+        {isEdit && integration.kind === "login" && healthAddsInformation(integration) ? (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-fg-muted">Sign-in status:</span>
             <IntegrationHealthBadge health={integration.health} />
@@ -494,12 +494,15 @@ function FieldLabel({
   children,
   required,
   secret,
+  preset,
   htmlFor,
 }: {
   children: React.ReactNode;
   /** `undefined` marks it neither required nor optional — see below. */
   required: boolean | undefined;
   secret?: boolean;
+  /** A deployment-owned field: read-only, and marked as such (UX-8). */
+  preset?: boolean;
   htmlFor?: string;
 }) {
   return (
@@ -519,6 +522,11 @@ function FieldLabel({
       {secret ? (
         <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-elev-2 px-1.5 py-0.5 text-[9px] text-fg-dim">
           <Lock className="size-2.5" aria-hidden="true" /> SECRET
+        </span>
+      ) : null}
+      {preset ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-elev-2 px-1.5 py-0.5 text-[9px] text-fg-dim">
+          <Lock className="size-2.5" aria-hidden="true" /> SET BY DEPLOYMENT
         </span>
       ) : null}
     </Label>
@@ -555,7 +563,11 @@ function ConfigField({
   const isUnknownValue = !!field.options && value !== "" && !field.options.some((o) => o.value === value);
   return (
     <div className="space-y-1.5">
-      <FieldLabel required={field.preset ? undefined : !field.optional} htmlFor={inputId}>
+      <FieldLabel
+        required={field.preset ? undefined : !field.optional}
+        preset={field.preset}
+        htmlFor={inputId}
+      >
         {field.label}
       </FieldLabel>
       {field.options ? (
@@ -589,7 +601,11 @@ function ConfigField({
           disabled={disabled}
           inputMode={field.numeric ? "numeric" : undefined}
           onChange={(e) => onChange(e.target.value)}
-          className={field.preset ? "bg-bg-elev-2 text-fg-muted" : undefined}
+          // Dashed and flat so it does not read as a field to fill in — QA took
+          // the plain muted background for an ordinary input (UX-8).
+          className={
+            field.preset ? "bg-bg-elev-2 text-fg-muted border-dashed shadow-none cursor-default" : undefined
+          }
         />
       )}
       {activeDanger ? <p className="text-xs text-destructive">{activeDanger}</p> : null}

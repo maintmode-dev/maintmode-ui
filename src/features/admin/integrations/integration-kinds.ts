@@ -230,9 +230,15 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, Integra
         name: "tls_policy",
         label: "TLS policy",
         optional: true,
-        help: "Mandatory is the safe production posture. Default leaves it to the server.",
+        help: "Mandatory is the safe production posture, and it is also what Default does. A relay without STARTTLS needs Opportunistic or None.",
+        // "Default" is NOT the SMTP server's choice: the backend maps an unset
+        // policy to mandatory STARTTLS (`tlsPolicy` in
+        // notifytransport/email/client.go), so a relay that does not offer it
+        // fails the Test button with "does not support STARTTLS". The label
+        // used to say "server decides", which sent operators looking at their
+        // relay instead of at this field (UX-9, v0.2.0-rc).
         options: [
-          { value: CONFIG_FIELD_UNSET, label: "Default (server decides)" },
+          { value: CONFIG_FIELD_UNSET, label: "Default (mandatory STARTTLS)" },
           { value: "mandatory", label: "Mandatory" },
           { value: "opportunistic", label: "Opportunistic" },
           {

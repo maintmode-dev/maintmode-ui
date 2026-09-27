@@ -69,6 +69,17 @@ describe("rehydration after a reload", () => {
     expect(screen.getByText(/Sent to op@example.test/)).toBeTruthy();
   });
 
+  /**
+   * UX-12 (v0.2.0-rc): the resumed countdown starts from the deadline the
+   * binding carries, not from a fresh five minutes. A reload used to show
+   * "Expires in 4:59" for a code minutes into its life.
+   */
+  it("resumes the countdown from the binding's deadline", () => {
+    renderLogin({ resetInProgressEmail: "op@example.test", resetInProgressExpiresAt: Date.now() + 90_000 });
+
+    expect(screen.getByRole("timer").textContent).toMatch(/Expires in 1:(29|30)/);
+  });
+
   // SPEC §2.1: the advertised method list is the authority on what the page
   // offers. A cookie must not resurrect a method an operator has switched off.
   it("ignores a live binding when password sign-in is no longer offered", () => {
@@ -76,6 +87,55 @@ describe("rehydration after a reload", () => {
 
     expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
     expect(screen.getByLabelText("Email code")).toBeTruthy();
+  });
+
+  /**
+   * UX-11 (v0.2.0-rc). `?code=` means a sign-in just failed, and that is what
+   * the user came back to. Resuming a reset over it drew the sign-in error and
+   * step two of a flow the user was not in, at once.
+   */
+  it("does not resume a reset over a sign-in error", () => {
+    renderLogin({ resetInProgressEmail: "op@example.test", error: "oauth_handoff_failed" });
+
+    expect(screen.getByRole("alert").textContent).toMatch(/didn't complete/i);
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    // The binding was not thrown away: the reset is one click away.
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
+  /**
+   * The binding the server handed down is spent once the flow ends in this
+   * page: "Back to sign in" abandons it and a finished reset clears it. The
+   * prop still names it, though, so reopening the flow from it would put the
+   * user on step two of a binding that no longer exists — where a correct code
+   * from their inbox is answered "wrong or has expired".
+   */
+  it("does not resume a binding the user just backed out of", async () => {
+    const props = renderLogin({ resetInProgressEmail: "op@example.test" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Forgot password?" })).toBeTruthy());
+    expect(props.abandonPasswordResetAction).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
+  });
+
+  it("does not resume a binding a finished reset has consumed", async () => {
+    renderLogin({ resetInProgressEmail: "op@example.test" });
+
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "a-long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set new password" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/password updated/i));
+
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
   });
 
   it("starts at step one when there is no binding", () => {

@@ -246,15 +246,24 @@ describe("POST /api/admin/integrations — create", () => {
   });
 
   /**
-   * `github` IS served by the backend. This frontend has no descriptor for it,
-   * so the pair is refused here — failing closed, before a round trip, rather
-   * than forwarding a credential toward a provider it cannot render.
+   * A name this frontend has no descriptor for is refused here — failing
+   * closed, before a round trip, rather than forwarding a credential toward a
+   * provider it cannot render. `gitlab` is the realistic case: the backend's
+   * OAuth 2.0 kind is written to take it as a new preset.
    */
   it("refuses a login name this frontend has no descriptor for", async () => {
-    const response = await create({ ...VALID, kind: "login", name: "github" });
+    const response = await create({ ...VALID, kind: "login", name: "gitlab" });
 
     expect(response.status).toBe(400);
     expect(backendRequest).not.toHaveBeenCalled();
+  });
+
+  /** BUG-5: `github` has a descriptor now, so its pair reaches the backend. */
+  it("forwards a github login pair", async () => {
+    const response = await create({ ...VALID, kind: "login", name: "github" });
+
+    expect(response.status).not.toBe(400);
+    expect(backendRequest).toHaveBeenCalled();
   });
 
   /**

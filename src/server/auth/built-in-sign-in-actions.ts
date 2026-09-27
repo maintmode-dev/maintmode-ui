@@ -2,7 +2,7 @@
 
 import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
-import { clearOtpBinding, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
+import { bindWithinReissueCooldown, putBindingToSleep, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
 import { safeNext } from "@/server/auth/safe-next";
@@ -20,6 +20,14 @@ import { safeNext } from "@/server/auth/safe-next";
 export interface SignInActionResult {
   /** An `AUTH_ERROR_CODES` value the client renders in place, or undefined on success. */
   error?: string;
+  /**
+   * On a code request: the bound code's deadline (epoch ms), so the countdown
+   * shows what is actually left — which is less than a full TTL when the
+   * binding was kept rather than replaced.
+   */
+  expiresAt?: number;
+  /** On a kept code: attempts it has already lost (see `ReissueDecision`). */
+  refused?: number;
 }
 
 /**
@@ -35,13 +43,30 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
     return { error: "invalid_email" };
   }
 
+  // A code for this address was issued less than the backend's reissue
+  // cooldown ago — by this flow or by password reset, which shares the code:
+  // the backend would answer 202, send nothing, and hand back a nonce that
+  // matches nothing. Stay bound to the code the user has, and do not spend a
+  // request on a guaranteed no-op. See `bindWithinReissueCooldown`.
+  const decision = await bindWithinReissueCooldown("sign-in", trimmed);
+  if (decision?.spent) {
+    // Burnt, and holding the backend's slot until it expires: a request now
+    // would send nothing. Said plainly, with the time it clears.
+    return { error: "otp_attempts_spent", expiresAt: decision.expiresAt };
+  }
+  if (decision) {
+    return decision.refused
+      ? { expiresAt: decision.expiresAt, refused: decision.refused }
+      : { expiresAt: decision.expiresAt };
+  }
+
   try {
     const { session_nonce: nonce } = await requestOtpCode(trimmed);
     // The binding lives in an httpOnly cookie on our origin. The backend sets
     // none: it is called server-to-server, so its own Set-Cookie would never
     // reach the user's browser.
-    await setOtpBinding({ nonce, email: trimmed });
-    return {};
+    const expiresAt = await setOtpBinding({ nonce, email: trimmed });
+    return { expiresAt };
   } catch (error) {
     // A 429 and a dead network need different copy: telling someone to "wait a
     // moment" when the service is unreachable sends them into a pointless
@@ -97,12 +122,14 @@ export async function credentialsSignInAction(
     const code =
       typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
 
-    if (code === AUTH_ERROR_CODES.otpSessionMismatch) {
-      await clearOtpBinding();
-      return { error: AUTH_ERROR_CODES.otpSessionMismatch };
-    }
     if (code === AUTH_ERROR_CODES.identityLookupFailed) {
       return { error: AUTH_ERROR_CODES.identityLookupFailed };
+    }
+    // A 429 is not a verdict on the code, and the flow has copy for it ("wait
+    // a moment"). Collapsed into the uniform failure it told a throttled user
+    // their code was wrong and spent their local attempt budget.
+    if (input.kind === "otp" && code === AUTH_ERROR_CODES.otpRateLimited) {
+      return { error: AUTH_ERROR_CODES.otpRateLimited };
     }
     if (input.kind === "password") {
       return { error: AUTH_ERROR_CODES.invalidCredentials };
@@ -111,7 +138,11 @@ export async function credentialsSignInAction(
   }
 }
 
-/** Abandons the current OTP flow so the user can start over with another address. */
+/**
+ * Leaves the code step so the user can use another address. The binding is
+ * put to sleep, not deleted: coming back to the same address inside the
+ * reissue cooldown must find the one live code (see `putBindingToSleep`).
+ */
 export async function changeEmailAction(): Promise<void> {
-  await clearOtpBinding();
+  await putBindingToSleep("sign-in");
 }

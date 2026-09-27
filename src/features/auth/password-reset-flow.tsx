@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
+import { PasswordInput } from "@/shared/ui/domain/password-input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode, isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
 import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
-import { MAX_CODE_ATTEMPTS, useCodeTimers } from "@/features/auth/use-code-timers";
+import { MAX_CODE_ATTEMPTS, useCodeTimers, useSpentCodeHold } from "@/features/auth/use-code-timers";
 
 /**
  * "Forgot password" — a two-step emailed-code flow that ends in a new password
@@ -27,7 +28,10 @@ export interface PasswordResetFlowProps {
   /** Rehydrated from the reset cookie by the server page, after a reload. */
   initialEmail?: string;
   initialStep?: Step;
-  requestCode: (email: string) => Promise<{ error?: string }>;
+  /** The resumed code's deadline (epoch ms), when the binding carries one. */
+  initialExpiresAt?: number;
+  /** Resolves with the bound code's deadline (epoch ms) on success. */
+  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number; refused?: number }>;
   confirm: (args: {
     email: string;
     code: string;
@@ -42,6 +46,7 @@ export interface PasswordResetFlowProps {
 export function PasswordResetFlow({
   initialEmail,
   initialStep,
+  initialExpiresAt,
   requestCode,
   confirm,
   abandon,
@@ -62,6 +67,7 @@ export function PasswordResetFlow({
   const [attempts, setAttempts] = useState(0);
 
   const timers = useCodeTimers(step === "code");
+  const spentHold = useSpentCodeHold();
   const budgetSpent = attempts >= MAX_CODE_ATTEMPTS;
 
   // Rehydrating straight into step two starts with the countdown at zero, which
@@ -70,7 +76,7 @@ export function PasswordResetFlow({
   // and never returned; this is the same optimistic local clock the flow uses
   // after a fresh request, and the backend remains the authority.
   useEffect(() => {
-    if (initialStep === "code") timers.start();
+    if (initialStep === "code") timers.start(initialExpiresAt);
     // Once, on mount: `start` is stable and re-running it would reset the
     // countdown under a user who is mid-flow.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -84,12 +90,21 @@ export function PasswordResetFlow({
 
     if (result.error) {
       setError(result.error);
+      // The server recognised a burnt code for this address — after a reload,
+      // or burnt in the sign-in flow — and says when it clears.
+      if (result.error === "otp_attempts_spent" && result.expiresAt !== undefined) {
+        spentHold.holdFor(address, Math.ceil((result.expiresAt - Date.now()) / 1000));
+      }
       timers.startCooldown();
       return;
     }
-    timers.start();
+    // The deadline the server bound — part-way through its life when a request
+    // inside the backend's reissue cooldown kept the existing code.
+    timers.start(result.expiresAt);
     setCode("");
-    setAttempts(0);
+    // A kept code resumes with what it has left, not a fresh five: back out of
+    // step two after four refusals, ask again, and one attempt remains.
+    setAttempts(result.refused ?? 0);
     setStep("code");
   }
 
@@ -115,6 +130,12 @@ export function PasswordResetFlow({
     setPassword("");
     setAttempts(0);
     setError(message);
+  }
+
+  /** Abandons the flow from step two: discard the binding, then leave. */
+  async function leave() {
+    await restart();
+    onCancel();
   }
 
   async function onSubmitCode(event: React.FormEvent) {
@@ -144,18 +165,24 @@ export function PasswordResetFlow({
         return;
       }
 
-      // Counted for every answer the server gave, including a mismatch: the
-      // backend claims an attempt BEFORE it compares the code, so a stale nonce
-      // costs one exactly as a wrong digit does.
-      const spent = attempts + 1;
+      // Only a refused code counts — the one answer that spent a backend
+      // attempt. A 429 never reached the code and an outage checked nothing;
+      // counted, five of either threw away a still-valid code and sent the user
+      // back into the same limiter. The sign-in flow counts the same way.
+      const spent = result.error === "password_reset_failed" ? attempts + 1 : attempts;
       setAttempts(spent);
 
-      if (result.error === "password_reset_session_mismatch" || spent >= MAX_CODE_ATTEMPTS) {
-        // Either the binding is already gone server-side, or the attempts are
-        // spent — both make step two a dead end, and leaving a live cookie
-        // behind would rehydrate the user onto a code that can never be
-        // redeemed.
-        await restart(result.error);
+      if (spent >= MAX_CODE_ATTEMPTS) {
+        // The attempts are spent, so step two is a dead end, and leaving a live
+        // cookie behind would rehydrate the user onto a code that can never be
+        // redeemed. A lost binding ends up here too: the backend no longer
+        // tells it apart from a wrong code (BUG-2).
+        // The cause, in the sign-in flow's words: the backend's answer cannot
+        // say the budget is gone, so the generic failure would not either.
+        // The burnt code holds the backend's slot until it expires: a new
+        // request before then sends nothing, so it is held for what is left.
+        spentHold.holdFor(email, timers.remaining);
+        await restart("otp_attempts_spent");
         return;
       }
       setError(result.error);
@@ -169,14 +196,14 @@ export function PasswordResetFlow({
         onSubmit={(e) => {
           e.preventDefault();
           const trimmed = email.trim();
-          if (!trimmed || pending) return;
+          if (!trimmed || pending || spentHold.isHeld(trimmed)) return;
           void send(trimmed);
         }}
       >
         <Label htmlFor="reset-email">Reset your password</Label>
         <p className="caption">
           We&apos;ll email you a code if that address has an account. Setting a new password signs you out
-          everywhere.
+          everywhere within minutes.
         </p>
         <Input
           id="reset-email"
@@ -189,7 +216,7 @@ export function PasswordResetFlow({
           aria-describedby={error ? "reset-error" : undefined}
         />
         {error ? <ResetError code={error} /> : null}
-        <Button type="submit" disabled={!email.trim() || pending}>
+        <Button type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
           {pending ? "Sending…" : "Email me a code"}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>
@@ -211,6 +238,10 @@ export function PasswordResetFlow({
 
   return (
     <form className="flex flex-col gap-2.5" onSubmit={onSubmitCode}>
+      {/* The flow's name stays on screen for step two as well (UX-2): the page
+          heading still reads "Sign in to …", and without this the code and
+          password fields below look like a sign-in form. */}
+      <h2 className="text-sm font-medium">Reset your password</h2>
       <Label htmlFor="reset-code">Enter the 6-digit code</Label>
       <p className="caption">
         Sent to {email}.{" "}
@@ -234,10 +265,9 @@ export function PasswordResetFlow({
         aria-describedby={error || dead ? "reset-error" : "reset-countdown"}
       />
       <Label htmlFor="reset-password">New password</Label>
-      <Input
+      <PasswordInput
         id="reset-password"
         name="new-password"
-        type="password"
         autoComplete="new-password"
         value={password}
         disabled={dead}
@@ -254,7 +284,7 @@ export function PasswordResetFlow({
        * password was taken when the hint implied otherwise, never the reverse.
        */}
       <p id="reset-password-hint" className="caption">
-        At least 12 characters. This signs you out of every device.
+        At least 12 characters. This signs you out of every device within minutes.
       </p>
       {dead ? (
         <ResetError code="expired" />
@@ -278,6 +308,12 @@ export function PasswordResetFlow({
       >
         {throttled ? `Request a new code (${timers.cooldown}s)` : "Request a new code"}
       </Button>
+      {/* A way out of step two (UX-2). It discards the binding before leaving:
+          otherwise the next visit to /login would rehydrate straight back into
+          this step, which is the opposite of what "back" asked for. */}
+      <Button type="button" variant="ghost" disabled={pending} onClick={() => void leave()}>
+        Back to sign in
+      </Button>
     </form>
   );
 }
@@ -298,16 +334,18 @@ function ResetError({ code }: { code: string }) {
 
 /**
  * Reset-specific copy, falling through to the shared map for the codes both
- * flows raise. Kept separate where the wording has to differ: sign-in's
- * mismatch copy tells the user to go back and sign in, which is not where
- * someone mid-reset is trying to go.
+ * flows raise. Kept separate where the wording has to differ: a failed confirm
+ * can also mean the attempts are spent, and the password-policy and outage
+ * cases exist only here.
  */
 export function resetErrorMessage(code: string): string {
   switch (code) {
-    case "password_reset_session_mismatch":
-      return "This code can't be checked in this browser. Request a new one to continue.";
     case "password_reset_failed":
-      return "That code isn't valid, or it has been used too many times. Request a new one.";
+      // The same words as sign-in's uniform failure, for the same contract:
+      // one 401 for wrong, expired, exhausted and a lost binding. It used to add
+      // "used too many times", which told a user on their first typo that the
+      // code was spent while four attempts remained.
+      return flowErrorMessage("otp_verification_failed");
     case "password_policy_violation":
       return "Choose a longer password — at least 12 characters.";
     case "password_reset_unavailable":

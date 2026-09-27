@@ -22,7 +22,7 @@ const page = readFileSync(join(process.cwd(), "src/app/(public)/auth/oauth/callb
 const action = readFileSync(join(process.cwd(), "src/server/auth/oauth-dance-actions.ts"), "utf8");
 
 describe("the receiver form carries what the action reads", () => {
-  it.each(["code", "error"])("submits the %s parameter under that name", (field) => {
+  it.each(["code", "error", "linked"])("submits the %s parameter under that name", (field) => {
     // Matched across newlines: Prettier reflows a long `<input>` onto several
     // lines, and a single-line regex here failed on formatting rather than on
     // the property it guards.

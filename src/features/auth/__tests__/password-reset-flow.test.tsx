@@ -38,6 +38,57 @@ async function submitCode(code: string, password: string) {
   fireEvent.click(screen.getByRole("button", { name: "Set new password" }));
 }
 
+/** UX-2 (v0.2.0-rc): step two kept no name and no way out. */
+describe("step two keeps its context and an exit", () => {
+  it("keeps the flow's name on screen", async () => {
+    const props = setup();
+    await reachCodeStep(props);
+
+    expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
+  });
+
+  it("goes back to sign-in, discarding the binding FIRST", async () => {
+    // Order matters: leaving with the binding alive would rehydrate the next
+    // visit to /login straight back into this step.
+    const order: string[] = [];
+    const props = setup({
+      abandon: vi.fn(async () => {
+        order.push("abandon");
+      }),
+      onCancel: vi.fn(() => {
+        order.push("cancel");
+      }),
+    });
+    await reachCodeStep(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    await waitFor(() => expect(props.onCancel).toHaveBeenCalled());
+    expect(order).toEqual(["abandon", "cancel"]);
+  });
+
+  it("lets the new password be shown before it is set", async () => {
+    // UX-3: a typo here means another code and another reset.
+    const props = setup();
+    await reachCodeStep(props);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show password" }));
+
+    expect((screen.getByLabelText("New password") as HTMLInputElement).type).toBe("text");
+  });
+});
+
+describe("the countdown follows the code the server bound", () => {
+  it("counts down from the deadline the request returned", async () => {
+    // Inside the backend's reissue cooldown the request keeps the existing
+    // code, already part-way through its life.
+    const props = setup({ requestCode: vi.fn(async () => ({ expiresAt: Date.now() + 120_000 })) });
+    await reachCodeStep(props);
+
+    expect(screen.getByRole("timer").textContent).toMatch(/Expires in (1:59|2:00)/);
+  });
+});
+
 describe("the reset flow's two steps", () => {
   it("asks for an address, then for a code and a new password", async () => {
     const props = setup();
@@ -133,7 +184,98 @@ describe("the local attempt budget", () => {
     }
 
     await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
-    expect(screen.getByRole("alert")).toBeTruthy();
+    // The reason, not just an alert: asserting only that one exists let the
+    // generic failure stand in for it, which cannot say the budget is gone.
+    expect(screen.getByRole("alert").textContent).toContain("Too many attempts");
+  });
+
+  it("does not call a first mistake a spent code", async () => {
+    // The old copy said "used too many times" on every failure, so a user on
+    // their first typo was told to give up on a code with four attempts left.
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+
+    await submitCode("000000", LONG_ENOUGH);
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("wrong or has expired"));
+    expect(screen.getByRole("alert").textContent).not.toMatch(/too many/i);
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
+  /**
+   * Only a refused code counts. Found by the pre-release review: five 429s, or
+   * five answers during an outage, threw away a still-valid code, cleared the
+   * binding and sent the user back into the same limiter — the defect the
+   * sign-in flow had already been fixed for.
+   */
+  it.each([
+    ["a rate limit", "otp_rate_limited"],
+    ["an outage", "password_reset_unavailable"],
+  ])("spends nothing on %s", async (_label, error) => {
+    const props = setup({ confirm: vi.fn(async () => ({ error })) });
+    await reachCodeStep(props);
+
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("123456", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
+
+    expect(props.abandon).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
+  it("holds a new request for the burnt address until its code would expire", async () => {
+    // The burnt code keeps the backend's slot; a request before it expires is
+    // a 202 with no email, so "Email me a code" must not promise one.
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("000000", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
+    await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
+
+    expect(screen.getByRole("alert").textContent).toContain("in a few minutes");
+    const send = () => screen.getByRole("button", { name: "Email me a code" });
+    fireEvent.change(screen.getByLabelText("Reset your password"), { target: { value: "op@example.test" } });
+    expect(send().hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Reset your password"), {
+      target: { value: "other@example.test" },
+    });
+    expect(send().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("resumes a kept code with the attempts it has left", async () => {
+    // A code already refused four times — in this flow before backing out, or
+    // in the sign-in flow — has one attempt left, not five.
+    const props = setup({
+      requestCode: vi.fn(async () => ({ expiresAt: Date.now() + 240_000, refused: 4 })),
+      confirm: vi.fn(async () => ({ error: "password_reset_failed" })),
+    });
+    await reachCodeStep(props);
+
+    await submitCode("000000", LONG_ENOUGH);
+
+    await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
+    expect(screen.getByRole("alert").textContent).toContain("Too many attempts");
+  });
+
+  it("holds an address the server reports burnt", async () => {
+    const props = setup({
+      requestCode: vi.fn(async () => ({ error: "otp_attempts_spent", expiresAt: Date.now() + 120_000 })),
+    });
+    fireEvent.change(screen.getByLabelText("Reset your password"), { target: { value: "op@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code" }));
+    await waitFor(() => expect(props.requestCode).toHaveBeenCalled());
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("in a few minutes"));
+    const send = () => screen.getByRole("button", { name: "Email me a code" });
+    expect(send().hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText("Reset your password"), {
+      target: { value: "other@example.test" },
+    });
+    expect(send().hasAttribute("disabled")).toBe(false);
   });
 
   it("does not spend the budget on a locally rejected password", async () => {
@@ -179,17 +321,6 @@ describe("the double-submit guard", () => {
 });
 
 describe("failures the user must be able to tell apart", () => {
-  it("sends the user back to step one when the binding is gone", async () => {
-    const props = setup({
-      confirm: vi.fn(async () => ({ error: "password_reset_session_mismatch" })),
-    });
-    await reachCodeStep(props);
-    await submitCode("123456", LONG_ENOUGH);
-
-    await waitFor(() => expect(props.abandon).toHaveBeenCalled());
-    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
-  });
-
   // An outage is a fact about the service. Folding it into the wrong-code copy
   // tells every user their input was wrong while nothing of theirs was.
   it("says the service is unavailable rather than blaming the code", async () => {
@@ -272,6 +403,11 @@ describe("expiry and the resend cooldown", () => {
     const resend = () => screen.getByRole("button", { name: /Request a new code/ });
     expect(resend().hasAttribute("disabled")).toBe(true);
 
+    // The backend's reissue cooldown is 60s: at 30s (the old wait) a resend
+    // would be a 202 with no email, so it must still be held.
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(resend().hasAttribute("disabled")).toBe(true);
+
     await vi.advanceTimersByTimeAsync(30_000);
 
     await waitFor(() => expect(resend().hasAttribute("disabled")).toBe(false));
@@ -310,11 +446,14 @@ describe("leaving the flow", () => {
   // password forward: the user would submit for that account a secret they
   // never knowingly re-entered.
   it("clears the typed password when returning to step one", async () => {
-    const props = setup({
-      confirm: vi.fn(async () => ({ error: "password_reset_session_mismatch" })),
-    });
+    // Spending the budget is the one way back to step one now that a lost
+    // binding is not its own answer (BUG-2).
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
     await reachCodeStep(props);
-    await submitCode("123456", LONG_ENOUGH);
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("000000", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
 
     await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
 
@@ -387,9 +526,11 @@ describe("rehydration after a reload", () => {
 describe("the destructive consequence is stated before the submit", () => {
   it("warns on both steps that this signs the user out everywhere", async () => {
     const props = setup();
-    expect(screen.getByText(/signs you out everywhere/i)).toBeTruthy();
+    // NOTE-2: "within minutes", never an instant claim — access tokens already
+    // issued outlive the revocation until they expire.
+    expect(screen.getByText(/signs you out everywhere within minutes/i)).toBeTruthy();
 
     await reachCodeStep(props);
-    expect(screen.getByText(/signs you out of every device/i)).toBeTruthy();
+    expect(screen.getByText(/signs you out of every device within minutes/i)).toBeTruthy();
   });
 });

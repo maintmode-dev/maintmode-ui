@@ -1,7 +1,7 @@
 import "server-only";
 
 import { backendRequest } from "@/server/backend/client/backend-client";
-import { isKnownSignInMethodType, type SignInMethod } from "@/domain/auth/sign-in-method";
+import { toSignInMethod, type SignInMethod } from "@/domain/auth/sign-in-method";
 
 /** See the `signal` comment in the fetch below. */
 const PROVIDERS_TIMEOUT_MS = 2_000;
@@ -11,24 +11,6 @@ export type ResolvedAuthProviders = { ok: true; methods: SignInMethod[] } | { ok
 /** Wire envelope. Snake_case, mirrors `apiauthmodels.AuthMethodsResponse`. */
 interface AuthMethodsWire {
   methods?: unknown;
-}
-
-function toMethod(raw: unknown): SignInMethod | null {
-  if (typeof raw !== "object" || raw === null) {
-    return null;
-  }
-  const { id, type, display_name: displayName } = raw as Record<string, unknown>;
-  if (typeof id !== "string" || typeof type !== "string" || typeof displayName !== "string") {
-    return null;
-  }
-  // An unrecognised `type` is preserved, not dropped: the page renders it as a
-  // disabled placeholder so a newly-advertised method is visible-but-inert
-  // rather than silently missing. Narrowing happens at the render site.
-  return {
-    id,
-    type: isKnownSignInMethodType(type) ? type : ("redirect" as const),
-    display_name: displayName,
-  };
 }
 
 /**
@@ -85,6 +67,6 @@ export async function resolveAuthProviders(): Promise<ResolvedAuthProviders> {
     return { ok: false };
   }
 
-  const methods = wire.methods.map(toMethod).filter((m): m is SignInMethod => m !== null);
+  const methods = wire.methods.map(toSignInMethod).filter((m): m is SignInMethod => m !== null);
   return { ok: true, methods };
 }

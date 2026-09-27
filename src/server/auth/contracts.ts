@@ -73,15 +73,21 @@ export const AUTH_ERROR_CODES = {
   // nothing and lets the UI say "wrong account". Other accept failures stay
   // generic for anti-enumeration.
   emailMismatch: "email_mismatch",
-  // Built-in sign-in (RUK-288). The OTP browser binding is missing or does not
-  // match: the tab that requested the code is gone, so the code cannot be
-  // checked here. Surfaced distinctly and NOT as a wrong-code error, because a
-  // user holding a correct code otherwise has no idea why it fails. Leaks
-  // nothing: it names a fact about this browser, never about an account.
-  otpSessionMismatch: "otp_session_mismatch",
-  // Every other verify failure — wrong code, expired, attempts exhausted. The
-  // backend collapses them into one 401 on purpose (anti-enumeration) and so do
-  // we; the copy tells the user to re-check or request a new code.
+  // OAuth dance: the person declined at the provider's consent screen (UX-10,
+  // v0.2.0-rc). Split out of `access_denied` by the backend because it is a
+  // fact about the person's own action, decided before the backend knows who
+  // they are — so it reveals nothing about an account, and "ask for an
+  // invitation" is the wrong advice for someone who simply clicked Cancel.
+  consentCancelled: "consent_cancelled",
+  // Every verify failure — wrong code, expired, attempts exhausted, a lost or
+  // foreign browser binding. The backend collapses them into one 401 on purpose
+  // (anti-enumeration) and so do we; the copy tells the user to re-check or
+  // request a new code.
+  //
+  // There used to be a distinct `otp_session_mismatch` for the binding case. It
+  // was withdrawn from the backend contract because it revealed whether an
+  // account exists (BUG-2, v0.2.0-rc), and this frontend's local binding check
+  // answers with this code too, so it cannot become a second copy of that signal.
   otpVerificationFailed: "otp_verification_failed",
   // Uniform password-login failure. Never says which field was wrong: naming
   // one would enumerate accounts.
@@ -90,13 +96,9 @@ export const AUTH_ERROR_CODES = {
   // separate so the copy does not tell someone to re-check a correct code and
   // send more requests into the limiter that is already refusing them.
   otpRateLimited: "otp_rate_limited",
-  // Password reset (RUK-289). The reset flow's OWN mismatch code, deliberately
-  // not a reuse of `otpSessionMismatch`: that one's copy sends the user back to
-  // sign-in, which is the wrong destination when they are mid-reset and have
-  // not chosen a new password yet. Leaks nothing, for the same reason its
-  // sign-in twin leaks nothing — it names a fact about this browser.
-  passwordResetSessionMismatch: "password_reset_session_mismatch",
-  // Every other confirm failure: wrong code, expired, attempts exhausted, and —
+  // Every confirm failure — wrong code, expired, attempts exhausted, a lost
+  // browser binding (see `otpVerificationFailed` for why that is not its own
+  // code any more), and —
   // because the backend deliberately hides it inside the same collapse — a
   // password that breaks the length policy. The client checks length before
   // sending precisely so a user never sees this code for that reason.

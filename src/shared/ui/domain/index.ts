@@ -53,3 +53,6 @@ export { LabeledField } from "./labeled-field";
 
 export { CreateDialog, CreateDialogBody, CreateDialogFooter } from "./create-dialog";
 export type { CreateDialogProps, CreateDialogBodyProps, CreateDialogFooterProps } from "./create-dialog";
+
+export { PasswordInput } from "./password-input";
+export type { PasswordInputProps } from "./password-input";

@@ -80,6 +80,12 @@ const NOTES: Readonly<Partial<Record<AuthMethodName, string>>> = {
    * trust in the switch is lost.
    */
   email_otp: "Password reset still sends one-time codes to the same mailbox.",
+  /**
+   * The mirror image (UX-4, v0.2.0-rc). "Forgot password?" lives inside the
+   * password form on /login, so turning this off removes the reset entry
+   * point too — something an admin switching off "Password" would not expect.
+   */
+  email_password: "Turning it off also removes “Forgot password?” from the sign-in page.",
 };
 
 /** The always-visible caveat for a method, when it has one. */

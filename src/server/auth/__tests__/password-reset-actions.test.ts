@@ -11,6 +11,10 @@ const confirmPasswordReset = vi.fn();
 const setPasswordResetBinding = vi.fn();
 const readPasswordResetBinding = vi.fn();
 const clearPasswordResetBinding = vi.fn();
+const bindWithinReissueCooldown = vi.fn();
+const putBindingToSleep = vi.fn();
+const recordRefusedCode = vi.fn();
+const clearAllBindings = vi.fn();
 const signOut = vi.fn();
 const clearActiveSession = vi.fn();
 
@@ -25,6 +29,10 @@ vi.mock("@/server/auth/otp-nonce-cookie", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/auth/otp-nonce-cookie")>();
   return {
     normalizeEmail: actual.normalizeEmail,
+    bindWithinReissueCooldown: (...args: unknown[]) => bindWithinReissueCooldown(...args),
+    putBindingToSleep: (...args: unknown[]) => putBindingToSleep(...args),
+    recordRefusedCode: (...args: unknown[]) => recordRefusedCode(...args),
+    clearAllBindings: () => clearAllBindings(),
     setPasswordResetBinding: (...args: unknown[]) => setPasswordResetBinding(...args),
     readPasswordResetBinding: () => readPasswordResetBinding(),
     clearPasswordResetBinding: () => clearPasswordResetBinding(),
@@ -39,8 +47,13 @@ function backendError(status: number, body = "") {
   return Object.assign(new Error(`backend ${status}`), { status, responseBody: body });
 }
 
+/** The deadline the mocked cookie write reports back. */
+const DEADLINE = Date.parse("2026-09-27T12:05:00Z");
+
 beforeEach(() => {
   vi.clearAllMocks();
+  setPasswordResetBinding.mockResolvedValue(DEADLINE);
+  bindWithinReissueCooldown.mockResolvedValue(undefined);
   console.error = vi.fn();
 });
 
@@ -55,7 +68,7 @@ describe("requesting a reset code cannot become an account-existence oracle", ()
     const unknown = await requestPasswordResetAction("nobody@example.test");
     const blocked = await requestPasswordResetAction("blocked@example.test");
 
-    expect(registered).toEqual({});
+    expect(registered).toEqual({ expiresAt: DEADLINE });
     expect(unknown).toEqual(registered);
     expect(blocked).toEqual(registered);
   });
@@ -138,6 +151,9 @@ describe("confirming a reset", () => {
 
     expect(signOut).toHaveBeenCalledWith({ redirect: false });
     expect(clearActiveSession).toHaveBeenCalled();
+    // One code serves both flows on the backend: the sign-in binding may hold
+    // the code just spent, so both go.
+    expect(clearAllBindings).toHaveBeenCalledTimes(1);
   });
 
   // AC-4, the half that matters more. The backend has already committed the
@@ -173,7 +189,7 @@ describe("confirming a reset", () => {
     });
   });
 
-  it("reports a lost binding with the reset flow's own code, not sign-in's", async () => {
+  it("reports a lost binding as the uniform failure, without calling the backend", async () => {
     readPasswordResetBinding.mockResolvedValue(undefined);
 
     const result = await confirmPasswordResetAction({
@@ -182,9 +198,9 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    // Not `otp_session_mismatch`: its copy returns the user to sign-in, which
-    // is not where someone mid-reset is trying to go.
-    expect(result).toEqual({ error: "password_reset_session_mismatch" });
+    // BUG-2: no distinct lost-binding code — the backend withdrew its own for
+    // revealing whether an account exists, and this must not be a second copy.
+    expect(result).toEqual({ error: "password_reset_failed" });
     expect(confirmPasswordReset).not.toHaveBeenCalled();
   });
 
@@ -197,7 +213,7 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    expect(result).toEqual({ error: "password_reset_session_mismatch" });
+    expect(result).toEqual({ error: "password_reset_failed" });
     expect(confirmPasswordReset).not.toHaveBeenCalled();
   });
 
@@ -216,12 +232,14 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "password_reset_failed" });
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+    // Counted in the cookie, so a code burnt by five refusals is still known
+    // to be burnt after a reload.
+    expect(recordRefusedCode).toHaveBeenCalledWith("reset");
   });
 
-  it("clears the binding when the backend reports a session mismatch", async () => {
-    // Spaced exactly as a pretty-printing encoder would emit it: a substring
-    // match on `"code":"..."` would miss this and fail open into the generic
-    // collapse, showing sign-in recovery copy on a reset screen.
+  it("answers a withdrawn mismatch code uniformly, and keeps the binding", async () => {
+    // An older backend may still send the code the contract withdrew. It must
+    // not be surfaced, and the binding stays — attempts may remain.
     confirmPasswordReset.mockRejectedValueOnce(
       backendError(401, '{ "code": "otp_session_mismatch", "message": "authentication failed" }'),
     );
@@ -232,8 +250,8 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    expect(result).toEqual({ error: "password_reset_session_mismatch" });
-    expect(clearPasswordResetBinding).toHaveBeenCalled();
+    expect(result).toEqual({ error: "password_reset_failed" });
+    expect(clearPasswordResetBinding).not.toHaveBeenCalled();
   });
 
   // §3.6 requires the rate limit to keep its own copy on BOTH endpoints. The
@@ -250,6 +268,8 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "otp_rate_limited" });
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+    // A throttled request never reached the code: no attempt was spent.
+    expect(recordRefusedCode).not.toHaveBeenCalled();
   });
 
   // §3.4's rule, made executable. A substring implementation would match the
@@ -286,6 +306,7 @@ describe("confirming a reset", () => {
 
     expect(result).toEqual({ error: "password_reset_unavailable" });
     expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+    expect(recordRefusedCode).not.toHaveBeenCalled();
   });
 
   // The teardown error can be a BackendAuthError whose `responseBody` is the
@@ -326,9 +347,47 @@ describe("confirming a reset", () => {
 });
 
 describe("abandoning the flow", () => {
-  it("clears only the reset binding", async () => {
+  it("puts the reset binding to sleep rather than deleting it", async () => {
+    // Deleted, coming back to the same address inside the reissue cooldown
+    // asked the backend again: 202, no email, and a nonce that matches nothing
+    // (QA regress of BUG-13).
     await abandonPasswordResetAction();
 
-    expect(clearPasswordResetBinding).toHaveBeenCalledTimes(1);
+    expect(putBindingToSleep).toHaveBeenCalledWith("reset");
+    expect(clearPasswordResetBinding).not.toHaveBeenCalled();
+  });
+});
+
+/** As for sign-in: a live bound code means no backend call (BUG-13/BUG-14). */
+describe("requestPasswordResetAction — inside the backend's reissue cooldown", () => {
+  it("skips the backend and reports the kept code's deadline", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000 });
+
+    const result = await requestPasswordResetAction("  op@example.test ");
+
+    expect(bindWithinReissueCooldown).toHaveBeenCalledWith("reset", "op@example.test");
+    expect(result).toEqual({ expiresAt: DEADLINE - 60_000 });
+    expect(requestPasswordResetCode).not.toHaveBeenCalled();
+    expect(setPasswordResetBinding).not.toHaveBeenCalled();
+  });
+
+  it("passes on how many attempts the kept code has already lost", async () => {
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000, refused: 2 });
+
+    await expect(requestPasswordResetAction("op@example.test")).resolves.toEqual({
+      expiresAt: DEADLINE - 60_000,
+      refused: 2,
+    });
+  });
+
+  it("says the bound code is burnt instead of pretending a new one was sent", async () => {
+    // Five refusals burn the code until its TTL; the backend's 202 in that
+    // window sends nothing, so "check your inbox" would be a lie.
+    bindWithinReissueCooldown.mockResolvedValue({ expiresAt: DEADLINE - 60_000, spent: true });
+
+    const result = await requestPasswordResetAction("op@example.test");
+
+    expect(result).toEqual({ error: "otp_attempts_spent", expiresAt: DEADLINE - 60_000 });
+    expect(requestPasswordResetCode).not.toHaveBeenCalled();
   });
 });

@@ -24,8 +24,9 @@
  * NOT included (and intentionally so):
  *  - Request-changes button — the button itself isn't on the page yet;
  *    will land as a new flag at the same time as the UI.
- *  - Sign-in provider connect/disconnect — the cards are inline-disabled
- *    with a static "soon" hint; no query yet.
+ *  - Sign-in provider connect/disconnect — BFF-only from the start
+ *    (`features/settings/queries/use-sign-in-methods.ts`, GAP-2); there was
+ *    never a mock branch to flag.
  */
 
 export type DataMode = "bff" | "mock";

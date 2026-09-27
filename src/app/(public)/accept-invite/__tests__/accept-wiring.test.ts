@@ -10,11 +10,12 @@ import { join } from "node:path";
  * components, and the properties here are which symbol the page calls and with
  * what.
  *
- * The provider assertion exists because the two halves DID drift: the button's
+ * The provider assertions exist because the two halves DID drift: the button's
  * label switched on the backend's `suggested_provider` while the action passed
  * "google" unconditionally, so a backend that ever returned "github" would have
- * rendered a GitHub button that started a Google dance. There is now one
- * provider named in one place, and this is what keeps it that way.
+ * rendered a GitHub button that started a Google dance. Label and provider now
+ * come from one list entry, and the page names no provider of its own (BUG-4:
+ * naming Google was what locked out an instance whose provider was `custom`).
  */
 
 /** File text with comments stripped — the assertions below are about code. */
@@ -33,6 +34,11 @@ describe("the invitation page starts the dance with the invitation", () => {
     expect(page).toMatch(/startOAuthDanceAction\([\s\S]*?sp\.token\s*,?\s*\)/);
   });
 
+  it("forwards the provider id it was given, not a literal", () => {
+    expect(page).toMatch(/startOAuthDanceAction\(\s*providerId\s*,/);
+    expect(page).not.toMatch(/startOAuthDanceAction\(\s*["'`]/);
+  });
+
   it("passes no destination, so an invited person lands on /", () => {
     // The middle argument must be `undefined`: passing a path here would send
     // someone arriving by invitation to a deep link they never asked for.
@@ -41,7 +47,7 @@ describe("the invitation page starts the dance with the invitation", () => {
     // not read as a security regression. A false failure on an auth guard
     // teaches the next reader to weaken the guard.
     expect(page).toMatch(
-      /startOAuthDanceAction\(\s*"google"\s*,[\s\S]*?undefined\s*,[\s\S]*?sp\.token\s*,?\s*\)/,
+      /startOAuthDanceAction\(\s*providerId\s*,[\s\S]*?undefined\s*,[\s\S]*?sp\.token\s*,?\s*\)/,
     );
   });
 
@@ -83,14 +89,16 @@ describe("the invitation page starts the dance with the invitation", () => {
    * (`button.closest("form")`) is satisfied by it. `receiver-form-fields.test.ts`
    * guards the same property for the sibling page.
    */
-  it("binds the form to the accept action", () => {
-    expect(component).toContain("action={acceptAction}");
+  it("binds each form to the accept action for its own provider", () => {
+    expect(component).toContain("action={acceptAction.bind(null, p.id)}");
   });
 
-  it("names one provider, in one place", () => {
-    // The component must not reintroduce a label that can disagree with the
-    // action's provider.
-    expect(component).not.toMatch(/github/i);
+  it("names no provider of its own", () => {
+    // Labels and ids come from the advertised list. A provider name written
+    // here is a label that can disagree with the action, or a provider an
+    // instance may not have configured.
+    expect(component).not.toMatch(/google|github/i);
+    expect(page).not.toMatch(/["'`]google["'`]/);
   });
 
   /**
@@ -110,9 +118,11 @@ describe("the invitation page starts the dance with the invitation", () => {
    * assertions above.
    */
   it("treats an unreadable provider list as available, not as absent", () => {
-    expect(page).toMatch(/!providers\.ok\s*\|\|/);
-    expect(page).toMatch(/methods\.some\(\(m\)\s*=>\s*m\.id === "google"\)/);
-    expect(page).toMatch(/signInAvailable=\{signInAvailable\}/);
+    // `signInProviders(undefined)` is the Google fallback (pinned in its own
+    // test); passing `[]` or the empty `methods` of a failed read instead is the
+    // "simplification" that silently inverts this case.
+    expect(page).toMatch(/signInProviders\(\s*providers\.ok\s*\?\s*providers\.methods\s*:\s*undefined\s*\)/);
+    expect(page).toMatch(/providers=\{offered\}/);
   });
 
   /**

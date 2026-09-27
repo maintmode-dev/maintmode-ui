@@ -23,6 +23,21 @@ const INTEGRATION_KIND_META = Object.fromEntries(ALL_META_KEYS.map((k) => [k, ki
  * renames one, this test is what fails. Reading the names back out of the
  * metadata would survive any rename and prove nothing.
  */
+/**
+ * UX-9 (v0.2.0-rc). The backend maps an unset TLS policy to mandatory STARTTLS
+ * (`tlsPolicy` in notifytransport/email/client.go). The label said "server
+ * decides", and an operator whose relay lacks STARTTLS went looking at the relay.
+ */
+describe("email TLS policy — Default says what it does", () => {
+  const field = kindMeta("email")?.configFields.find((f: ConfigFieldMeta) => f.name === "tls_policy");
+
+  it("names the backend's default in the option itself", () => {
+    const unset = field?.options?.[0];
+    expect(unset?.label).toBe("Default (mandatory STARTTLS)");
+    expect(JSON.stringify(field)).not.toMatch(/server decides/i);
+  });
+});
+
 describe("INTEGRATION_KIND_META", () => {
   it("covers every system the UI renders", () => {
     for (const key of ALL_META_KEYS) {
@@ -118,7 +133,58 @@ describe("INTEGRATION_KIND_META", () => {
     });
   });
 
-  it("takes client_secret as a required, non-clearable secret on both", () => {
+  /**
+   * BUG-5. Mirrors `OAuth2Settings` in the backend's
+   * `internal/integrationkinds/oauth2.go` — literals, so a backend rename fails
+   * here. No issuer and no scopes: plain OAuth 2.0 has neither, and a form that
+   * offered them would send keys the backend's struct does not declare.
+   */
+  it("draws Google's own mark, and the neutral key only for a custom provider", () => {
+    // UX-8: Google showed the generic OIDC key.
+    expect(INTEGRATION_KIND_META.google.brand).toBe("google");
+    expect(INTEGRATION_KIND_META.custom.brand).toBe("oidc");
+  });
+
+  describe("github — plain OAuth 2.0, the deployment owns the endpoints", () => {
+    const meta = INTEGRATION_KIND_META.github;
+
+    it("declares exactly the fields the backend's OAuth 2.0 settings name", () => {
+      expect(meta.configFields.map((f: ConfigFieldMeta) => f.name)).toEqual([
+        "display_name",
+        "client_id",
+        "redirect_uri",
+        "authorize_url",
+        "token_url",
+        "api_base_url",
+      ]);
+    });
+
+    it("marks the label and the three endpoints as preset-owned", () => {
+      const preset = meta.configFields
+        .filter((f: ConfigFieldMeta) => f.preset)
+        .map((f: ConfigFieldMeta) => f.name);
+      expect(preset).toEqual(["display_name", "authorize_url", "token_url", "api_base_url"]);
+    });
+
+    it("leaves the client id and the callback to the operator, both required", () => {
+      const own = meta.configFields.filter((f: ConfigFieldMeta) => !f.preset);
+      expect(own.map((f: ConfigFieldMeta) => [f.name, f.optional])).toEqual([
+        ["client_id", false],
+        ["redirect_uri", false],
+      ]);
+    });
+
+    /** No issuer to bind: `OAuth2Settings.AADBinding` seals under client_id alone. */
+    it("binds the secret to client_id alone", () => {
+      expect(meta.secrets[0].rebindsOn).toEqual(["client_id"]);
+    });
+
+    it("draws the GitHub mark", () => {
+      expect(meta.brand).toBe("github");
+    });
+  });
+
+  it("takes client_secret as a required, non-clearable secret on every provider", () => {
     for (const name of LOGIN_INTEGRATION_NAMES) {
       const secrets = INTEGRATION_KIND_META[name].secrets;
       expect(secrets.map((s: { key: string }) => s.key)).toEqual(["client_secret"]);

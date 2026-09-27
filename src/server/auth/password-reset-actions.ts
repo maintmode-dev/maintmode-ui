@@ -4,8 +4,12 @@ import { signOut } from "@/server/auth/auth-config";
 import { confirmPasswordReset, requestPasswordResetCode } from "@/server/auth/backend-token-exchange";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import {
+  bindWithinReissueCooldown,
+  clearAllBindings,
   clearPasswordResetBinding,
   normalizeEmail,
+  putBindingToSleep,
+  recordRefusedCode,
   readPasswordResetBinding,
   setPasswordResetBinding,
 } from "@/server/auth/otp-nonce-cookie";
@@ -26,31 +30,16 @@ export interface PasswordResetActionResult {
   error?: string;
   /** Set once the password is changed, so the sign-in form can confirm it. */
   done?: boolean;
+  /** On a code request: the bound code's deadline (epoch ms). */
+  expiresAt?: number;
+  /** On a kept code: attempts it has already lost (see `ReissueDecision`). */
+  refused?: number;
 }
 
 /** A backend failure's HTTP status, when it carried one. */
 function statusOf(error: unknown): number | undefined {
   const status = (error as { status?: unknown } | null)?.status;
   return typeof status === "number" ? status : undefined;
-}
-
-/**
- * Whether the backend's body named a specific code.
- *
- * Reads the `code` FIELD rather than substring-matching the raw text: a
- * whitespace difference in the encoder (`"code": "..."`) would defeat a
- * substring match, and it would fail open into the generic collapse — showing
- * sign-in recovery copy on a reset screen. Never reads `message`, which is
- * prose and is not a contract.
- */
-function codeIs(error: unknown, code: string): boolean {
-  const body = (error as { responseBody?: unknown } | null)?.responseBody;
-  if (typeof body !== "string") return false;
-  try {
-    return (JSON.parse(body) as { code?: unknown }).code === code;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -71,10 +60,26 @@ export async function requestPasswordResetAction(email: string): Promise<Passwor
     return { error: "invalid_email" };
   }
 
+  // Inside the backend's reissue cooldown for this address — after a reset
+  // request or a sign-in request, which shares the code: stay bound to the
+  // code the user has rather than to a nonce that matches nothing (see
+  // `bindWithinReissueCooldown`).
+  const decision = await bindWithinReissueCooldown("reset", trimmed);
+  if (decision?.spent) {
+    // Burnt, and holding the backend's slot until it expires — a request now
+    // would send nothing.
+    return { error: "otp_attempts_spent", expiresAt: decision.expiresAt };
+  }
+  if (decision) {
+    return decision.refused
+      ? { expiresAt: decision.expiresAt, refused: decision.refused }
+      : { expiresAt: decision.expiresAt };
+  }
+
   try {
     const { session_nonce: nonce } = await requestPasswordResetCode(trimmed);
-    await setPasswordResetBinding({ nonce, email: trimmed });
-    return {};
+    const expiresAt = await setPasswordResetBinding({ nonce, email: trimmed });
+    return { expiresAt };
   } catch (error) {
     const status = statusOf(error);
     // Logged because the user is shown one uniform state by design, which
@@ -122,11 +127,12 @@ export async function confirmPasswordResetAction(args: {
   const binding = await readPasswordResetBinding();
   if (!binding || binding.email !== normalizeEmail(args.email)) {
     // No binding means this browser cannot prove it asked for the code, so the
-    // request would be refused anyway. Answered locally with the reset flow's
-    // own mismatch code — not sign-in's, whose copy sends the user somewhere
-    // they are not trying to go.
+    // request would be refused anyway and is not sent. Answered with the same
+    // uniform failure as the backend's 401 — a distinct answer for a lost
+    // binding is what the backend withdrew as an account-existence signal
+    // (BUG-2), and this must not be a second copy of it.
     await clearPasswordResetBinding();
-    return { error: AUTH_ERROR_CODES.passwordResetSessionMismatch };
+    return { error: AUTH_ERROR_CODES.passwordResetFailed };
   }
 
   try {
@@ -150,19 +156,19 @@ export async function confirmPasswordResetAction(args: {
     if (status === undefined || status >= 500 || status === 404) {
       return { error: AUTH_ERROR_CODES.passwordResetUnavailable };
     }
-    if (codeIs(error, "otp_session_mismatch")) {
-      await clearPasswordResetBinding();
-      return { error: AUTH_ERROR_CODES.passwordResetSessionMismatch };
-    }
-    // Everything else is the deliberate collapse: wrong code, expired,
-    // attempts exhausted. The binding is KEPT — attempts may remain, and
-    // discarding a still-usable code is worse than a retry.
+    // Everything else is the deliberate collapse, by contract a single 401:
+    // wrong code, expired, attempts exhausted, a nonce the backend does not
+    // recognise. The binding is KEPT — attempts may remain, and discarding a
+    // still-usable code is worse than a retry — and the refusal is counted in
+    // it, so a burnt code stays recognisable after a reload.
+    await recordRefusedCode("reset");
     return { error: AUTH_ERROR_CODES.passwordResetFailed };
   }
 
   // Past this point the password IS changed and every session is revoked. The
-  // teardown below can fail; the confirmation cannot be conditional on it.
-  await clearPasswordResetBinding();
+  // teardown below can fail; the confirmation cannot be conditional on it. The
+  // code is spent, and the sign-in flow may be bound to the same one.
+  await clearAllBindings();
 
   try {
     // Without this the NextAuth cookie outlives the backend session: `proxy.ts`
@@ -183,7 +189,12 @@ export async function confirmPasswordResetAction(args: {
   return { done: true };
 }
 
-/** Abandons the reset flow so the user can start again with another address. */
+/**
+ * Leaves the reset flow ("Back to sign in", "Use a different address", a spent
+ * budget). The binding is put to sleep, not deleted: it no longer resumes the
+ * flow, but asking again for the same address inside the reissue cooldown must
+ * find the one live code (see `putBindingToSleep`).
+ */
 export async function abandonPasswordResetAction(): Promise<void> {
-  await clearPasswordResetBinding();
+  await putBindingToSleep("reset");
 }

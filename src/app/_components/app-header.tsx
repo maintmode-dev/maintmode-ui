@@ -56,17 +56,21 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
   const mayApprove = canApprove(roles);
   return (
     <header className="sticky top-0 z-30 h-14 border-b border-border-subtle bg-bg-elev-1/95 backdrop-blur">
-      <div className="mx-auto max-w-[1400px] h-full px-6 flex items-center gap-6">
-        <Link href="/" className="flex items-center gap-2 text-fg-strong font-semibold">
+      {/* Narrow screens (UX-5, v0.2.0-rc): the nav scrolls sideways inside the
+          header instead of pushing the page to 1292px at 375, labels never
+          wrap onto two lines, and the product name and user name give way
+          first. */}
+      <div className="mx-auto max-w-[1400px] h-full px-4 sm:px-6 flex items-center gap-3 sm:gap-6">
+        <Link href="/" className="flex shrink-0 items-center gap-2 text-fg-strong font-semibold">
           <span
             className="flex size-6 items-center justify-center text-[var(--accent-fg)]"
             aria-hidden="true"
           >
             <MaintMark size={20} />
           </span>
-          <span>MaintMode</span>
+          <span className="hidden sm:inline">MaintMode</span>
         </Link>
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm [scrollbar-width:none]">
           {NAV.filter((n) => (!n.adminOnly || isAdminUser) && (!n.requiresApprove || mayApprove)).map(
             (item) => {
               const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
@@ -75,7 +79,7 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "px-3 h-9 inline-flex items-center rounded-sm text-fg-muted hover:text-fg hover:bg-bg-elev-2 transition-colors",
+                    "px-3 h-9 inline-flex shrink-0 items-center whitespace-nowrap rounded-sm text-fg-muted hover:text-fg hover:bg-bg-elev-2 transition-colors",
                     active && "text-fg-strong bg-bg-elev-2",
                   )}
                   aria-current={active ? "page" : undefined}
@@ -86,7 +90,7 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
             },
           )}
         </nav>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           <ThemeToggle />
           {user ? (
             <DropdownMenu>
@@ -95,7 +99,7 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
                   <span className="size-6 grid place-items-center rounded-sm bg-bg-elev-3 text-fg text-xs">
                     {user.display_name.charAt(0).toUpperCase()}
                   </span>
-                  <span className="text-sm">{user.display_name}</span>
+                  <span className="hidden max-w-[14rem] truncate text-sm md:inline">{user.display_name}</span>
                   <ChevronDown className="size-3 opacity-60" aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
