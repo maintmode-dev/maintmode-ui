@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
+import { isSafePathSegment } from "@/server/backend/http/path-segment";
 
 /**
  * Unlinks a sign-in provider from the signed-in account (GAP-2).
@@ -22,6 +23,9 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ p
 
   try {
     const { provider } = await params;
+    if (!isSafePathSegment(provider)) {
+      return NextResponse.json({ error: "Not a provider name", code: "INVALID_REQUEST" }, { status: 400 });
+    }
     await authenticatedBackendRequest<unknown>({
       path: `/api/v1/me/providers/${encodeURIComponent(provider)}/disconnect`,
       method: "DELETE",

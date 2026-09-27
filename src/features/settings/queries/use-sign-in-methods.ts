@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { bffFetch } from "@/features/_shared/api/bff-fetch";
 import { meKey } from "@/features/_shared/queries/use-me-query";
-import type { SignInMethod } from "@/domain/auth/sign-in-method";
+import { toSignInMethod, type SignInMethod } from "@/domain/auth/sign-in-method";
 
 export function signInMethodsKey() {
   return ["sign-in-methods"] as const;
@@ -25,7 +25,9 @@ export function useSignInMethodsQuery() {
       if (!Array.isArray(data?.methods)) {
         throw new Error("The sign-in methods response carried no list");
       }
-      return data.methods as SignInMethod[];
+      // Through the same parser /login uses, so a malformed entry is dropped
+      // and an unknown type is `unsupported` here too.
+      return data.methods.map(toSignInMethod).filter((m): m is SignInMethod => m !== null);
     },
     staleTime: 60_000,
   });

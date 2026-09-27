@@ -82,9 +82,12 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
     });
     if (!result || !result.error) return;
 
-    // Counted for every answer the server gave: it claims an attempt BEFORE it
-    // compares the code, so no failure here is free.
-    const spent = attempts + 1;
+    // Only a refused code counts. The backend claims an attempt before it
+    // compares, so every uniform refusal spends one — but a 429 never reached
+    // the code, and a failed profile load came after a code that WORKED.
+    // Counting those would send a throttled user back to step one with "too
+    // many attempts", straight into the same limiter.
+    const spent = result.error === "otp_verification_failed" ? attempts + 1 : attempts;
     setAttempts(spent);
 
     if (spent >= MAX_CODE_ATTEMPTS) {

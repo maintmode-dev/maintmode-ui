@@ -181,7 +181,7 @@ describe("DELETE /api/me/providers/{p} — removing a link", () => {
     });
   });
 
-  it("escapes the provider, so a crafted id cannot reach another backend path", async () => {
+  it("escapes the provider, so a slash in a crafted id stays inside one segment", async () => {
     // Connect's escaping is pinned above; this is the route that REMOVES a way
     // in. Unescaped, `../../x` would resolve against the backend's path and
     // send the DELETE somewhere other than this account's provider link.
@@ -192,6 +192,20 @@ describe("DELETE /api/me/providers/{p} — removing a link", () => {
     expect(authedRequest.mock.calls[0]?.[0]).toMatchObject({
       path: "/api/v1/me/providers/..%2F..%2Fadmin%2Fx/disconnect",
     });
+  });
+
+  /**
+   * `encodeURIComponent` leaves `.` and `..` as they are, and a URL resolver
+   * then reads them as dot segments: `/me/providers/../disconnect` becomes
+   * `/me/disconnect`. Both provider routes refuse them before any call.
+   */
+  it.each([".", ".."])("refuses %s as a provider name on both routes, before any call", async (name) => {
+    const disconnect = await item.DELETE(del(), params(name));
+    const link = await connect.POST(post(), params(name));
+
+    expect(disconnect.status).toBe(400);
+    expect(link.status).toBe(400);
+    expect(authedRequest).not.toHaveBeenCalled();
   });
 
   it("keeps the backend's lockout refusal an error, never a 204", async () => {

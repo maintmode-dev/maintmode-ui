@@ -150,4 +150,14 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
     expect(result.error).toBe("otp_verification_failed");
     expect(clearOtpBinding).not.toHaveBeenCalled();
   });
+
+  it("passes a rate limit through instead of calling the code wrong", async () => {
+    // Collapsed into the uniform failure, a 429 told a throttled user their
+    // code was wrong and spent their local attempt budget.
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "otp_rate_limited" }));
+
+    const result = await credentialsSignInAction({ kind: "otp", email: "a@b.test", code: "123456" });
+
+    expect(result.error).toBe("otp_rate_limited");
+  });
 });

@@ -153,6 +153,18 @@ describe("the local attempt budget", () => {
     }
   }
 
+  it("spends nothing on a rate limit — the code was never checked", async () => {
+    // Five throttled submits used to end on "Too many attempts for this code"
+    // and step one, straight back into the same limiter.
+    const submitCode = vi.fn(async () => ({ error: "otp_rate_limited" }));
+    await reachCodeStep({ submitCode });
+
+    await failTimes(submitCode as unknown as ReturnType<typeof wrongCode>, MAX_CODE_ATTEMPTS);
+
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toMatch(/Too many attempts\. Wait a moment/);
+  });
+
   it("keeps the user on step two until the budget is spent", async () => {
     const submitCode = wrongCode();
     await reachCodeStep({ submitCode });

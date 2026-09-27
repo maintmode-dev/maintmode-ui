@@ -47,6 +47,34 @@ export function isKnownSignInMethodType(value: string): value is WireSignInMetho
 }
 
 /**
+ * One wire entry of `GET /api/v1/auth/providers`, narrowed — or `null` when it
+ * is malformed and must not be drawn at all (a nameless button).
+ *
+ * An unrecognised `type` is preserved, not dropped: the page renders it as a
+ * disabled placeholder so a newly-advertised method is visible-but-inert rather
+ * than silently missing. It becomes `unsupported`, never `redirect` — `redirect`
+ * is a live provider button now (see `SignInMethodType`).
+ *
+ * The one parser for that endpoint: `/login` reads it through the server
+ * resolver, the profile's linking card through the BFF, and two parsers of one
+ * wire would drift.
+ */
+export function toSignInMethod(raw: unknown): SignInMethod | null {
+  if (typeof raw !== "object" || raw === null) {
+    return null;
+  }
+  const { id, type, display_name: displayName } = raw as Record<string, unknown>;
+  if (typeof id !== "string" || typeof type !== "string" || typeof displayName !== "string") {
+    return null;
+  }
+  return {
+    id,
+    type: isKnownSignInMethodType(type) ? type : "unsupported",
+    display_name: displayName,
+  };
+}
+
+/**
  * The sign-in providers to offer: every advertised `redirect` method, in the
  * backend's order.
  *

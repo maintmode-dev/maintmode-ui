@@ -126,14 +126,14 @@ export function SignInMethodsCard({ connectedProviders, passwordSet, linkOutcome
     setActionError(undefined);
     disconnect.mutate(id, {
       onError: (error) => {
-        // The 400 is the backend's last-way-in guard. Advice to set a password
-        // is only honest when there is none: with one, the refusal is the
-        // backend's to explain (its guard does not count passwords yet — BUG-10),
-        // and telling someone who has a password to set one sends them in a
-        // circle.
+        // The 400 is the backend's last-way-in guard, which since its BUG-10 fix
+        // counts the same built-in methods this card does. So a 400 with a
+        // USABLE password is not the lockout rule and the card cannot explain
+        // it; otherwise it is, and the advice names what the instance offers —
+        // never "set a password" where password sign-in is off.
         setActionError(
           error instanceof BffError && error.status === 400
-            ? passwordSet === true
+            ? passwordUsable
               ? "The server refused to remove this sign-in method. Nothing was changed."
               : `This is your only way to sign in, so it can't be removed. ${lockoutAdvice}`
             : "Couldn't disconnect. Try again.",

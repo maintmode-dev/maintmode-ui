@@ -4,6 +4,7 @@ import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
 import { authenticatedBackendRequest } from "@/server/backend/client/authenticated-backend-request";
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
+import { isSafePathSegment } from "@/server/backend/http/path-segment";
 
 interface ConnectDanceWire {
   link_url?: unknown;
@@ -40,6 +41,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
   try {
     const { provider } = await params;
+    if (!isSafePathSegment(provider)) {
+      return NextResponse.json({ error: "Not a provider name", code: "INVALID_REQUEST" }, { status: 400 });
+    }
     const data = await authenticatedBackendRequest<ConnectDanceWire>({
       path: `/api/v1/me/providers/${encodeURIComponent(provider)}/connect`,
       method: "POST",

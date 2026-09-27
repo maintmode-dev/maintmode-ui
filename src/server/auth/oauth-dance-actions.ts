@@ -193,6 +193,13 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   // the profile's sign-in methods, which is where the person started and where
   // the outcome can be read. A `code` alongside a session still redeems
   // nothing, exactly as before.
+  //
+  // Accepted imprecision: an `error` with a session is ASSUMED to be a link.
+  // A sign-in dance failing in a tab after the user signed in elsewhere, or a
+  // crafted `?error=link_conflict`, lands on the profile's fixed "couldn't
+  // link" copy. Misleading at worst — the copy is a closed set, nothing from
+  // the URL is rendered — and telling the two apart would take a "link
+  // pending" cookie for a stale-tab edge case.
   if (await readActiveSession()) {
     if (String(formData.get("linked") ?? "").trim() === "1") {
       redirect("/settings/profile?linked=1");

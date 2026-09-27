@@ -111,6 +111,25 @@ describe("the list is the instance's, not a hardcoded one", () => {
     expect(within(row("github")).getByRole("button", { name: "Disconnect" })).toBeTruthy();
   });
 
+  it("reads the list through the same parser as /login", async () => {
+    // A malformed entry is dropped rather than drawn as a nameless row, and a
+    // type this build does not know is never offered as a provider to link.
+    answer({
+      "GET /api/sign-in-methods": {
+        methods: [
+          ...METHODS.methods,
+          { id: "nameless", type: "redirect" },
+          { id: "passkey", type: "future_type", display_name: "Passkey" },
+        ],
+      },
+    });
+    renderCard();
+
+    await screen.findByText("Corporate SSO");
+    expect(row("nameless")).toBeNull();
+    expect(row("passkey")).toBeNull();
+  });
+
   it("names no session method it cannot know", async () => {
     // `/me` reports the FIRST-linked provider, not how this session signed in.
     answer({ "GET /api/sign-in-methods": METHODS });
@@ -279,6 +298,24 @@ describe("Disconnect — and the rule that can lock a person out", () => {
     fireEvent.click(await within(await findRow("google")).findByRole("button", { name: "Disconnect" }));
 
     expect((await screen.findByRole("alert")).textContent).toMatch(/only way to sign in/);
+  });
+
+  it("explains a refusal as the lockout when the account's password is no way in", async () => {
+    // Password set, but password sign-in is off on the instance: the backend's
+    // guard does not count it, so the 400 IS the lockout rule — and the advice
+    // must not mention a password.
+    answer({
+      "GET /api/sign-in-methods": { methods: METHODS.methods.filter((m) => m.type !== "password") },
+      "DELETE /api/me/providers/google": new BffError(400, "cannot disconnect the only sign-in method"),
+    });
+    renderCard({ connectedProviders: ["google", "custom"], passwordSet: true });
+
+    fireEvent.click(await within(await findRow("google")).findByRole("button", { name: "Disconnect" }));
+
+    const text = (await screen.findByRole("alert")).textContent ?? "";
+    expect(text).toMatch(/only way to sign in/);
+    expect(text).toMatch(/Connect another provider first/);
+    expect(text).not.toMatch(/password/i);
   });
 
   it("does not tell someone who has a password to set one", async () => {

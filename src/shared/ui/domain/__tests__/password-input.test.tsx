@@ -18,7 +18,9 @@ describe("PasswordInput", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show password" }));
     expect(input.type).toBe("text");
-    expect(screen.getByRole("button", { name: "Hide password" }).getAttribute("aria-pressed")).toBe("true");
+    // The label carries the state; no `aria-pressed` beside it ("Hide
+    // password, pressed" reads backwards).
+    expect(screen.getByRole("button", { name: "Hide password" }).hasAttribute("aria-pressed")).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Hide password" }));
     expect(input.type).toBe("password");

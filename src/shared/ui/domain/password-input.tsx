@@ -36,8 +36,9 @@ export function PasswordInput({ className, disabled, ...inputProps }: PasswordIn
         className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-fg-muted hover:text-fg disabled:opacity-50"
         onClick={() => setVisible((v) => !v)}
         disabled={disabled}
+        // The label says what pressing will do. No `aria-pressed` alongside it:
+        // "Hide password, pressed" reads backwards to a screen reader.
         aria-label={visible ? "Hide password" : "Show password"}
-        aria-pressed={visible}
       >
         {visible ? (
           <EyeOff className="size-4" aria-hidden="true" />
