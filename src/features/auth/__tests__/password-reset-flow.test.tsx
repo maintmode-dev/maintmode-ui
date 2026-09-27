@@ -78,6 +78,17 @@ describe("step two keeps its context and an exit", () => {
   });
 });
 
+describe("the countdown follows the code the server bound", () => {
+  it("counts down from the deadline the request returned", async () => {
+    // Inside the backend's reissue cooldown the request keeps the existing
+    // code, already part-way through its life.
+    const props = setup({ requestCode: vi.fn(async () => ({ expiresAt: Date.now() + 120_000 })) });
+    await reachCodeStep(props);
+
+    expect(screen.getByRole("timer").textContent).toMatch(/Expires in (1:59|2:00)/);
+  });
+});
+
 describe("the reset flow's two steps", () => {
   it("asks for an address, then for a code and a new password", async () => {
     const props = setup();
@@ -189,6 +200,50 @@ describe("the local attempt budget", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("wrong or has expired"));
     expect(screen.getByRole("alert").textContent).not.toMatch(/too many/i);
     expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
+  /**
+   * Only a refused code counts. Found by the pre-release review: five 429s, or
+   * five answers during an outage, threw away a still-valid code, cleared the
+   * binding and sent the user back into the same limiter — the defect the
+   * sign-in flow had already been fixed for.
+   */
+  it.each([
+    ["a rate limit", "otp_rate_limited"],
+    ["an outage", "password_reset_unavailable"],
+  ])("spends nothing on %s", async (_label, error) => {
+    const props = setup({ confirm: vi.fn(async () => ({ error })) });
+    await reachCodeStep(props);
+
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("123456", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
+
+    expect(props.abandon).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+  });
+
+  it("holds a new request for the burnt address until its code would expire", async () => {
+    // The burnt code keeps the backend's slot; a request before it expires is
+    // a 202 with no email, so "Email me a code" must not promise one.
+    const props = setup({ confirm: vi.fn(async () => ({ error: "password_reset_failed" })) });
+    await reachCodeStep(props);
+    for (let i = 0; i < MAX_CODE_ATTEMPTS; i++) {
+      await submitCode("000000", LONG_ENOUGH);
+      await waitFor(() => expect(props.confirm).toHaveBeenCalledTimes(i + 1));
+    }
+    await waitFor(() => expect(screen.getByLabelText("Reset your password")).toBeTruthy());
+
+    expect(screen.getByRole("alert").textContent).toContain("in a few minutes");
+    const send = () => screen.getByRole("button", { name: "Email me a code" });
+    fireEvent.change(screen.getByLabelText("Reset your password"), { target: { value: "op@example.test" } });
+    expect(send().hasAttribute("disabled")).toBe(true);
+
+    fireEvent.change(screen.getByLabelText("Reset your password"), {
+      target: { value: "other@example.test" },
+    });
+    expect(send().hasAttribute("disabled")).toBe(false);
   });
 
   it("does not spend the budget on a locally rejected password", async () => {
@@ -314,6 +369,11 @@ describe("expiry and the resend cooldown", () => {
     await reachCodeStep(props);
 
     const resend = () => screen.getByRole("button", { name: /Request a new code/ });
+    expect(resend().hasAttribute("disabled")).toBe(true);
+
+    // The backend's reissue cooldown is 60s: at 30s (the old wait) a resend
+    // would be a 202 with no email, so it must still be held.
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(resend().hasAttribute("disabled")).toBe(true);
 
     await vi.advanceTimersByTimeAsync(30_000);

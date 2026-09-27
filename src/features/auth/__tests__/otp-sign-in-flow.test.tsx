@@ -187,8 +187,33 @@ describe("the local attempt budget", () => {
     expect(alert.textContent).toContain("Too many attempts");
     // The one message that must not appear: the last code may have been right.
     expect(alert.textContent).not.toContain("wrong or has expired");
-    // Asking again is the way forward, so it is not throttled.
-    expect(screen.getByRole("button", { name: "Email me a code" }).hasAttribute("disabled")).toBe(false);
+    // No promise of an email now: the burnt code holds the backend's slot
+    // until it expires, and a request before then sends nothing.
+    expect(alert.textContent).toContain("in a few minutes");
+  });
+
+  it("holds a new request for the burnt address, but not for another", async () => {
+    const submitCode = wrongCode();
+    const { requestCode } = await reachCodeStep({ submitCode });
+    await failTimes(submitCode, MAX_CODE_ATTEMPTS);
+    await waitFor(() => expect(screen.getByLabelText("Email code")).toBeDefined());
+
+    const send = () => screen.getByRole("button", { name: "Email me a code" });
+    expect(send().hasAttribute("disabled")).toBe(true);
+    fireEvent.submit(send().closest("form") as HTMLFormElement);
+    expect(requestCode).toHaveBeenCalledTimes(1);
+
+    // Only the burnt address is held: a different one gets its own code.
+    fireEvent.change(screen.getByLabelText("Email code"), { target: { value: "other@example.test" } });
+    expect(send().hasAttribute("disabled")).toBe(false);
+  });
+
+  it("counts down from the deadline the server bound", async () => {
+    // A request inside the backend's reissue cooldown keeps the existing code,
+    // already part-way through its life; a fresh five minutes would overstate it.
+    await reachCodeStep({ requestCode: vi.fn(async () => ({ expiresAt: Date.now() + 120_000 })) });
+
+    expect(screen.getByRole("timer").textContent).toMatch(/Expires in (1:59|2:00)/);
   });
 
   it("starts a fresh budget for a newly requested code", async () => {
@@ -236,6 +261,11 @@ describe("AC-6 — countdown and resend", () => {
     await reachCodeStep();
 
     const resend = () => screen.getByRole("button", { name: /Request a new code/ });
+    expect(resend().hasAttribute("disabled")).toBe(true);
+
+    // The backend's reissue cooldown is 60s: at 30s (the old wait) a resend
+    // would be a 202 with no email, so it must still be held.
+    await vi.advanceTimersByTimeAsync(30_000);
     expect(resend().hasAttribute("disabled")).toBe(true);
 
     await vi.advanceTimersByTimeAsync(30_000);

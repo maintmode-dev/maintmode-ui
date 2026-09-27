@@ -5,6 +5,7 @@ import { confirmPasswordReset, requestPasswordResetCode } from "@/server/auth/ba
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import {
   clearPasswordResetBinding,
+  isWithinReissueCooldown,
   normalizeEmail,
   readPasswordResetBinding,
   setPasswordResetBinding,
@@ -26,6 +27,8 @@ export interface PasswordResetActionResult {
   error?: string;
   /** Set once the password is changed, so the sign-in form can confirm it. */
   done?: boolean;
+  /** On a code request: the bound code's deadline (epoch ms). */
+  expiresAt?: number;
 }
 
 /** A backend failure's HTTP status, when it carried one. */
@@ -52,10 +55,18 @@ export async function requestPasswordResetAction(email: string): Promise<Passwor
     return { error: "invalid_email" };
   }
 
+  // Inside the backend's reissue cooldown for this address: keep the binding
+  // the one code needs rather than overwrite it with a nonce that matches
+  // nothing (see `isWithinReissueCooldown`).
+  const existing = await readPasswordResetBinding();
+  if (isWithinReissueCooldown(existing, trimmed)) {
+    return { expiresAt: existing.expiresAt };
+  }
+
   try {
     const { session_nonce: nonce } = await requestPasswordResetCode(trimmed);
-    await setPasswordResetBinding({ nonce, email: trimmed });
-    return {};
+    const expiresAt = await setPasswordResetBinding({ nonce, email: trimmed });
+    return { expiresAt };
   } catch (error) {
     const status = statusOf(error);
     // Logged because the user is shown one uniform state by design, which

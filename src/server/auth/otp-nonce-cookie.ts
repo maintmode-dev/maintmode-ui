@@ -2,6 +2,8 @@ import "server-only";
 
 import { cookies } from "next/headers";
 
+import { OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
+
 /**
  * Short-lived, httpOnly cookie carrying the OTP browser binding (RUK-288).
  *
@@ -97,7 +99,33 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-async function setBinding(name: string, binding: OtpBinding): Promise<void> {
+/**
+ * Whether `binding` names a code for this address that the backend issued too
+ * recently to issue another (`OTP_REISSUE_COOLDOWN_SECONDS`).
+ *
+ * In that window a new request would be answered 202 with no email and a
+ * fresh nonce that matches nothing — writing it over this binding would leave
+ * the user holding the one code they were sent and no way to verify it. The
+ * request actions therefore keep the binding and skip the call. Reached by a
+ * reload of /login (the sign-in flow starts over at step one) or a second tab,
+ * which the in-page resend cooldown cannot see.
+ *
+ * A binding with no deadline (written before the field existed) is never
+ * kept: its age is unknown, and a request then behaves as it always did.
+ */
+export function isWithinReissueCooldown(
+  binding: OtpBinding | undefined,
+  email: string,
+  now: number = Date.now(),
+): binding is OtpBinding & { expiresAt: number } {
+  if (binding?.expiresAt === undefined) return false;
+  if (binding.email !== normalizeEmail(email)) return false;
+  const issuedAt = binding.expiresAt - MAX_AGE_SECONDS * 1000;
+  return now - issuedAt < OTP_REISSUE_COOLDOWN_SECONDS * 1000;
+}
+
+async function setBinding(name: string, binding: OtpBinding): Promise<number> {
+  const expiresAt = Date.now() + MAX_AGE_SECONDS * 1000;
   const encoded = Buffer.from(
     JSON.stringify({
       nonce: binding.nonce,
@@ -106,19 +134,21 @@ async function setBinding(name: string, binding: OtpBinding): Promise<void> {
       // what is actually left instead of restarting at the full TTL — which
       // showed "Expires in 4:59" for a code minutes into its life (UX-12). The
       // cookie's own maxAge IS that TTL, so the two cannot disagree.
-      exp: Date.now() + MAX_AGE_SECONDS * 1000,
+      exp: expiresAt,
     }),
     "utf8",
   ).toString("base64url");
   const store = await cookies();
   store.set(name, encoded, { ...BINDING_COOKIE_ATTRIBUTES, maxAge: MAX_AGE_SECONDS });
+  return expiresAt;
 }
 
-export function setOtpBinding(binding: OtpBinding): Promise<void> {
+/** Writes the binding and returns the code's deadline (epoch ms). */
+export function setOtpBinding(binding: OtpBinding): Promise<number> {
   return setBinding(OTP_NONCE_COOKIE, binding);
 }
 
-export function setPasswordResetBinding(binding: OtpBinding): Promise<void> {
+export function setPasswordResetBinding(binding: OtpBinding): Promise<number> {
   return setBinding(PWRESET_NONCE_COOKIE, binding);
 }
 

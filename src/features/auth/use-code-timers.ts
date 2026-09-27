@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { OTP_REISSUE_COOLDOWN_SECONDS } from "@/domain/auth/otp-timing";
+
 /**
  * The countdown, resend cooldown and double-submit guard shared by the two
  * emailed-code flows: sign-in (RUK-288) and password reset (RUK-289).
@@ -16,12 +18,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export const CODE_TTL_SECONDS = 300;
 
 /**
- * Advisory only. The backend has no resend cooldown, and its per-IP bucket is
- * shared with the password and OAuth endpoints — so an unthrottled resend
- * button would lock the user out of the *other* ways in. The server's 429 is
- * the real backstop.
+ * The backend's reissue cooldown, not a guess. Inside it a resend is answered
+ * 202 with no email, so a shorter wait here offered "Request a new code" for a
+ * code that would never come (it was 30s against the backend's 60s). It also
+ * keeps retries away from the per-IP bucket the password and OAuth endpoints
+ * share.
  */
-export const RESEND_COOLDOWN_SECONDS = 30;
+export const RESEND_COOLDOWN_SECONDS = OTP_REISSUE_COOLDOWN_SECONDS;
 
 /**
  * The backend's `auth.otp_max_attempts`. It claims an attempt BEFORE comparing
@@ -148,4 +151,37 @@ export function useCodeTimers(active: boolean): CodeTimers {
     startCooldown,
     guard,
   };
+}
+
+/**
+ * Holds back a new code request for an address whose code this browser has
+ * just burnt.
+ *
+ * After five refused codes the backend keeps the burnt code in the user's
+ * single slot until it expires: a request before then is answered 202 with no
+ * email. So offering "Email me a code" right away promised an email that would
+ * not come. The hold lasts what is left of the burnt code, applies only to the
+ * address it was burnt for (typing another address is not held), and lifts
+ * itself when the code expires.
+ */
+export function useSpentCodeHold() {
+  const [hold, setHold] = useState<{ email: string; until: number }>();
+
+  useEffect(() => {
+    if (!hold) return;
+    const id = setTimeout(() => setHold(undefined), Math.max(0, hold.until - Date.now()));
+    return () => clearTimeout(id);
+  }, [hold]);
+
+  const holdFor = useCallback((email: string, seconds: number) => {
+    if (seconds <= 0) return;
+    setHold({ email: email.trim().toLowerCase(), until: Date.now() + seconds * 1000 });
+  }, []);
+
+  const isHeld = useCallback(
+    (email: string) => hold !== undefined && hold.email === email.trim().toLowerCase(),
+    [hold],
+  );
+
+  return { holdFor, isHeld };
 }

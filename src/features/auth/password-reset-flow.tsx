@@ -8,7 +8,7 @@ import { PasswordInput } from "@/shared/ui/domain/password-input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode, isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
 import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
-import { MAX_CODE_ATTEMPTS, useCodeTimers } from "@/features/auth/use-code-timers";
+import { MAX_CODE_ATTEMPTS, useCodeTimers, useSpentCodeHold } from "@/features/auth/use-code-timers";
 
 /**
  * "Forgot password" — a two-step emailed-code flow that ends in a new password
@@ -30,7 +30,8 @@ export interface PasswordResetFlowProps {
   initialStep?: Step;
   /** The resumed code's deadline (epoch ms), when the binding carries one. */
   initialExpiresAt?: number;
-  requestCode: (email: string) => Promise<{ error?: string }>;
+  /** Resolves with the bound code's deadline (epoch ms) on success. */
+  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number }>;
   confirm: (args: {
     email: string;
     code: string;
@@ -66,6 +67,7 @@ export function PasswordResetFlow({
   const [attempts, setAttempts] = useState(0);
 
   const timers = useCodeTimers(step === "code");
+  const spentHold = useSpentCodeHold();
   const budgetSpent = attempts >= MAX_CODE_ATTEMPTS;
 
   // Rehydrating straight into step two starts with the countdown at zero, which
@@ -91,7 +93,9 @@ export function PasswordResetFlow({
       timers.startCooldown();
       return;
     }
-    timers.start();
+    // The deadline the server bound — part-way through its life when a request
+    // inside the backend's reissue cooldown kept the existing code.
+    timers.start(result.expiresAt);
     setCode("");
     setAttempts(0);
     setStep("code");
@@ -154,10 +158,11 @@ export function PasswordResetFlow({
         return;
       }
 
-      // Counted for every answer the server gave, including a mismatch: the
-      // backend claims an attempt BEFORE it compares the code, so a stale nonce
-      // costs one exactly as a wrong digit does.
-      const spent = attempts + 1;
+      // Only a refused code counts — the one answer that spent a backend
+      // attempt. A 429 never reached the code and an outage checked nothing;
+      // counted, five of either threw away a still-valid code and sent the user
+      // back into the same limiter. The sign-in flow counts the same way.
+      const spent = result.error === "password_reset_failed" ? attempts + 1 : attempts;
       setAttempts(spent);
 
       if (spent >= MAX_CODE_ATTEMPTS) {
@@ -167,6 +172,9 @@ export function PasswordResetFlow({
         // tells it apart from a wrong code (BUG-2).
         // The cause, in the sign-in flow's words: the backend's answer cannot
         // say the budget is gone, so the generic failure would not either.
+        // The burnt code holds the backend's slot until it expires: a new
+        // request before then sends nothing, so it is held for what is left.
+        spentHold.holdFor(email, timers.remaining);
         await restart("otp_attempts_spent");
         return;
       }
@@ -181,7 +189,7 @@ export function PasswordResetFlow({
         onSubmit={(e) => {
           e.preventDefault();
           const trimmed = email.trim();
-          if (!trimmed || pending) return;
+          if (!trimmed || pending || spentHold.isHeld(trimmed)) return;
           void send(trimmed);
         }}
       >
@@ -201,7 +209,7 @@ export function PasswordResetFlow({
           aria-describedby={error ? "reset-error" : undefined}
         />
         {error ? <ResetError code={error} /> : null}
-        <Button type="submit" disabled={!email.trim() || pending}>
+        <Button type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
           {pending ? "Sending…" : "Email me a code"}
         </Button>
         <Button type="button" variant="ghost" onClick={onCancel}>

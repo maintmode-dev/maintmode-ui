@@ -2,7 +2,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 
-import { CODE_TTL_SECONDS, MAX_CODE_ATTEMPTS, useCodeTimers } from "@/features/auth/use-code-timers";
+import {
+  CODE_TTL_SECONDS,
+  MAX_CODE_ATTEMPTS,
+  RESEND_COOLDOWN_SECONDS,
+  useCodeTimers,
+  useSpentCodeHold,
+} from "@/features/auth/use-code-timers";
 
 afterEach(() => {
   cleanup();
@@ -132,5 +138,68 @@ describe("the contract constants", () => {
   it("match the backend's configuration", () => {
     expect(CODE_TTL_SECONDS).toBe(300);
     expect(MAX_CODE_ATTEMPTS).toBe(5);
+    // `auth.otp_reissue_cooldown`: a shorter wait offered a resend that the
+    // backend answers with no email.
+    expect(RESEND_COOLDOWN_SECONDS).toBe(60);
+  });
+});
+
+function HoldProbe({ email, seconds }: { email: string; seconds: number }) {
+  const hold = useSpentCodeHold();
+  return (
+    <div>
+      <span data-testid="held">{String(hold.isHeld(email))}</span>
+      <button type="button" onClick={() => hold.holdFor("Burnt@Example.test", seconds)}>
+        hold
+      </button>
+    </div>
+  );
+}
+
+/**
+ * A burnt code keeps the backend's slot until it expires; a request before
+ * then is a 202 with no email. The hold covers exactly that window, for
+ * exactly that address.
+ */
+describe("useSpentCodeHold", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    vi.setSystemTime(new Date("2026-09-27T12:00:00Z"));
+  });
+
+  it("holds the burnt address, case-insensitively, until its code would expire", () => {
+    render(<HoldProbe email="burnt@example.test" seconds={120} />);
+    act(() => {
+      screen.getByRole("button", { name: "hold" }).click();
+    });
+    expect(screen.getByTestId("held").textContent).toBe("true");
+
+    act(() => {
+      vi.advanceTimersByTime(119_000);
+    });
+    expect(screen.getByTestId("held").textContent).toBe("true");
+
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.getByTestId("held").textContent).toBe("false");
+  });
+
+  it("does not hold another address", () => {
+    render(<HoldProbe email="someone-else@example.test" seconds={120} />);
+    act(() => {
+      screen.getByRole("button", { name: "hold" }).click();
+    });
+
+    expect(screen.getByTestId("held").textContent).toBe("false");
+  });
+
+  it("holds nothing when the burnt code has already expired", () => {
+    render(<HoldProbe email="burnt@example.test" seconds={0} />);
+    act(() => {
+      screen.getByRole("button", { name: "hold" }).click();
+    });
+
+    expect(screen.getByTestId("held").textContent).toBe("false");
   });
 });

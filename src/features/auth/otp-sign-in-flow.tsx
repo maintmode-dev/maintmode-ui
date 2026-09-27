@@ -6,7 +6,7 @@ import { Button } from "@/shared/ui/shadcn/button";
 import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
-import { MAX_CODE_ATTEMPTS, useCodeTimers } from "@/features/auth/use-code-timers";
+import { MAX_CODE_ATTEMPTS, useCodeTimers, useSpentCodeHold } from "@/features/auth/use-code-timers";
 
 /**
  * Two-step email one-time-code sign-in (RUK-288).
@@ -21,7 +21,8 @@ type Step = "email" | "code";
 
 export interface OtpSignInFlowProps {
   label: string;
-  requestCode: (email: string) => Promise<{ error?: string }>;
+  /** Resolves with the bound code's deadline (epoch ms) on success. */
+  requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number }>;
   submitCode: (email: string, code: string) => Promise<{ error?: string }>;
   onChangeEmail: () => Promise<void>;
 }
@@ -44,6 +45,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
   // would drift.
   const timers = useCodeTimers(step === "code");
   const { remaining, cooldown, expired } = timers;
+  const spentHold = useSpentCodeHold();
 
   const send = useCallback(
     async (address: string) => {
@@ -57,7 +59,10 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
         timers.startCooldown();
         return;
       }
-      timers.start();
+      // The deadline the server bound, not a fresh five minutes: a request
+      // inside the backend's reissue cooldown keeps the existing code, which is
+      // already part-way through its life.
+      timers.start(result.expiresAt);
       setCode("");
       setAttempts(0);
       setStep("code");
@@ -100,6 +105,10 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
       // This is also the only way back from a lost browser binding: the
       // backend no longer tells that case apart from a wrong code (BUG-2), so
       // it runs out the same budget.
+      //
+      // The burnt code keeps the backend's slot until it expires, so a new
+      // request before then is a 202 with no email: held for what is left.
+      spentHold.holdFor(email, remaining);
       setStep("email");
       setCode("");
       timers.reset();
@@ -124,7 +133,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
         onSubmit={(e) => {
           e.preventDefault();
           const trimmed = email.trim();
-          if (!trimmed || pending) return;
+          if (!trimmed || pending || spentHold.isHeld(trimmed)) return;
           void send(trimmed);
         }}
       >
@@ -140,7 +149,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
           aria-describedby={error ? "otp-error" : undefined}
         />
         {error ? <FlowError id="otp-error" code={error} /> : null}
-        <Button type="submit" disabled={!email.trim() || pending}>
+        <Button type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
           {pending ? "Sending…" : "Email me a code"}
         </Button>
       </form>
@@ -227,8 +236,10 @@ export function flowErrorMessage(code: string): string {
       return "That code is wrong or has expired. Check it, or request a new one.";
     case "otp_attempts_spent":
       // Client-side: the local budget ran out. Says nothing about whether the
-      // last code was right — the backend's answer cannot tell us that.
-      return "Too many attempts for this code. Request a new one.";
+      // last code was right — the backend's answer cannot tell us that. And
+      // promises no email now: the burnt code holds the backend's slot until
+      // it expires, and a request before then sends nothing.
+      return "Too many attempts for this code. You can request a new one in a few minutes.";
     case "invalid_credentials":
       // Names both fields deliberately: saying which one was wrong would
       // enumerate accounts.

@@ -2,7 +2,12 @@
 
 import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
-import { clearOtpBinding, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
+import {
+  clearOtpBinding,
+  isWithinReissueCooldown,
+  readOtpBinding,
+  setOtpBinding,
+} from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
 import { safeNext } from "@/server/auth/safe-next";
@@ -20,6 +25,12 @@ import { safeNext } from "@/server/auth/safe-next";
 export interface SignInActionResult {
   /** An `AUTH_ERROR_CODES` value the client renders in place, or undefined on success. */
   error?: string;
+  /**
+   * On a code request: the bound code's deadline (epoch ms), so the countdown
+   * shows what is actually left — which is less than a full TTL when the
+   * binding was kept rather than replaced.
+   */
+  expiresAt?: number;
 }
 
 /**
@@ -35,13 +46,22 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
     return { error: "invalid_email" };
   }
 
+  // A code for this address was issued less than the backend's reissue
+  // cooldown ago: the backend would answer 202, send nothing, and hand back a
+  // nonce that matches nothing. Keep the binding the user's one code needs, and
+  // do not spend a request on a guaranteed no-op. See `isWithinReissueCooldown`.
+  const existing = await readOtpBinding();
+  if (isWithinReissueCooldown(existing, trimmed)) {
+    return { expiresAt: existing.expiresAt };
+  }
+
   try {
     const { session_nonce: nonce } = await requestOtpCode(trimmed);
     // The binding lives in an httpOnly cookie on our origin. The backend sets
     // none: it is called server-to-server, so its own Set-Cookie would never
     // reach the user's browser.
-    await setOtpBinding({ nonce, email: trimmed });
-    return {};
+    const expiresAt = await setOtpBinding({ nonce, email: trimmed });
+    return { expiresAt };
   } catch (error) {
     // A 429 and a dead network need different copy: telling someone to "wait a
     // moment" when the service is unreachable sends them into a pointless

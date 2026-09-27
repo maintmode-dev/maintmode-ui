@@ -25,6 +25,7 @@ vi.mock("@/server/auth/otp-nonce-cookie", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/auth/otp-nonce-cookie")>();
   return {
     normalizeEmail: actual.normalizeEmail,
+    isWithinReissueCooldown: actual.isWithinReissueCooldown,
     setPasswordResetBinding: (...args: unknown[]) => setPasswordResetBinding(...args),
     readPasswordResetBinding: () => readPasswordResetBinding(),
     clearPasswordResetBinding: () => clearPasswordResetBinding(),
@@ -39,8 +40,12 @@ function backendError(status: number, body = "") {
   return Object.assign(new Error(`backend ${status}`), { status, responseBody: body });
 }
 
+/** The deadline the mocked cookie write reports back. */
+const DEADLINE = Date.parse("2026-09-27T12:05:00Z");
+
 beforeEach(() => {
   vi.clearAllMocks();
+  setPasswordResetBinding.mockResolvedValue(DEADLINE);
   console.error = vi.fn();
 });
 
@@ -55,7 +60,7 @@ describe("requesting a reset code cannot become an account-existence oracle", ()
     const unknown = await requestPasswordResetAction("nobody@example.test");
     const blocked = await requestPasswordResetAction("blocked@example.test");
 
-    expect(registered).toEqual({});
+    expect(registered).toEqual({ expiresAt: DEADLINE });
     expect(unknown).toEqual(registered);
     expect(blocked).toEqual(registered);
   });
@@ -329,5 +334,61 @@ describe("abandoning the flow", () => {
     await abandonPasswordResetAction();
 
     expect(clearPasswordResetBinding).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The backend's reissue cooldown (60s): inside it a request is answered 202
+ * with NO email and a fresh nonce that matches nothing — the live code keeps
+ * the nonce it was issued with. Overwriting the binding then left the user's
+ * one code unverifiable (measured on the stand: code1 + nonce2 → 401). Reached
+ * by a reload or a second tab. The real `isWithinReissueCooldown` decides.
+ */
+describe("requestPasswordResetAction — inside the backend's reissue cooldown", () => {
+  const TTL_MS = 300_000;
+  const bindingIssued = (secondsAgo: number, email = "someone@example.test") => ({
+    nonce: "live-nonce",
+    email,
+    expiresAt: Date.now() - secondsAgo * 1000 + TTL_MS,
+  });
+
+  it("keeps the binding and skips the call for the same address", async () => {
+    const live = bindingIssued(20);
+    readPasswordResetBinding.mockResolvedValue(live);
+
+    const result = await requestPasswordResetAction("  SomeOne@Example.test ");
+
+    expect(result).toEqual({ expiresAt: live.expiresAt });
+    expect(requestPasswordResetCode).not.toHaveBeenCalled();
+    expect(setPasswordResetBinding).not.toHaveBeenCalled();
+  });
+
+  it("requests normally for another address", async () => {
+    readPasswordResetBinding.mockResolvedValue(bindingIssued(20, "other@example.test"));
+    requestPasswordResetCode.mockResolvedValue({ session_nonce: "fresh" });
+
+    await requestPasswordResetAction("someone@example.test");
+
+    expect(requestPasswordResetCode).toHaveBeenCalledTimes(1);
+    expect(setPasswordResetBinding).toHaveBeenCalledWith({ nonce: "fresh", email: "someone@example.test" });
+  });
+
+  it("requests normally once the cooldown has passed", async () => {
+    readPasswordResetBinding.mockResolvedValue(bindingIssued(61));
+    requestPasswordResetCode.mockResolvedValue({ session_nonce: "fresh" });
+
+    await requestPasswordResetAction("someone@example.test");
+
+    expect(requestPasswordResetCode).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests normally when the binding's age is unknown", async () => {
+    // Written before the deadline field existed: behave as before.
+    readPasswordResetBinding.mockResolvedValue({ nonce: "old", email: "someone@example.test" });
+    requestPasswordResetCode.mockResolvedValue({ session_nonce: "fresh" });
+
+    await requestPasswordResetAction("someone@example.test");
+
+    expect(requestPasswordResetCode).toHaveBeenCalledTimes(1);
   });
 });
