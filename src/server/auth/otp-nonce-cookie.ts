@@ -74,6 +74,13 @@ function isBinding(value: unknown): value is OtpBinding {
 }
 
 /**
+ * Written on set AND on clear. A `__Host-` cookie must carry `Secure` and
+ * `Path=/`, and a delete that omits them is refused by the browser — see
+ * `clearBinding`. One object is what keeps the two from drifting apart.
+ */
+const BINDING_COOKIE_ATTRIBUTES = { httpOnly: true, sameSite: "lax", secure: true, path: "/" } as const;
+
+/**
  * Addresses are normalized before they are bound, and compared normalized, so
  * the frontend's idea of "the same address" matches the backend's — it
  * normalizes server-side. Without this, typing `User@x.test` at step one and
@@ -90,13 +97,7 @@ async function setBinding(name: string, binding: OtpBinding): Promise<void> {
     "utf8",
   ).toString("base64url");
   const store = await cookies();
-  store.set(name, encoded, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: true,
-    path: "/",
-    maxAge: MAX_AGE_SECONDS,
-  });
+  store.set(name, encoded, { ...BINDING_COOKIE_ATTRIBUTES, maxAge: MAX_AGE_SECONDS });
 }
 
 export function setOtpBinding(binding: OtpBinding): Promise<void> {
@@ -139,9 +140,20 @@ export function readPasswordResetBinding(): Promise<OtpBinding | undefined> {
   return readBinding(PWRESET_NONCE_COOKIE);
 }
 
+/**
+ * Clears a binding — with the SAME attributes it was written with.
+ *
+ * `store.delete(name)` alone emits `name=; Path=/; Expires=1970…` with no
+ * `Secure`, and a browser silently DISCARDS a `Set-Cookie` for a `__Host-`
+ * cookie that lacks `Secure`. So every clear was a no-op: a verified sign-in
+ * code's binding outlived its use, "Back to sign in" and a finished reset left
+ * the reset binding behind, and the next visit to /login rehydrated into a flow
+ * the user had left (found by QA on UX-2, v0.2.0-rc). Passing the attributes is
+ * what makes the delete one the browser will apply.
+ */
 async function clearBinding(name: string): Promise<void> {
   const store = await cookies();
-  store.delete(name);
+  store.delete({ name, ...BINDING_COOKIE_ATTRIBUTES });
 }
 
 export function clearOtpBinding(): Promise<void> {
