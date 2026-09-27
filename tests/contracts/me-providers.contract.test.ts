@@ -181,6 +181,19 @@ describe("DELETE /api/me/providers/{p} — removing a link", () => {
     });
   });
 
+  it("escapes the provider, so a crafted id cannot reach another backend path", async () => {
+    // Connect's escaping is pinned above; this is the route that REMOVES a way
+    // in. Unescaped, `../../x` would resolve against the backend's path and
+    // send the DELETE somewhere other than this account's provider link.
+    authedRequest.mockResolvedValueOnce(undefined);
+
+    await item.DELETE(del(), params("../../admin/x"));
+
+    expect(authedRequest.mock.calls[0]?.[0]).toMatchObject({
+      path: "/api/v1/me/providers/..%2F..%2Fadmin%2Fx/disconnect",
+    });
+  });
+
   it("keeps the backend's lockout refusal an error, never a 204", async () => {
     // A swallowed 400 would have the card report a provider removed that is
     // still the account's only way in.

@@ -155,6 +155,12 @@ export function LoginPage({
   // stays; "Forgot password" resumes it.
   const [resetting, setResetting] = useState(Boolean(resetInProgressEmail) && offersPassword && !error);
   const [resetDone, setResetDone] = useState(false);
+  // The binding the server handed down, for as long as it is still live. Every
+  // way the flow ends discards it — "Back to sign in" abandons it, a finished
+  // reset clears it — while the prop keeps naming it, so reopening the flow
+  // from the prop would land on step two of a binding that is gone, where a
+  // correct code is answered "wrong or has expired".
+  const [resumeEmail, setResumeEmail] = useState(resetInProgressEmail);
 
   return (
     <TooltipProvider>
@@ -195,8 +201,8 @@ export function LoginPage({
 
           {resetting ? (
             <PasswordResetFlow
-              initialEmail={resetInProgressEmail}
-              initialStep={resetInProgressEmail ? "code" : "email"}
+              initialEmail={resumeEmail}
+              initialStep={resumeEmail ? "code" : "email"}
               initialExpiresAt={resetInProgressExpiresAt}
               requestCode={requestPasswordResetAction}
               confirm={confirmPasswordResetAction}
@@ -207,8 +213,12 @@ export function LoginPage({
                 // so the flow ends where it began, with something to say.
                 setResetting(false);
                 setResetDone(true);
+                setResumeEmail(undefined);
               }}
-              onCancel={() => setResetting(false)}
+              onCancel={() => {
+                setResetting(false);
+                setResumeEmail(undefined);
+              }}
             />
           ) : (
             <div className="flex flex-col gap-4">

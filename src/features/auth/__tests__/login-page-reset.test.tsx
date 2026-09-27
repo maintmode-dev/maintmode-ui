@@ -104,6 +104,40 @@ describe("rehydration after a reload", () => {
     expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
   });
 
+  /**
+   * The binding the server handed down is spent once the flow ends in this
+   * page: "Back to sign in" abandons it and a finished reset clears it. The
+   * prop still names it, though, so reopening the flow from it would put the
+   * user on step two of a binding that no longer exists — where a correct code
+   * from their inbox is answered "wrong or has expired".
+   */
+  it("does not resume a binding the user just backed out of", async () => {
+    const props = renderLogin({ resetInProgressEmail: "op@example.test" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Forgot password?" })).toBeTruthy());
+    expect(props.abandonPasswordResetAction).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
+  });
+
+  it("does not resume a binding a finished reset has consumed", async () => {
+    renderLogin({ resetInProgressEmail: "op@example.test" });
+
+    fireEvent.change(screen.getByLabelText("Enter the 6-digit code"), { target: { value: "123456" } });
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "a-long-enough-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Set new password" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toMatch(/password updated/i));
+
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    expect(screen.getByLabelText("Reset your password")).toBeTruthy();
+  });
+
   it("starts at step one when there is no binding", () => {
     renderLogin();
     fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));

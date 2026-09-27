@@ -231,6 +231,44 @@ describe("Disconnect — and the rule that can lock a person out", () => {
     expect(button.hasAttribute("disabled")).toBe(true);
   });
 
+  /**
+   * Without the instance's list the card cannot know whether email code is
+   * offered, so only a set password may count as another way in. Guessing the
+   * other way offers a click the backend refuses; refusing a set password
+   * strands someone who can in fact sign in without the provider.
+   */
+  it.each([
+    ["a set password", true, false],
+    ["no password", false, true],
+  ])(
+    "without the instance's list, lets the only provider go only for %s",
+    async (_label, passwordSet, locked) => {
+      answer({ "GET /api/sign-in-methods": new BffError(503, "down") });
+      renderCard({ connectedProviders: ["google"], passwordSet });
+
+      await screen.findByText(/couldn't load/i);
+      const button = within(row("google")).getByRole("button", { name: "Disconnect" });
+      expect(button.hasAttribute("disabled")).toBe(locked);
+    },
+  );
+
+  it("does not advise a password on an instance that has password sign-in off", async () => {
+    // Password off, no email code: the only honest advice is another provider.
+    // "Set a password" would send the person to a method that cannot let them in.
+    answer({
+      "GET /api/sign-in-methods": { methods: METHODS.methods.filter((m) => m.type !== "password") },
+      "DELETE /api/me/providers/google": new BffError(400, "cannot disconnect the only sign-in method"),
+    });
+    renderCard({ connectedProviders: ["google", "custom"], passwordSet: false });
+
+    fireEvent.click(await within(await findRow("google")).findByRole("button", { name: "Disconnect" }));
+
+    const text = (await screen.findByRole("alert")).textContent ?? "";
+    expect(text).toMatch(/only way to sign in/);
+    expect(text).toMatch(/connect another provider first/i);
+    expect(text).not.toMatch(/password/i);
+  });
+
   it("explains the backend's lockout refusal instead of failing silently", async () => {
     answer({
       "GET /api/sign-in-methods": METHODS,
