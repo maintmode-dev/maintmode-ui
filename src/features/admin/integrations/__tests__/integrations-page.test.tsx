@@ -320,6 +320,17 @@ describe("IntegrationsPage — rows declared in the server config file", () => {
   };
   const PROVISIONED_SLACK: Integration = { ...CONFIGURED[0], provisioned: true };
 
+  /** View is the only way into a provisioned row; the dialog tests render it directly. */
+  it("opens the read-only view from the row's View button", async () => {
+    renderPage([PROVISIONED_GOOGLE]);
+    await screen.findByText("Managed by config");
+
+    fireEvent.click(within(rowFor("Google")).getByText("View"));
+
+    expect(await screen.findByText("View Google")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/server config file/i);
+  });
+
   it("marks a provisioned login row read-only", async () => {
     renderPage([PROVISIONED_GOOGLE]);
     await screen.findByText("Managed by config");

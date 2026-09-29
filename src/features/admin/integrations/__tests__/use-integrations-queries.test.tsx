@@ -489,7 +489,13 @@ describe("a 409 from a row declared in the server config file", () => {
       refused.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
     });
 
+    // Spied BEFORE the refusal settles. Reading `isInvalidated` afterwards is not
+    // enough: the rollback's `setQueryData` resets that flag, so an invalidate at
+    // the top of `onError` — the natural regression, and the one that refetches
+    // over the other row's optimistic flip — would leave it `false`.
+    const invalidate = vi.spyOn(client, "invalidateQueries");
     await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't toggle slack: ${MESSAGE}`));
+    expect(invalidate).not.toHaveBeenCalled();
     expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(false);
   });
 

@@ -114,6 +114,9 @@ describe("IntegrationDialog — a row declared in the server config file", () =>
     expect(screen.queryByText(/oauth_providers/)).toBeNull();
     expect(screen.getByText("Disabled")).toBeTruthy();
     expect(document.querySelectorAll("input").length).toBe(0);
+    // The flag, not the category, decides how an empty secrets_set reads.
+    expect(screen.getByText(/managed in the server configuration/i)).toBeTruthy();
+    expect(screen.queryByText(/not set/i)).toBeNull();
   });
 
   it("offers Close as the footer's only action", () => {
