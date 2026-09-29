@@ -82,13 +82,13 @@ export function IntegrationDialog({
   // when a 409 race refetches the list and the row comes back provisioned, an
   // open edit dialog turns into the view, whose notice is the explanation.
   const provisioned = integration?.provisioned === true;
-  const label = meta ? integrationLabel(meta, integration) : "";
+  const verb = provisioned ? "View" : isEdit ? "Configure" : "Set up";
 
   return (
     <CreateDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={meta ? (provisioned ? `View ${label}` : isEdit ? `Configure ${label}` : `Set up ${label}`) : ""}
+      title={meta ? `${verb} ${integrationLabel(meta, integration)}` : ""}
       description={
         meta
           ? isEdit
