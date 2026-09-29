@@ -16,6 +16,8 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/shadcn/alert-dialog";
 
+import { BffError } from "@/features/_shared/api/bff-fetch";
+
 import { useDeleteIntegration } from "./queries/use-integrations-queries";
 
 /**
@@ -130,7 +132,17 @@ export function DeleteIntegrationDialog({
                   // Released on failure only: a success closes the dialog, and
                   // re-arming it there would let a late second click delete
                   // whatever row the operator opened next.
-                  onError: () => {
+                  //
+                  // A 409 closes it instead. The row cannot be deleted from here
+                  // — typically the server's config file now declares it — and
+                  // the refetch turns it read-only; a confirmation left open
+                  // above it would keep an armed Delete for a row without one.
+                  // The toast from the hook carries the backend's reason.
+                  onError: (error) => {
+                    if (error instanceof BffError && error.status === 409) {
+                      close(false);
+                      return;
+                    }
                     inFlightRef.current = false;
                   },
                 },

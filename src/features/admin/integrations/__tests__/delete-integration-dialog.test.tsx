@@ -193,3 +193,49 @@ describe("deleting a transport", () => {
     expect(screen.queryByText(/loses access/i)).toBeNull();
   });
 });
+
+/**
+ * A 409 here means the row cannot be deleted from this screen — most likely it
+ * was declared in the server's config file after the page loaded. The list
+ * refetch turns the row read-only, and a confirmation left open above it would
+ * keep offering an armed Delete for a row that no longer has one.
+ */
+describe("a refused delete", () => {
+  it("closes the confirmation on 409", async () => {
+    const { BffError } = await import("@/features/_shared/api/bff-fetch");
+    bffFetchMock.mockRejectedValueOnce(
+      new BffError(
+        409,
+        "integration is managed by the config file; change it there and restart: notify/slack",
+      ),
+    );
+    const onOpenChange = vi.fn();
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <DeleteIntegrationDialog integration={SLACK} label="Slack" open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(deleteButton());
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("stays open on any other failure, so the admin can retry", async () => {
+    bffFetchMock.mockRejectedValueOnce(new Error("backend exploded"));
+    const onOpenChange = vi.fn();
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <DeleteIntegrationDialog integration={SLACK} label="Slack" open onOpenChange={onOpenChange} />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(deleteButton());
+
+    await waitFor(() => expect(bffFetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(deleteButton()).toHaveProperty("disabled", false));
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});
