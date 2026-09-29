@@ -60,6 +60,7 @@ vi.mock("@/server/auth/require-admin", () => ({
 const collection = await import("@/app/api/admin/integrations/route");
 const item = await import("@/app/api/admin/integrations/[kind]/[name]/route");
 const toggle = await import("@/app/api/admin/integrations/[kind]/[name]/toggle/route");
+const { BackendRequestError } = await import("@/server/backend/errors/backend-request-error");
 
 beforeEach(() => {
   isSameOriginRequest.mockReturnValue(true);
@@ -701,5 +702,68 @@ describe("DELETE /api/admin/integrations/[kind]/[name]", () => {
 
     expect(response.status).toBe(403);
     expect(backendRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Backend `87da097`: a row declared in the server's config file refuses every
+ * admin write with 409 and a message that names the remedy. The admin screen
+ * shows that message as the explanation, so each write route must hand it
+ * through — status, `code`, and the text in `error`, which is where
+ * `routeErrorResponse` puts it and where `bffFetch` reads `BffError.message`
+ * from. A route that let it degrade to a 500 or a stock "Conflict" string would
+ * leave the admin with a refusal and no reason.
+ *
+ * The envelopes are recorded off the wire (see `integration-provisioned-conflict.json`);
+ * the expected text is a literal, so a capture that says something else fails.
+ */
+describe("writes to a config-declared row — the 409 reaches the browser intact", () => {
+  type WireCase = { status: number; body: { code: string; message: string } };
+  const conflict = readWireFixture<{ patch: WireCase; toggle: WireCase; delete: WireCase }>(
+    "integration-provisioned-conflict.json",
+  );
+  const refuseWith = (recordedCase: WireCase) =>
+    backendRequest.mockRejectedValueOnce(
+      new BackendRequestError(recordedCase.status, JSON.stringify(recordedCase.body)),
+    );
+
+  const params = (name: string) => ({ params: Promise.resolve({ kind: "login", name }) });
+
+  async function expectConfigConflict(response: Response, name: string) {
+    expect(response.status).toBe(409);
+    const body = (await response.json()) as { code?: string; error?: string };
+    expect(body.code).toBe("conflict");
+    expect(body.error).toBe(
+      `integration is managed by the config file; change it there and restart: login/${name}`,
+    );
+  }
+
+  it("PATCH", async () => {
+    refuseWith(conflict.patch);
+    const response = await item.PATCH(
+      jsonRequest("https://app.test/api/admin/integrations/login/google", "PATCH", { enabled: false }),
+      params("google"),
+    );
+    await expectConfigConflict(response, "google");
+  });
+
+  it("toggle", async () => {
+    refuseWith(conflict.toggle);
+    const response = await toggle.POST(
+      jsonRequest("https://app.test/api/admin/integrations/login/github/toggle", "POST", {
+        enabled: false,
+      }),
+      params("github"),
+    );
+    await expectConfigConflict(response, "github");
+  });
+
+  it("DELETE", async () => {
+    refuseWith(conflict.delete);
+    const response = await item.DELETE(
+      new Request("https://app.test/api/admin/integrations/login/custom", { method: "DELETE" }),
+      params("custom"),
+    );
+    await expectConfigConflict(response, "custom");
   });
 });
