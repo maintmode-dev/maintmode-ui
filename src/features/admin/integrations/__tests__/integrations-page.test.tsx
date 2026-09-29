@@ -229,8 +229,8 @@ describe("IntegrationsPage — the sign-in providers section", () => {
     renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
     await screen.findByText("Google");
 
-    expect(within(rowFor("Google")).getByText("Active")).toBeTruthy();
-    expect(within(rowFor("Slack")).queryByText("Active")).toBeNull();
+    expect(within(rowFor("Google")).getByText("Configured")).toBeTruthy();
+    expect(within(rowFor("Slack")).queryByText("Configured")).toBeNull();
     expect(within(rowFor("Slack")).queryByText(/unknown/i)).toBeNull();
   });
 
@@ -261,12 +261,12 @@ describe("IntegrationsPage — the sign-in providers section", () => {
     expect(within(rowFor("Google")).getByText("Secret unreadable")).toBeTruthy();
   });
 
-  it("shows a login row with no health as unknown, never as active", async () => {
+  it("shows a login row with no health as unknown, never as configured", async () => {
     renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, health: undefined }]);
     await screen.findByText("Google");
 
     expect(within(rowFor("Google")).getByText(/unknown/i)).toBeTruthy();
-    expect(within(rowFor("Google")).queryByText("Active")).toBeNull();
+    expect(within(rowFor("Google")).queryByText("Configured")).toBeNull();
   });
 
   /**
