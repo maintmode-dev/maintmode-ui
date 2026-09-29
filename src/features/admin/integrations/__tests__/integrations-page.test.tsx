@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -383,5 +383,122 @@ describe("IntegrationsPage — rows declared in the server config file", () => {
     renderPage([]);
 
     expect(await screen.findByText(/declared in the server config file/i)).toBeTruthy();
+  });
+});
+
+/**
+ * AC7: the display name is the provider's name everywhere the admin meets it,
+ * not only in the row title. `custom` makes it load-bearing — "Custom OIDC" is
+ * the kind, and the operator never typed it.
+ */
+describe("IntegrationsPage — a provider named by its display_name", () => {
+  const NAMED_CUSTOM: Integration = {
+    id: "i-custom",
+    kind: "login",
+    name: "custom",
+    enabled: true,
+    config: { display_name: "Corporate SSO" },
+    secrets_set: { client_secret: true },
+    health: "ok",
+    provisioned: false,
+    created_at: "2026-09-29T21:20:04Z",
+    updated_at: "2026-09-29T21:20:04Z",
+  };
+
+  it("labels the row's delete button with it", async () => {
+    renderPage([NAMED_CUSTOM]);
+    await screen.findByText("Corporate SSO");
+
+    expect(
+      within(rowFor("Corporate SSO")).getByRole("button", { name: "Delete Corporate SSO" }),
+    ).toBeTruthy();
+  });
+
+  it("asks the delete confirmation for it", async () => {
+    renderPage([NAMED_CUSTOM]);
+    await screen.findByText("Corporate SSO");
+
+    fireEvent.click(within(rowFor("Corporate SSO")).getByRole("button", { name: "Delete Corporate SSO" }));
+
+    expect(await screen.findByText("Delete Corporate SSO sign-in?")).toBeTruthy();
+    const confirm = screen.getByRole("button", { name: "Delete" });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Custom OIDC" } });
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Corporate SSO" } });
+    expect(confirm.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("titles the edit dialog with it", async () => {
+    renderPage([NAMED_CUSTOM]);
+    await screen.findByText("Corporate SSO");
+
+    fireEvent.click(within(rowFor("Corporate SSO")).getByText("Configure"));
+
+    expect(await screen.findByText("Configure Corporate SSO")).toBeTruthy();
+  });
+});
+
+/**
+ * AC5, the race: the row became config-declared while its dialog was open. The
+ * 409 invalidates the list; the refetched row carries `provisioned: true`, and
+ * the open dialog must turn into the read-only view — its notice is the lasting
+ * explanation. A dialog that decided once, on open, would keep offering Save
+ * for a row the backend will refuse forever.
+ */
+describe("IntegrationsPage — an open dialog after the row turns config-declared", () => {
+  const PROVISIONED_GOOGLE: Integration = {
+    id: "i-google",
+    kind: "login",
+    name: "google",
+    enabled: true,
+    config: { display_name: "Google", client_id: "local-mock.apps.googleusercontent.com" },
+    secrets_set: {},
+    health: "ok",
+    provisioned: true,
+    created_at: "2026-09-29T21:20:04Z",
+    updated_at: "2026-09-29T21:20:04Z",
+  };
+
+  function renderPageWithClient(rows: Integration[]) {
+    bffFetchMock.mockResolvedValue({ integrations: rows });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <IntegrationsPage />
+      </QueryClientProvider>,
+    );
+    return client;
+  }
+
+  async function refetchAs(client: QueryClient, rows: Integration[]) {
+    bffFetchMock.mockResolvedValue({ integrations: rows });
+    await act(() => client.invalidateQueries());
+  }
+
+  it("turns the create dialog into the view", async () => {
+    const client = renderPageWithClient([]);
+    await screen.findByText("Google");
+    fireEvent.click(within(rowFor("Google")).getByText("Set up"));
+    expect(await screen.findByText("Set up Google")).toBeTruthy();
+
+    await refetchAs(client, [PROVISIONED_GOOGLE]);
+
+    expect(await screen.findByText("View Google")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/declared in the server config file/i);
+    expect(screen.getByRole("dialog").querySelectorAll("input, textarea").length).toBe(0);
+  });
+
+  it("turns the edit dialog into the view", async () => {
+    const client = renderPageWithClient([{ ...PROVISIONED_GOOGLE, provisioned: false }]);
+    await screen.findByText("Google");
+    fireEvent.click(within(rowFor("Google")).getByText("Configure"));
+    expect(await screen.findByText("Configure Google")).toBeTruthy();
+
+    await refetchAs(client, [PROVISIONED_GOOGLE]);
+
+    expect(await screen.findByText("View Google")).toBeTruthy();
+    expect(screen.getByRole("dialog").querySelectorAll("input, textarea").length).toBe(0);
   });
 });

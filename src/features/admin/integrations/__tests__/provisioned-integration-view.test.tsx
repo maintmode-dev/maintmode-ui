@@ -131,6 +131,41 @@ describe("IntegrationDialog — a row declared in the server config file", () =>
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  /**
+   * The view reads values the way the form does (`buildDrafts`): a field with a
+   * `path` lives nested in config, and a list reads back comma-separated. A
+   * view that looked up `config[field.name]` would miss the first and run the
+   * second together.
+   */
+  it("reads nested and list settings the way the form does", () => {
+    renderDialog({
+      ...PROVISIONED_GOOGLE,
+      config: {
+        ...PROVISIONED_GOOGLE.config,
+        scopes: ["openid", "email"],
+        jwtverifier: { allowed_hosted_domains: ["corp.example", "eu.corp.example"] },
+      },
+    });
+
+    expect(screen.getByText("openid, email")).toBeTruthy();
+    expect(screen.getByText("corp.example, eu.corp.example")).toBeTruthy();
+  });
+
+  it("hides a declared setting that has no value", () => {
+    renderDialog(PROVISIONED_GOOGLE);
+
+    // Google declares both; the fixture row sets neither.
+    expect(screen.queryByText("Scopes")).toBeNull();
+    expect(screen.queryByText("Allowed hosted domains")).toBeNull();
+    expect(screen.getByText("Client ID")).toBeTruthy();
+  });
+
+  it("shows the sign-in status badge", () => {
+    renderDialog({ ...PROVISIONED_GOOGLE, health: "unreadable" });
+
+    expect(screen.getByText("Secret unreadable")).toBeTruthy();
+  });
+
   it("names a provider by its display name", () => {
     renderDialog({ ...PROVISIONED_GOOGLE, name: "custom", config: { display_name: "Corporate SSO (mock)" } });
 

@@ -468,6 +468,31 @@ describe("a 409 from a row declared in the server config file", () => {
     expect(cachedByName(client).slack.enabled).toBe(true);
   });
 
+  /**
+   * Unlike update and delete, a toggle 409 must NOT invalidate from `onError`:
+   * the refetch would land while another row's flip is still in flight and
+   * overwrite its optimistic state. `onSettled` reconciles once the last one
+   * settles — which, with another toggle pending, is not yet.
+   */
+  it("useToggleIntegration leaves the refetch to the last toggle in flight", async () => {
+    const client = seededClient();
+    const wrapper = wrapperFor(client);
+    const pendingForever = renderHook(() => useToggleIntegration(), { wrapper });
+    const refused = renderHook(() => useToggleIntegration(), { wrapper });
+
+    bffFetchMock.mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      pendingForever.result.current.mutate({ ref: { kind: "notify", name: "email" }, enabled: false });
+    });
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    act(() => {
+      refused.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't toggle slack: ${MESSAGE}`));
+    expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(false);
+  });
+
   it("useDeleteIntegration shows the backend's reason, not a success, and refetches", async () => {
     bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
     const client = seededClient();
