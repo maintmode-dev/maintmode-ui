@@ -16,9 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/shadcn/alert-dialog";
 
-import { BffError } from "@/features/_shared/api/bff-fetch";
-
-import { useDeleteIntegration } from "./queries/use-integrations-queries";
+import { isConflict, useDeleteIntegration } from "./queries/use-integrations-queries";
 
 /**
  * Confirmation for removing an integration row.
@@ -139,7 +137,7 @@ export function DeleteIntegrationDialog({
                   // above it would keep an armed Delete for a row without one.
                   // The toast from the hook carries the backend's reason.
                   onError: (error) => {
-                    if (error instanceof BffError && error.status === 409) {
+                    if (isConflict(error)) {
                       close(false);
                       return;
                     }

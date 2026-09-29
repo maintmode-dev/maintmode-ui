@@ -82,7 +82,7 @@ export function useCreateIntegration() {
       invalidate(queryClient);
     },
     onError: (error: unknown, { name }) => {
-      if (error instanceof BffError && error.status === 409) {
+      if (isConflict(error)) {
         toast.error(`${name} is already set up.`);
         invalidate(queryClient);
         return;
@@ -105,7 +105,7 @@ export function useCreateIntegration() {
  * (linked accounts arrived mid-delete; retrying succeeds), and the backend's
  * text is right about both where a classifier would be right about one.
  */
-function isConflict(error: unknown): error is BffError {
+export function isConflict(error: unknown): error is BffError {
   return error instanceof BffError && error.status === 409;
 }
 

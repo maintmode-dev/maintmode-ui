@@ -9,7 +9,7 @@ import { CreateDialogBody, CreateDialogFooter } from "@/shared/ui/domain/create-
 
 import { buildDrafts } from "./dialog-form";
 import { IntegrationHealthBadge, healthAddsInformation } from "./integration-health";
-import type { IntegrationKindMeta } from "./integration-kinds";
+import { PROVISIONED_NOTICE, type IntegrationKindMeta } from "./integration-kinds";
 
 /**
  * Read-only body for a row declared in the server's config file (backend
@@ -50,7 +50,7 @@ export function ProvisionedIntegrationView({
         >
           <Lock className="size-4 shrink-0 mt-0.5 text-fg-muted" aria-hidden="true" />
           <div className="min-w-0 space-y-1">
-            <p>Declared in the server config file. Change it there and restart the backend.</p>
+            <p>{PROVISIONED_NOTICE}</p>
             {/* The key is a mirror of the backend's config schema
                 (`oauth_providers.providers.<name>`), which exists for sign-in
                 providers only. If that file format moves, this line goes stale

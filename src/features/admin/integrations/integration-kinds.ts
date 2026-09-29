@@ -294,6 +294,14 @@ export function kindMeta(name: string): IntegrationKindMeta | null {
 }
 
 /**
+ * The one sentence that explains a row declared in the server's config file
+ * (`provisioned`). Shared by the row's switch description and the view's notice
+ * so the two cannot drift apart.
+ */
+export const PROVISIONED_NOTICE =
+  "Declared in the server config file. Change it there and restart the backend.";
+
+/**
  * What to call a row on screen: the provider's own `config.display_name` when it
  * has one, the built-in label otherwise.
  *

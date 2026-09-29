@@ -12,7 +12,7 @@ import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
-import { integrationLabel, kindMeta } from "./integration-kinds";
+import { PROVISIONED_NOTICE, integrationLabel, kindMeta } from "./integration-kinds";
 
 /**
  * One registry row, shared by both sections (transports and sign-in providers).
@@ -82,14 +82,17 @@ export function IntegrationRow({
             {label}
           </span>
           {provisioned ? (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-[11px] leading-4 text-fg-muted">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-2xs leading-4 text-fg-muted">
               <Lock className="size-3" aria-hidden="true" /> Managed by config
             </span>
           ) : null}
         </div>
+        {/* `hidden`, not sr-only: read only as the switch's description, never a
+            second time in the row's text. `aria-describedby` still resolves a
+            hidden node. */}
         {provisioned ? (
-          <span id={lockedReasonId} className="sr-only">
-            Declared in the server config file. Change it there and restart the backend.
+          <span id={lockedReasonId} hidden>
+            {PROVISIONED_NOTICE}
           </span>
         ) : null}
         {configured ? (
