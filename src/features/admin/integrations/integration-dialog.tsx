@@ -20,6 +20,7 @@ import { formatUtc } from "@/shared/ui/lib/format";
 
 import {
   CONFIG_FIELD_UNSET,
+  integrationLabel,
   kindMeta,
   type ConfigFieldMeta,
   type IntegrationKindMeta,
@@ -36,6 +37,7 @@ import {
   validateUrlFields,
   type FieldVerdict,
 } from "./dialog-form";
+import { ProvisionedIntegrationView } from "./provisioned-integration-view";
 import { buildTestSendBody, shouldWarnAboutMissingSecret } from "./test-send-body";
 import {
   useCreateIntegration,
@@ -75,12 +77,18 @@ export function IntegrationDialog({
 }) {
   const meta = name ? kindMeta(name) : null;
   const isEdit = integration !== null;
+  // Branches BEFORE the form body mounts, so a config-declared row never
+  // instantiates the save/test mutations at all. Re-evaluated on every render:
+  // when a 409 race refetches the list and the row comes back provisioned, an
+  // open edit dialog turns into the view, whose notice is the explanation.
+  const provisioned = integration?.provisioned === true;
+  const label = meta ? integrationLabel(meta, integration) : "";
 
   return (
     <CreateDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={meta ? (isEdit ? `Configure ${meta.label}` : `Set up ${meta.label}`) : ""}
+      title={meta ? (provisioned ? `View ${label}` : isEdit ? `Configure ${label}` : `Set up ${label}`) : ""}
       description={
         meta
           ? isEdit
@@ -94,7 +102,14 @@ export function IntegrationDialog({
       {/* The body unmounts the moment the dialog closes (before the exit
           animation finishes) — deliberate: typed secret drafts must be
           destroyed on close, and that outweighs the brief empty flash. */}
-      {name && meta ? (
+      {name && meta && provisioned ? (
+        <ProvisionedIntegrationView
+          key={`${kind}/${name}-view`}
+          meta={meta}
+          integration={integration}
+          onClose={() => onOpenChange(false)}
+        />
+      ) : name && meta ? (
         <IntegrationDialogBody
           key={`${kind}/${name}-${integration?.updated_at ?? "create"}`}
           kind={kind}
