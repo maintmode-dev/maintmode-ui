@@ -26,6 +26,7 @@ const GOOGLE: Integration = {
   enabled: true,
   config: {},
   secrets_set: { client_secret: true },
+  provisioned: false,
   created_at: "2026-09-01T00:00:00Z",
   updated_at: "2026-09-01T00:00:00Z",
 };

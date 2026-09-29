@@ -140,6 +140,13 @@ export interface Integration {
   config: Record<string, unknown>;
   secrets_set: Record<string, boolean>;
   health?: IntegrationHealth;
+  /**
+   * Declared in the server's config file: read-only here, because the backend
+   * refuses every admin write to it. Rendering keys on this flag, never on the
+   * category — which kinds can be provisioned is the backend's call. An empty
+   * `secrets_set` on such a row does NOT mean "no secret".
+   */
+  provisioned: boolean;
   created_at: string;
   created_by?: string;
   updated_at: string;

@@ -38,6 +38,7 @@ const CONFIGURED: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: { bot_token: true },
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   },
@@ -48,6 +49,7 @@ const CONFIGURED: Integration[] = [
     enabled: false,
     config: {},
     secrets_set: { password: true },
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   },
@@ -70,6 +72,7 @@ const LOGIN_NAMED_LIKE_A_TRANSPORT: Integration = {
   config: {},
   secrets_set: { client_secret: true },
   health: "ok",
+  provisioned: false,
   created_at: "2026-07-01T10:00:00Z",
   updated_at: "2026-07-01T10:00:00Z",
 };
@@ -193,6 +196,7 @@ const GOOGLE_CONFIGURED: Integration = {
   config: { issuer_url: "https://accounts.google.com" },
   secrets_set: { client_secret: true },
   health: "ok",
+  provisioned: false,
   created_at: "2026-07-01T10:00:00Z",
   updated_at: "2026-07-02T14:21:00Z",
 };

@@ -164,6 +164,27 @@ describe("GET /api/admin/integrations — the list that lied", () => {
   });
 
   /**
+   * Backend `87da097`: a row declared in the server's config file answers every
+   * admin write with 409, and the screen can only say so if the flag survives
+   * the mapper. Literals, per the note above. The login rows are provisioned
+   * because the local stand declares all three with `managed_by: config`; the
+   * transports were created through the API.
+   *
+   * Only the `true` half bites if the field is renamed on the wire — the mapper
+   * defaults an absent flag to `false` on purpose (see its comment), so the
+   * `false` half is a statement about the recording, not a guard.
+   */
+  it("carries the provisioned flag, as recorded", async () => {
+    const byName = Object.fromEntries((await listedIntegrations()).map((r) => [r.name, r]));
+
+    expect(byName.google.provisioned).toBe(true);
+    expect(byName.github.provisioned).toBe(true);
+    expect(byName.custom.provisioned).toBe(true);
+    expect(byName.slack.provisioned).toBe(false);
+    expect(byName.email.provisioned).toBe(false);
+  });
+
+  /**
    * The failure mode this whole ticket is about. A body the frontend cannot
    * place must surface as an error, never as "you have nothing configured".
    */

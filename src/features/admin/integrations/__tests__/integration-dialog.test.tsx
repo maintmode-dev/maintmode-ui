@@ -30,6 +30,7 @@ const SLACK_CONFIGURED: Integration = {
   enabled: true,
   config: { api_url: "https://slack.com/api/" },
   secrets_set: { bot_token: true },
+  provisioned: false,
   created_at: "2026-07-01T00:00:00Z",
   updated_at: "2026-07-09T00:00:00Z",
   updated_by: "admin@maintmode",
@@ -42,6 +43,7 @@ const EMAIL_CONFIGURED = (tls_policy: string): Integration => ({
   enabled: true,
   config: { host: "smtp.example.com", from: "noc@example.com", tls_policy },
   secrets_set: { password: true },
+  provisioned: false,
   created_at: "2026-07-01T00:00:00Z",
   updated_at: "2026-07-09T00:00:00Z",
   updated_by: "admin@maintmode",
@@ -586,6 +588,7 @@ describe("sign-in provider kinds", () => {
         redirect_uri: "https://maintmode.example.com/auth/callback",
       },
       secrets_set: { client_secret: true },
+      provisioned: false,
       created_at: "2026-07-01T10:00:00Z",
       updated_at: "2026-07-02T14:21:00Z",
     };
@@ -624,6 +627,7 @@ describe("sign-in provider kinds", () => {
         redirect_uri: "https://maintmode.example.com/auth/callback",
       },
       secrets_set: { client_secret: true },
+      provisioned: false,
       created_at: "2026-07-01T10:00:00Z",
       updated_at: "2026-07-02T14:21:00Z",
     };
@@ -697,6 +701,7 @@ describe("sign-in status in the edit dialog", () => {
     config: { issuer_url: "https://accounts.google.com" },
     secrets_set: { client_secret: true },
     health: "ok",
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   };
