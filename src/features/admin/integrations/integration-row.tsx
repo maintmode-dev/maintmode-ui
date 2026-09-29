@@ -1,6 +1,7 @@
 "use client";
 
-import { Plug, Settings as SettingsIcon, Trash2 } from "lucide-react";
+import { useId } from "react";
+import { Eye, Lock, Plug, Settings as SettingsIcon, Trash2 } from "lucide-react";
 
 import type { Integration } from "@/domain/admin/integration";
 import { Button } from "@/shared/ui/shadcn/button";
@@ -11,7 +12,7 @@ import { IntegrationBrandIcon } from "@/shared/ui/icons/brand-icons";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
-import { kindMeta } from "./integration-kinds";
+import { integrationLabel, kindMeta } from "./integration-kinds";
 
 /**
  * One registry row, shared by both sections (transports and sign-in providers).
@@ -22,6 +23,12 @@ import { kindMeta } from "./integration-kinds";
  * Takes the SYSTEM name, not the category: the metadata registry is keyed by
  * system, and a category would resolve to null and render an empty row without
  * an error.
+ *
+ * A row declared in the server's config file (`provisioned`) offers no write:
+ * the backend refuses toggle, save and delete on it with 409, so the switch is
+ * locked, delete is gone and Configure becomes View. Keyed on the flag, never
+ * on the category — which kinds can be provisioned is the backend's call, and a
+ * transport declared in config must render read-only without a change here.
  */
 export function IntegrationRow({
   name,
@@ -39,9 +46,12 @@ export function IntegrationRow({
   /** Absent where deletion is not offered. */
   onDelete?: () => void;
 }) {
+  const lockedReasonId = useId();
   const meta = kindMeta(name);
   if (!meta) return null;
   const configured = integration !== null;
+  const provisioned = integration?.provisioned === true;
+  const label = integrationLabel(meta, integration);
 
   return (
     <div
@@ -63,11 +73,25 @@ export function IntegrationRow({
       </span>
 
       <div className="flex-1 min-w-[12rem]">
-        <div
-          className={cn("truncate text-sm font-semibold", configured ? "text-fg-strong" : "text-fg-muted")}
-        >
-          {meta.label}
+        {/* items-baseline, not items-center: the badge sits on the name's text
+            line, and the row itself is the only flex/items-center box here. */}
+        <div className="flex items-baseline gap-2 min-w-0">
+          <span
+            className={cn("truncate text-sm font-semibold", configured ? "text-fg-strong" : "text-fg-muted")}
+          >
+            {label}
+          </span>
+          {provisioned ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border px-1.5 text-[11px] leading-4 text-fg-muted">
+              <Lock className="size-3" aria-hidden="true" /> Managed by config
+            </span>
+          ) : null}
         </div>
+        {provisioned ? (
+          <span id={lockedReasonId} className="sr-only">
+            Declared in the server config file. Change it there and restart the backend.
+          </span>
+        ) : null}
         {configured ? (
           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-fg truncate">
             <span
@@ -103,13 +127,20 @@ export function IntegrationRow({
         {configured ? (
           <Switch
             checked={integration.enabled}
-            disabled={toggleBusy}
+            disabled={toggleBusy || provisioned}
             onCheckedChange={onToggle}
-            aria-label={`${meta.label} enabled`}
+            aria-label={`${label} enabled`}
+            // A disabled button shows no title or tooltip, so the reason is
+            // wired as a description rather than hung on hover.
+            aria-describedby={provisioned ? lockedReasonId : undefined}
           />
         ) : null}
 
-        {configured ? (
+        {provisioned ? (
+          <Button variant="ghost" size="sm" onClick={onOpen}>
+            <Eye className="size-3.5" aria-hidden="true" /> View
+          </Button>
+        ) : configured ? (
           <Button variant="ghost" size="sm" onClick={onOpen}>
             <SettingsIcon className="size-3.5" aria-hidden="true" /> Configure
           </Button>
@@ -120,13 +151,15 @@ export function IntegrationRow({
         )}
 
         {/* Only a configured row can be deleted — there is nothing to remove
-          otherwise, and an always-present control would invite the question. */}
-        {configured && onDelete ? (
+          otherwise, and an always-present control would invite the question.
+          Nor a provisioned one: the backend refuses it, and a config-declared
+          provider would come back on the next restart anyway. */}
+        {configured && onDelete && !provisioned ? (
           <Button
             variant="ghost"
             size="sm"
             onClick={onDelete}
-            aria-label={`Delete ${meta.label}`}
+            aria-label={`Delete ${label}`}
             className="text-fg-muted hover:text-[var(--destructive-fg)]"
           >
             <Trash2 className="size-3.5" aria-hidden="true" />

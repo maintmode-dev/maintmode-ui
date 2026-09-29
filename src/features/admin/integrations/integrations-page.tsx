@@ -13,7 +13,7 @@ import { Skeleton } from "@/shared/ui/domain/skeleton";
 
 import { DeleteIntegrationDialog } from "./delete-integration-dialog";
 import { IntegrationDialog } from "./integration-dialog";
-import { kindMeta } from "./integration-kinds";
+import { integrationLabel, kindMeta } from "./integration-kinds";
 import { IntegrationRow } from "./integration-row";
 import {
   useIntegrationsQuery,
@@ -87,6 +87,8 @@ export function IntegrationsPage() {
   );
 
   const openIntegration = openRef ? (byRef.get(refKey(openRef)) ?? null) : null;
+  const deletingMeta = deleting ? kindMeta(deleting.name) : null;
+  const deletingLabel = deletingMeta ? integrationLabel(deletingMeta, deleting) : (deleting?.name ?? "");
 
   return (
     <div className="mx-auto max-w-[720px] p-6 space-y-6">
@@ -119,7 +121,8 @@ export function IntegrationsPage() {
           <section className="space-y-3">
             <h2 className="text-xs uppercase tracking-wide font-semibold text-fg-muted">Sign-in providers</h2>
             <p className="body-sm text-fg-muted max-w-[560px]">
-              Identity providers people can sign in through. Changes apply immediately — no restart.
+              Identity providers people can sign in through. Changes made here apply immediately — no restart.
+              Providers declared in the server config file are changed there and applied on restart.
             </p>
             {rowsFor("login", LOGIN_INTEGRATION_NAMES)}
           </section>
@@ -137,7 +140,7 @@ export function IntegrationsPage() {
       {deleting ? (
         <DeleteIntegrationDialog
           integration={deleting}
-          label={kindMeta(deleting.name)?.label ?? deleting.name}
+          label={deletingLabel}
           open
           onOpenChange={(open) => !open && setDeleting(null)}
         />

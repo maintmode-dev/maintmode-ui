@@ -297,3 +297,91 @@ describe("IntegrationsPage — the sign-in providers section", () => {
     expect(within(rowFor("Custom OIDC")).queryByRole("button", { name: /Delete/ })).toBeNull();
   });
 });
+
+/**
+ * Backend `87da097`: a row declared in the server's config file refuses every
+ * admin write with 409. The row must say so before the admin tries — and it
+ * must say so by the FLAG, for any category. The backend decides which kinds can
+ * be provisioned; the notify case below is what fails if the gate is ever
+ * narrowed to `kind === "login"`.
+ */
+describe("IntegrationsPage — rows declared in the server config file", () => {
+  const PROVISIONED_GOOGLE: Integration = {
+    id: "i-google",
+    kind: "login",
+    name: "google",
+    enabled: true,
+    config: { display_name: "Google" },
+    secrets_set: {},
+    health: "ok",
+    provisioned: true,
+    created_at: "2026-09-29T21:20:04Z",
+    updated_at: "2026-09-29T21:20:04Z",
+  };
+  const PROVISIONED_SLACK: Integration = { ...CONFIGURED[0], provisioned: true };
+
+  it("marks a provisioned login row read-only", async () => {
+    renderPage([PROVISIONED_GOOGLE]);
+    await screen.findByText("Managed by config");
+    const row = rowFor("Google");
+
+    expect(within(row).getByText("View")).toBeTruthy();
+    expect(within(row).queryByText("Configure")).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Delete Google" })).toBeNull();
+    const toggle = within(row).getByRole("switch", { name: "Google enabled" });
+    expect(toggle).toHaveProperty("disabled", true);
+    // A disabled button surfaces no title or tooltip, so the reason is tied to
+    // it the one way assistive tech reads on a control it cannot focus.
+    expect(toggle.getAttribute("aria-describedby")).toBeTruthy();
+    const description = document.getElementById(toggle.getAttribute("aria-describedby") ?? "");
+    expect(description?.textContent).toMatch(/server config file/i);
+  });
+
+  it("marks a provisioned transport read-only too — the flag decides, not the category", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
+
+    const slack = rowFor("Slack");
+    expect(within(slack).getByText("View")).toBeTruthy();
+    expect(within(slack).queryByRole("button", { name: "Delete Slack" })).toBeNull();
+    expect(within(slack).getByRole("switch", { name: "Slack enabled" })).toHaveProperty("disabled", true);
+  });
+
+  it("leaves a row created through the UI editable", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
+
+    const email = rowFor("Email");
+    expect(within(email).queryByText("Managed by config")).toBeNull();
+    expect(within(email).getByText("Configure")).toBeTruthy();
+    expect(within(email).getByRole("button", { name: "Delete Email" })).toBeTruthy();
+    expect(within(email).getByRole("switch", { name: "Email enabled" })).toHaveProperty("disabled", false);
+  });
+
+  it("names a provider by its configured display name", async () => {
+    renderPage([
+      {
+        ...PROVISIONED_GOOGLE,
+        id: "i-custom",
+        name: "custom",
+        config: { display_name: "Corporate SSO (mock)" },
+      },
+    ]);
+
+    const row = rowFor(await screen.findByText("Corporate SSO (mock)").then((el) => el.textContent ?? ""));
+    expect(within(row).getByRole("switch", { name: "Corporate SSO (mock) enabled" })).toBeTruthy();
+    expect(screen.queryByText("Custom OIDC")).toBeNull();
+  });
+
+  it("falls back to the built-in label when display_name is blank", async () => {
+    renderPage([{ ...PROVISIONED_GOOGLE, id: "i-custom", name: "custom", config: { display_name: "   " } }]);
+
+    expect(await screen.findByText("Custom OIDC")).toBeTruthy();
+  });
+
+  it("tells the admin where config-declared providers are changed", async () => {
+    renderPage([]);
+
+    expect(await screen.findByText(/declared in the server config file/i)).toBeTruthy();
+  });
+});

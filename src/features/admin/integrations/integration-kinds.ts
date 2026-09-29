@@ -10,7 +10,7 @@
  * passing a category here fails silently, which is why callers pass `name`.
  */
 
-import type { NotificationIntegrationName } from "@/domain/admin/integration";
+import type { Integration, NotificationIntegrationName } from "@/domain/admin/integration";
 import type { IntegrationBrand } from "@/shared/ui/icons/brand-icons";
 
 import { LOGIN_KIND_META } from "./login-kinds";
@@ -291,4 +291,23 @@ const KIND_META: Record<string, IntegrationKindMeta> = {
 
 export function kindMeta(name: string): IntegrationKindMeta | null {
   return KIND_META[name] ?? null;
+}
+
+/**
+ * What to call a row on screen: the provider's own `config.display_name` when it
+ * has one, the built-in label otherwise.
+ *
+ * The backend names providers the same way (`cmp.Or(display_name, name)` in
+ * its reloader), and for `custom` the display name is the ONLY name the
+ * operator gave it — "Custom OIDC" is the kind, not the provider. Trimmed,
+ * because this string is also what an admin types to confirm deleting a sign-in
+ * provider, and a blank-looking name would be impossible to type back.
+ */
+export function integrationLabel(
+  meta: IntegrationKindMeta,
+  integration: Pick<Integration, "config"> | null,
+): string {
+  const displayName = integration?.config.display_name;
+  if (typeof displayName === "string" && displayName.trim() !== "") return displayName.trim();
+  return meta.label;
 }
