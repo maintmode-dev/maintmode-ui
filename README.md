@@ -104,22 +104,26 @@ Neither can be turned on in a production build; that is deliberate. See
 
 ### Sign-in methods
 
-Two kinds of sign-in exist, and they are configured in different places.
+Two kinds of sign-in exist. Both are configured on one admin page,
+**Authentication** (`/admin/authentication`), which also shows what `/login`
+currently offers.
 
 **Built-in methods** — email + password and a one-time code sent by email — are
-switched on and off by an administrator under **Admin → Sign-in methods**. A fresh
+switched on and off by an administrator under **Authentication → Built-in methods**. A fresh
 install has email + password **on** and email code **off**. Turning a method off
 removes it from `/login`; turning email + password off also removes "Forgot
 password?", which lives inside the password form.
 
 **Providers** — Google, GitHub, or any OpenID Connect IdP as "Custom OIDC" — are
-created by an administrator under **Admin → Integrations → Sign-in providers**.
+created by an administrator under **Authentication → Sign-in providers (SSO)**.
 Every provider that is enabled and healthy appears on `/login` and on invitation
 pages by its display name; nothing in this app lists them by hand.
 
 It is legitimate to run with every built-in method off (SSO only). But with no
-built-in method and no working provider, nobody can sign in; the Sign-in methods
-screen warns when every built-in method is off.
+built-in method and no working provider, nobody can sign in except through
+break-glass; the Authentication page warns when that is the case. Email code also
+needs the Email transport under **Integrations**, and the page says so when it is
+missing or off.
 
 ### Setting up a sign-in provider
 
@@ -141,7 +145,7 @@ not register, so every provider button leads to a 404:
 - `app.oauth_cookie_path` — the external path prefix of the backend's OAuth routes
   as the browser sees them (`/auth/api/v1/login/oauth` behind the shipped gateway).
 
-**2. Create the provider in the app.** Admin → Integrations → Sign-in providers →
+**2. Create the provider in the app.** Authentication → Sign-in providers (SSO) →
 Set up. You supply the client ID, the client secret and the redirect URI; for
 Google and GitHub the deployment fills in the rest (the preset catalog under
 `oauth_providers.presets` in the backend config). The redirect URI is the
