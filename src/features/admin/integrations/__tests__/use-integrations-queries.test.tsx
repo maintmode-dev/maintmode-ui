@@ -50,6 +50,7 @@ const ROWS: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: {},
+    provisioned: false,
     created_at: "",
     updated_at: "",
   },
@@ -60,6 +61,7 @@ const ROWS: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: {},
+    provisioned: false,
     created_at: "",
     updated_at: "",
   },
@@ -70,6 +72,7 @@ const ROWS: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: {},
+    provisioned: false,
     created_at: "",
     updated_at: "",
   },
@@ -423,5 +426,106 @@ describe("useDeleteIntegration", () => {
 
     await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
     expect(before).toBe(false);
+  });
+});
+
+/**
+ * Backend `87da097`: a row declared in the server's config file refuses every
+ * write with 409. The screen hides the controls once it knows, so these are the
+ * race — the row became provisioned after the page loaded.
+ *
+ * The toast carries the backend's own message. It is NOT classified by status:
+ * DELETE has a second 409 under the same `conflict` code ("still has linked
+ * accounts; retry the delete"), and a confident wrong reason is worse than the
+ * backend's accurate one.
+ */
+describe("a 409 from a row declared in the server config file", () => {
+  const MESSAGE = "integration is managed by the config file; change it there and restart: login/google";
+
+  it("useUpdateIntegration shows the backend's reason and refetches", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    const client = seededClient();
+    const update = renderHook(() => useUpdateIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      update.result.current.mutate({ ref: { kind: "login", name: "google" }, body: { enabled: false } });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't save google: ${MESSAGE}`));
+    await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
+  });
+
+  it("useToggleIntegration shows the backend's reason and still rolls back", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    const client = seededClient();
+    const toggle = renderHook(() => useToggleIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      toggle.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't toggle slack: ${MESSAGE}`));
+    expect(cachedByName(client).slack.enabled).toBe(true);
+  });
+
+  /**
+   * Unlike update and delete, a toggle 409 must NOT invalidate from `onError`:
+   * the refetch would land while another row's flip is still in flight and
+   * overwrite its optimistic state. `onSettled` reconciles once the last one
+   * settles — which, with another toggle pending, is not yet.
+   */
+  it("useToggleIntegration leaves the refetch to the last toggle in flight", async () => {
+    const client = seededClient();
+    const wrapper = wrapperFor(client);
+    const pendingForever = renderHook(() => useToggleIntegration(), { wrapper });
+    const refused = renderHook(() => useToggleIntegration(), { wrapper });
+
+    bffFetchMock.mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      pendingForever.result.current.mutate({ ref: { kind: "notify", name: "email" }, enabled: false });
+    });
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    act(() => {
+      refused.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+
+    // Spied BEFORE the refusal settles. Reading `isInvalidated` afterwards is not
+    // enough: the rollback's `setQueryData` resets that flag, so an invalidate at
+    // the top of `onError` — the natural regression, and the one that refetches
+    // over the other row's optimistic flip — would leave it `false`.
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't toggle slack: ${MESSAGE}`));
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(false);
+  });
+
+  it("useDeleteIntegration shows the backend's reason, not a success, and refetches", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    const client = seededClient();
+    const del = renderHook(() => useDeleteIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "custom" });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't delete custom: ${MESSAGE}`));
+    expect(toastSuccess).not.toHaveBeenCalled();
+    await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
+  });
+
+  /**
+   * Create's 409 is "already exists". Its old advice — edit the existing
+   * connection — is wrong when the row that exists turns out to be read-only,
+   * so the toast states the fact and the refetch shows which it is.
+   */
+  it("useCreateIntegration no longer promises the existing row is editable", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, "integration already exists", "conflict"));
+    const create = renderHook(() => useCreateIntegration(), { wrapper: wrapperFor(seededClient()) });
+
+    act(() => {
+      create.result.current.mutate({ kind: "login", name: "google", enabled: true, config: {}, secrets: {} });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("google is already set up."));
   });
 });

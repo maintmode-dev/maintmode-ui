@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,6 +38,7 @@ const CONFIGURED: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: { bot_token: true },
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   },
@@ -48,6 +49,7 @@ const CONFIGURED: Integration[] = [
     enabled: false,
     config: {},
     secrets_set: { password: true },
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   },
@@ -70,6 +72,7 @@ const LOGIN_NAMED_LIKE_A_TRANSPORT: Integration = {
   config: {},
   secrets_set: { client_secret: true },
   health: "ok",
+  provisioned: false,
   created_at: "2026-07-01T10:00:00Z",
   updated_at: "2026-07-01T10:00:00Z",
 };
@@ -193,6 +196,7 @@ const GOOGLE_CONFIGURED: Integration = {
   config: { issuer_url: "https://accounts.google.com" },
   secrets_set: { client_secret: true },
   health: "ok",
+  provisioned: false,
   created_at: "2026-07-01T10:00:00Z",
   updated_at: "2026-07-02T14:21:00Z",
 };
@@ -225,8 +229,8 @@ describe("IntegrationsPage — the sign-in providers section", () => {
     renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
     await screen.findByText("Google");
 
-    expect(within(rowFor("Google")).getByText("Active")).toBeTruthy();
-    expect(within(rowFor("Slack")).queryByText("Active")).toBeNull();
+    expect(within(rowFor("Google")).getByText("Configured")).toBeTruthy();
+    expect(within(rowFor("Slack")).queryByText("Configured")).toBeNull();
     expect(within(rowFor("Slack")).queryByText(/unknown/i)).toBeNull();
   });
 
@@ -257,12 +261,12 @@ describe("IntegrationsPage — the sign-in providers section", () => {
     expect(within(rowFor("Google")).getByText("Secret unreadable")).toBeTruthy();
   });
 
-  it("shows a login row with no health as unknown, never as active", async () => {
+  it("shows a login row with no health as unknown, never as configured", async () => {
     renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, health: undefined }]);
     await screen.findByText("Google");
 
     expect(within(rowFor("Google")).getByText(/unknown/i)).toBeTruthy();
-    expect(within(rowFor("Google")).queryByText("Active")).toBeNull();
+    expect(within(rowFor("Google")).queryByText("Configured")).toBeNull();
   });
 
   /**
@@ -291,5 +295,221 @@ describe("IntegrationsPage — the sign-in providers section", () => {
 
     expect(within(rowFor("Google")).getByRole("button", { name: /Delete/ })).toBeTruthy();
     expect(within(rowFor("Custom OIDC")).queryByRole("button", { name: /Delete/ })).toBeNull();
+  });
+});
+
+/**
+ * Backend `87da097`: a row declared in the server's config file refuses every
+ * admin write with 409. The row must say so before the admin tries — and it
+ * must say so by the FLAG, for any category. The backend decides which kinds can
+ * be provisioned; the notify case below is what fails if the gate is ever
+ * narrowed to `kind === "login"`.
+ */
+describe("IntegrationsPage — rows declared in the server config file", () => {
+  const PROVISIONED_GOOGLE: Integration = {
+    id: "i-google",
+    kind: "login",
+    name: "google",
+    enabled: true,
+    config: { display_name: "Google" },
+    secrets_set: {},
+    health: "ok",
+    provisioned: true,
+    created_at: "2026-09-29T21:20:04Z",
+    updated_at: "2026-09-29T21:20:04Z",
+  };
+  const PROVISIONED_SLACK: Integration = { ...CONFIGURED[0], provisioned: true };
+
+  /** View is the only way into a provisioned row; the dialog tests render it directly. */
+  it("opens the read-only view from the row's View button", async () => {
+    renderPage([PROVISIONED_GOOGLE]);
+    await screen.findByText("Managed by config");
+
+    fireEvent.click(within(rowFor("Google")).getByText("View"));
+
+    expect(await screen.findByText("View Google")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/server config file/i);
+  });
+
+  it("marks a provisioned login row read-only", async () => {
+    renderPage([PROVISIONED_GOOGLE]);
+    await screen.findByText("Managed by config");
+    const row = rowFor("Google");
+
+    expect(within(row).getByText("View")).toBeTruthy();
+    expect(within(row).queryByText("Configure")).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Delete Google" })).toBeNull();
+    const toggle = within(row).getByRole("switch", { name: "Google enabled" });
+    expect(toggle).toHaveProperty("disabled", true);
+    // A disabled button surfaces no title or tooltip, so the reason is tied to
+    // it the one way assistive tech reads on a control it cannot focus.
+    expect(toggle.getAttribute("aria-describedby")).toBeTruthy();
+    const description = document.getElementById(toggle.getAttribute("aria-describedby") ?? "");
+    expect(description?.textContent).toMatch(/server config file/i);
+  });
+
+  it("marks a provisioned transport read-only too — the flag decides, not the category", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
+
+    const slack = rowFor("Slack");
+    expect(within(slack).getByText("View")).toBeTruthy();
+    expect(within(slack).queryByRole("button", { name: "Delete Slack" })).toBeNull();
+    expect(within(slack).getByRole("switch", { name: "Slack enabled" })).toHaveProperty("disabled", true);
+  });
+
+  it("leaves a row created through the UI editable", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
+
+    const email = rowFor("Email");
+    expect(within(email).queryByText("Managed by config")).toBeNull();
+    expect(within(email).getByText("Configure")).toBeTruthy();
+    expect(within(email).getByRole("button", { name: "Delete Email" })).toBeTruthy();
+    expect(within(email).getByRole("switch", { name: "Email enabled" })).toHaveProperty("disabled", false);
+  });
+
+  it("names a provider by its configured display name", async () => {
+    renderPage([
+      {
+        ...PROVISIONED_GOOGLE,
+        id: "i-custom",
+        name: "custom",
+        config: { display_name: "Corporate SSO (mock)" },
+      },
+    ]);
+
+    const row = rowFor(await screen.findByText("Corporate SSO (mock)").then((el) => el.textContent ?? ""));
+    expect(within(row).getByRole("switch", { name: "Corporate SSO (mock) enabled" })).toBeTruthy();
+    expect(screen.queryByText("Custom OIDC")).toBeNull();
+  });
+
+  it("falls back to the built-in label when display_name is blank", async () => {
+    renderPage([{ ...PROVISIONED_GOOGLE, id: "i-custom", name: "custom", config: { display_name: "   " } }]);
+
+    expect(await screen.findByText("Custom OIDC")).toBeTruthy();
+  });
+
+  it("tells the admin where config-declared providers are changed", async () => {
+    renderPage([]);
+
+    expect(await screen.findByText(/declared in the server config file/i)).toBeTruthy();
+  });
+});
+
+/**
+ * AC7: the display name is the provider's name everywhere the admin meets it,
+ * not only in the row title. `custom` makes it load-bearing — "Custom OIDC" is
+ * the kind, and the operator never typed it.
+ */
+describe("IntegrationsPage — a provider named by its display_name", () => {
+  const NAMED_CUSTOM: Integration = {
+    id: "i-custom",
+    kind: "login",
+    name: "custom",
+    enabled: true,
+    config: { display_name: "Corporate SSO" },
+    secrets_set: { client_secret: true },
+    health: "ok",
+    provisioned: false,
+    created_at: "2026-09-29T21:20:04Z",
+    updated_at: "2026-09-29T21:20:04Z",
+  };
+
+  it("labels the row's delete button with it", async () => {
+    renderPage([NAMED_CUSTOM]);
+    await screen.findByText("Corporate SSO");
+
+    expect(
+      within(rowFor("Corporate SSO")).getByRole("button", { name: "Delete Corporate SSO" }),
+    ).toBeTruthy();
+  });
+
+  it("asks the delete confirmation for it", async () => {
+    renderPage([NAMED_CUSTOM]);
+    await screen.findByText("Corporate SSO");
+
+    fireEvent.click(within(rowFor("Corporate SSO")).getByRole("button", { name: "Delete Corporate SSO" }));
+
+    expect(await screen.findByText("Delete Corporate SSO sign-in?")).toBeTruthy();
+    const confirm = screen.getByRole("button", { name: "Delete" });
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Custom OIDC" } });
+    expect(confirm.hasAttribute("disabled")).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: "Corporate SSO" } });
+    expect(confirm.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("titles the edit dialog with it", async () => {
+    renderPage([NAMED_CUSTOM]);
+    await screen.findByText("Corporate SSO");
+
+    fireEvent.click(within(rowFor("Corporate SSO")).getByText("Configure"));
+
+    expect(await screen.findByText("Configure Corporate SSO")).toBeTruthy();
+  });
+});
+
+/**
+ * AC5, the race: the row became config-declared while its dialog was open. The
+ * 409 invalidates the list; the refetched row carries `provisioned: true`, and
+ * the open dialog must turn into the read-only view — its notice is the lasting
+ * explanation. A dialog that decided once, on open, would keep offering Save
+ * for a row the backend will refuse forever.
+ */
+describe("IntegrationsPage — an open dialog after the row turns config-declared", () => {
+  const PROVISIONED_GOOGLE: Integration = {
+    id: "i-google",
+    kind: "login",
+    name: "google",
+    enabled: true,
+    config: { display_name: "Google", client_id: "local-mock.apps.googleusercontent.com" },
+    secrets_set: {},
+    health: "ok",
+    provisioned: true,
+    created_at: "2026-09-29T21:20:04Z",
+    updated_at: "2026-09-29T21:20:04Z",
+  };
+
+  function renderPageWithClient(rows: Integration[]) {
+    bffFetchMock.mockResolvedValue({ integrations: rows });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <IntegrationsPage />
+      </QueryClientProvider>,
+    );
+    return client;
+  }
+
+  async function refetchAs(client: QueryClient, rows: Integration[]) {
+    bffFetchMock.mockResolvedValue({ integrations: rows });
+    await act(() => client.invalidateQueries());
+  }
+
+  it("turns the create dialog into the view", async () => {
+    const client = renderPageWithClient([]);
+    await screen.findByText("Google");
+    fireEvent.click(within(rowFor("Google")).getByText("Set up"));
+    expect(await screen.findByText("Set up Google")).toBeTruthy();
+
+    await refetchAs(client, [PROVISIONED_GOOGLE]);
+
+    expect(await screen.findByText("View Google")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/declared in the server config file/i);
+    expect(screen.getByRole("dialog").querySelectorAll("input, textarea").length).toBe(0);
+  });
+
+  it("turns the edit dialog into the view", async () => {
+    const client = renderPageWithClient([{ ...PROVISIONED_GOOGLE, provisioned: false }]);
+    await screen.findByText("Google");
+    fireEvent.click(within(rowFor("Google")).getByText("Configure"));
+    expect(await screen.findByText("Configure Google")).toBeTruthy();
+
+    await refetchAs(client, [PROVISIONED_GOOGLE]);
+
+    expect(await screen.findByText("View Google")).toBeTruthy();
+    expect(screen.getByRole("dialog").querySelectorAll("input, textarea").length).toBe(0);
   });
 });

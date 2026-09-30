@@ -8,9 +8,14 @@ import type { Integration, IntegrationHealth } from "@/domain/admin/integration"
  * from a cache and never probed on the request — so presenting it as a fault
  * sends people debugging a non-problem. It is also what a genuinely broken row
  * reads as, which is why the copy describes the state rather than judging it.
+ *
+ * `ok` says "Configured", not "Active": the backend reports it once the settings
+ * parse, validate and build. Discovery runs on the first sign-in and
+ * credentials are never checked, so a provider with wrong credentials is `ok`
+ * too — "Active" promised a working sign-in nobody had verified.
  */
 const HEALTH_COPY: Record<IntegrationHealth, { label: string; tone: "ok" | "warn" | "bad" }> = {
-  ok: { label: "Active", tone: "ok" },
+  ok: { label: "Configured", tone: "ok" },
   unresolved: { label: "Not picked up yet", tone: "warn" },
   disabled: { label: "Turned off", tone: "warn" },
   unreadable: { label: "Secret unreadable", tone: "bad" },

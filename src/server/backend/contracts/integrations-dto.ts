@@ -25,6 +25,13 @@ export interface IntegrationDto {
   config?: Record<string, unknown> | null;
   secrets_set?: Record<string, boolean> | null;
   health?: string;
+  /**
+   * Declared in the server's config file rather than created through the API
+   * (backend `87da097`). The backend refuses PATCH, toggle and DELETE on such a
+   * row with 409, and its `secrets_set` is empty even though a secret exists —
+   * the secret lives in the server's secrets file, not in the database.
+   */
+  provisioned?: boolean;
   created_at?: string;
   created_by?: UserSummaryDto | null;
   updated_at?: string;

@@ -209,12 +209,21 @@
       "handEdited": true,
       "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, so it cannot capture a POST whose success is an empty 204 and whose useful shapes are error envelopes. Taken off the wire by hand against a locally built backend (main @ a814a01) and recorded verbatim, except the resolver IP inside probe_failed.message, masked as <IP> because no-pii.test.ts refuses a committed fixture carrying a raw IPv4 — the file documents that substitution in its own _masked field."
     },
+    "integration-provisioned-conflict": {
+      "url": "http://localhost:9000/maintmode/api/v1/integrations/login/{google,github,custom}[/toggle]",
+      "method": "PATCH / POST toggle / DELETE",
+      "status": 409,
+      "capturedAt": "2026-09-30",
+      "why": "Backend 87da097: a row declared in the server's config file refuses every admin write with 409 and a message naming the config file. The admin screen shows that message as the explanation, so the three BFF write routes must pass it through intact.",
+      "handEdited": true,
+      "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, so it cannot capture a write whose only shape is an error envelope. Taken off the wire with an admin bearer against the local backend (maintmode @ e439d98) and recorded verbatim; the rows were unchanged afterwards."
+    },
     "integrations": {
       "url": "http://localhost:9000/maintmode/api/v1/integrations",
       "method": "GET",
       "status": 200,
-      "capturedAt": "2026-09-16T22:03:01.169Z",
-      "why": "RUK-304: `b74a4536` turned `kind` into a category and moved the system to `name`, so the mapper's kind whitelist matched nothing and dropped every row — on a 200, with no error, while the screen rendered its static list and reported nothing configured. This fixture is what makes the next move of this shape fail in CI instead of on an administrator's screen. It must keep carrying BOTH halves of the pair and a login row's `health`.",
+      "capturedAt": "2026-09-29T21:33:17.427Z",
+      "why": "RUK-304: `b74a4536` turned `kind` into a category and moved the system to `name`, so the mapper's kind whitelist matched nothing and dropped every row — on a 200, with no error, while the screen rendered its static list and reported nothing configured. This fixture is what makes the next move of this shape fail in CI instead of on an administrator's screen. It must keep carrying BOTH halves of the pair, a login row's `health`, and both values of `provisioned` (backend `87da097`: config-declared login rows are `true`, API-created transports `false`) — record it against a stand whose config declares the login providers and where slack/email were created through the API.",
       "handEdited": false
     },
     "auth-methods": {

@@ -1,0 +1,28 @@
+{
+  "_recorded": "2026-09-30, local backend (maintmode @ e439d98), whose config declares google, github and custom with `managed_by: config`. Each write below was sent with an admin bearer straight to the backend and its answer copied verbatim; the list afterwards showed all three rows unchanged. Not captured by scripts/refresh-fixtures.mjs: it issues GET only and refuses non-2xx.",
+  "_why": "A row declared in the server's config file refuses every admin write with this envelope. The frontend shows the backend's `message` to the admin as the explanation, so the BFF must hand it through intact. `code` is the generic `conflict` the backend also uses for other 409s on this surface (`already exists`, and on DELETE `still has linked accounts; retry the delete`), which is why the frontend never classifies by it.",
+  "patch": {
+    "_request": "PATCH /api/v1/integrations/login/google {\"enabled\":false}",
+    "status": 409,
+    "body": {
+      "code": "conflict",
+      "message": "integration is managed by the config file; change it there and restart: login/google"
+    }
+  },
+  "toggle": {
+    "_request": "POST /api/v1/integrations/login/github/toggle {\"enabled\":false}",
+    "status": 409,
+    "body": {
+      "code": "conflict",
+      "message": "integration is managed by the config file; change it there and restart: login/github"
+    }
+  },
+  "delete": {
+    "_request": "DELETE /api/v1/integrations/login/custom",
+    "status": 409,
+    "body": {
+      "code": "conflict",
+      "message": "integration is managed by the config file; change it there and restart: login/custom"
+    }
+  }
+}

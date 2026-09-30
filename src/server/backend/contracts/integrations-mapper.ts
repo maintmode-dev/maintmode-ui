@@ -15,6 +15,7 @@
  *                a secret value can never appear here by construction.
  *  - authorship: `created_by`/`updated_by` collapse to display names via the
  *                shared `mapUserSummary` (same projection as maintenance).
+ *  - provisioned: `?? false` — see below.
  *
  * ## Why the drops are logged (RUK-304)
  *
@@ -37,6 +38,18 @@
  * healthy one. An unrecognised value is dropped rather than passed through, for
  * the reason `sign-in-method.ts` gives about unknown method types: a state this
  * frontend does not understand must never render as a working one.
+ */
+
+/*
+ * ## Why `provisioned` defaults to false, unlike `health`
+ *
+ * It fails OPEN, and on purpose. A backend older than `87da097` does not send
+ * the field, and on that backend every row really is editable — so absence is a
+ * legitimate shape, not an unknown state to announce. The cost of the other
+ * direction is bounded: if a newer backend ever dropped the field, its rows
+ * would look editable here, but the backend still refuses the write with 409
+ * and the toast carries its message. The frontend is a presentation of that
+ * rule, never its enforcement.
  */
 
 import {
@@ -84,6 +97,7 @@ export function mapIntegration(dto: IntegrationDto): Integration | null {
     config: dto.config ?? {},
     secrets_set: dto.secrets_set ?? {},
     health: mapHealth(dto),
+    provisioned: dto.provisioned ?? false,
     created_at: dto.created_at ?? "",
     created_by: dto.created_by ? mapUserSummary(dto.created_by) : undefined,
     updated_at: dto.updated_at ?? "",
