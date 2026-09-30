@@ -11,6 +11,7 @@ import type {
   TestIntegrationInput,
   UpdateIntegrationInput,
 } from "@/domain/admin/integration";
+import { refreshSignInMethods } from "@/features/settings/queries/use-sign-in-methods";
 
 export function integrationsKey() {
   return ["integrations"] as const;
@@ -58,6 +59,19 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
 }
 
 /**
+ * A login row changed on the server, so what `/login` offers may have too.
+ *
+ * Called on the outcomes where the backend's state DID change (a write that
+ * succeeded, a delete that found the row already gone) and only for the
+ * `login` category — a transport never appears on the sign-in page. A refused
+ * write changed nothing and refreshes nothing.
+ */
+function refreshSignInPageAfter(queryClient: ReturnType<typeof useQueryClient>, kind: IntegrationCategory) {
+  if (kind !== "login") return;
+  refreshSignInMethods(queryClient, { providerChanged: true });
+}
+
+/**
  * Create an integration. 409 = the pair already exists (someone configured it
  * concurrently, or the server's config file declared it) — surfaced as a
  * specific toast; the list refetch flips the row to Configured, or to
@@ -77,9 +91,10 @@ export function useCreateIntegration() {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, { kind }) => {
       toast.success(`${data.name} integration connected`);
       invalidate(queryClient);
+      refreshSignInPageAfter(queryClient, kind);
     },
     onError: (error: unknown, { name }) => {
       if (isConflict(error)) {
@@ -124,9 +139,10 @@ export function useUpdateIntegration() {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, { ref }) => {
       toast.success(`${data.name} integration updated`);
       invalidate(queryClient);
+      refreshSignInPageAfter(queryClient, ref.kind);
     },
     onError: (error: unknown, { ref }) => {
       if (isConflict(error)) {
@@ -164,6 +180,7 @@ export function useDeleteIntegration() {
     onSuccess: (_data, ref) => {
       toast.success(`${ref.name} integration deleted`);
       invalidate(queryClient);
+      refreshSignInPageAfter(queryClient, ref.kind);
     },
     onError: (error: unknown, ref) => {
       if (error instanceof BffError && error.status === 404) {
@@ -172,6 +189,7 @@ export function useDeleteIntegration() {
         // exists sends the operator looking for a problem that is not there.
         toast.success(`${ref.name} integration deleted`);
         invalidate(queryClient);
+        refreshSignInPageAfter(queryClient, ref.kind);
         return;
       }
       if (isConflict(error)) {
@@ -218,6 +236,10 @@ export function useToggleIntegration() {
       );
       return { previousEnabled };
     },
+    // The sign-in page's list, not this one: it holds no optimistic state, so
+    // refreshing it per toggle cannot clobber another row's in-flight flip,
+    // unlike the registry refetch that `onSettled` defers.
+    onSuccess: (_data, { ref }) => refreshSignInPageAfter(queryClient, ref.kind),
     // No invalidate here, 409 included: `onSettled` reconciles once the last
     // toggle in flight settles, and refetching earlier would overwrite other
     // rows' optimistic flips. The rollback still restores this one.
