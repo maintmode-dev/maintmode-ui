@@ -58,6 +58,8 @@ type Wire = {
   methods?: AuthMethod[] | Error;
   integrations?: Integration[] | Error;
   signIn?: unknown[] | Error;
+  /** `/api/me` — only `connected_providers` matters to this page. */
+  me?: { connected_providers: string[] } | Error;
 };
 
 /**
@@ -79,6 +81,8 @@ function serve(wire: Wire, onWrite?: (path: string, init: { method: string; body
         return answer(wire.integrations ?? [], (v) => ({ integrations: v }));
       case "/api/sign-in-methods":
         return answer(wire.signIn ?? [], (v) => ({ methods: v }));
+      case "/api/me":
+        return answer(wire.me ?? { connected_providers: [] }, (v) => v);
       default:
         return Promise.reject(new Error(`unexpected path ${path}`));
     }
@@ -302,8 +306,85 @@ describe("the lockout warning", () => {
     await screen.findByText("Google");
     expect(screen.queryByText(LOCKOUT)).toBeNull();
     fireEvent.click(await screen.findByLabelText("Password sign-in"));
+    // This admin has no provider linked, so the switch asks first.
+    fireEvent.click(await screen.findByRole("button", { name: "Turn it off" }));
 
     expect(await screen.findByText(LOCKOUT)).toBeTruthy();
+    expect(screen.getByText(LOCKOUT).textContent).toContain("/login/recovery");
+  });
+});
+
+/**
+ * An admin switched off every built-in method with no provider linked and lost
+ * their own way in. Switching off the last one now asks first — only when it
+ * would leave THIS admin without a way in — and the page tells admins where
+ * break-glass signs in.
+ */
+describe("the self-lockout confirmation", () => {
+  const TITLE = /lose your own sign-in/i;
+  const writes = () => bffFetchMock.mock.calls.filter(([, init]) => init?.method).length;
+
+  it("asks before the last built-in method goes, and keeps it on when told to", async () => {
+    serve({ methods: PASSWORD_ONLY, integrations: [GOOGLE_OK], me: { connected_providers: [] } });
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Password sign-in"));
+
+    expect(await screen.findByText(TITLE)).toBeTruthy();
+    expect(screen.getByRole("alertdialog").textContent).toContain("/login/recovery");
+    fireEvent.click(screen.getByRole("button", { name: "Keep it on" }));
+
+    await waitFor(() => expect(screen.queryByText(TITLE)).toBeNull());
+    expect(writes()).toBe(0);
+  });
+
+  it("switches it off once confirmed", async () => {
+    serve({ methods: PASSWORD_ONLY, integrations: [], me: { connected_providers: [] } }, () => BOTH_OFF[1]);
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Password sign-in"));
+    fireEvent.click(await screen.findByRole("button", { name: "Turn it off" }));
+
+    await waitFor(() => expect(writes()).toBe(1));
+  });
+
+  it("does not ask when the admin is linked to a provider the sign-in page offers", async () => {
+    serve(
+      {
+        methods: PASSWORD_ONLY,
+        integrations: [GOOGLE_OK],
+        signIn: [{ id: "google", type: "redirect", display_name: "Google" }],
+        me: { connected_providers: ["google"] },
+      },
+      () => BOTH_OFF[1],
+    );
+    renderPage();
+    await signInListSettled();
+    await waitFor(() => expect(callsTo("/api/me")).toBeGreaterThan(0));
+    await act(async () => {});
+
+    fireEvent.click(await screen.findByLabelText("Password sign-in"));
+
+    await waitFor(() => expect(writes()).toBe(1));
+    expect(screen.queryByText(TITLE)).toBeNull();
+  });
+
+  it("does not ask while another built-in method stays on", async () => {
+    serve({ methods: BOTH_ON, integrations: [] }, () => ({ ...BOTH_ON[1], enabled: false }));
+    renderPage();
+
+    fireEvent.click(await screen.findByLabelText("Password sign-in"));
+
+    await waitFor(() => expect(writes()).toBe(1));
+    expect(screen.queryByText(TITLE)).toBeNull();
+  });
+
+  it("shows admins where break-glass signs in", async () => {
+    serve({});
+    renderPage();
+
+    const link = await screen.findByRole("link", { name: "/login/recovery" });
+    expect(link.getAttribute("href")).toBe("/login/recovery");
   });
 });
 
