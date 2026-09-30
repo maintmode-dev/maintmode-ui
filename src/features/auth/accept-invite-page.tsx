@@ -5,6 +5,7 @@ import { AlertTriangle, Mail, RefreshCw } from "lucide-react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Stack } from "@/shared/ui/domain/stack";
+import { AuthScreen, ProviderButton } from "@/features/auth/auth-screen";
 
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
 
@@ -69,17 +70,15 @@ export function AcceptInvitePage({
   providers,
 }: AcceptInvitePageProps) {
   return (
-    <main className="min-h-screen grid place-items-center p-6 bg-bg">
-      {/* `min-w-0`, as on /login: a grid item cannot otherwise shrink below its
-          widest nowrap button. */}
-      <div className="w-full min-w-0 max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
-        {preview.status === "valid" ? (
-          <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} providers={providers} />
-        ) : (
-          <InvalidInvite status={preview.status} token={token} />
-        )}
-      </div>
-    </main>
+    // Same bare column as /login (`AuthScreen`): no card, so the two public
+    // screens a newcomer passes through in a row read as one product.
+    <AuthScreen>
+      {preview.status === "valid" ? (
+        <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} providers={providers} />
+      ) : (
+        <InvalidInvite status={preview.status} token={token} />
+      )}
+    </AuthScreen>
   );
 }
 
@@ -159,22 +158,13 @@ function InviteCallToAction({
   }
 
   return (
-    <div className="flex w-full flex-col gap-2.5">
-      {providers.map((p) => {
-        const label = `Continue with ${p.display_name}`;
-        return (
-          <form key={p.id} action={acceptAction.bind(null, p.id)} className="w-full">
-            <Button
-              type="submit"
-              className="h-auto min-h-9 w-full min-w-0 py-2"
-              title={label}
-              data-provider-id={p.id}
-            >
-              <span className="min-w-0 whitespace-normal break-words line-clamp-2">{label}</span>
-            </Button>
-          </form>
-        );
-      })}
+    // The first provider the backend lists is filled, the rest are outline:
+    // one primary action, as on /login, rather than a stack of equally loud
+    // buttons.
+    <div className="flex w-full flex-col gap-2">
+      {providers.map((p, i) => (
+        <ProviderButton key={p.id} provider={p} action={acceptAction.bind(null, p.id)} primary={i === 0} />
+      ))}
     </div>
   );
 }

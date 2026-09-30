@@ -25,9 +25,17 @@ export interface OtpSignInFlowProps {
   requestCode: (email: string) => Promise<{ error?: string; expiresAt?: number; refused?: number }>;
   submitCode: (email: string, code: string) => Promise<{ error?: string }>;
   onChangeEmail: () => Promise<void>;
+  /** Focus the email field on mount — set when the user just opened this form. */
+  autoFocus?: boolean;
 }
 
-export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }: OtpSignInFlowProps) {
+export function OtpSignInFlow({
+  label,
+  requestCode,
+  submitCode,
+  onChangeEmail,
+  autoFocus,
+}: OtpSignInFlowProps) {
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -146,8 +154,10 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
       >
         <Label htmlFor="otp-email">{label}</Label>
         <Input
+          className="h-10"
           id="otp-email"
           name="email"
+          autoFocus={autoFocus}
           type="email"
           autoComplete="email"
           placeholder="you@example.com"
@@ -156,7 +166,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
           aria-describedby={error ? "otp-error" : undefined}
         />
         {error ? <FlowError id="otp-error" code={error} /> : null}
-        <Button type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
+        <Button size="lg" type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
           {pending ? "Sending…" : "Email me a code"}
         </Button>
       </form>
@@ -173,6 +183,7 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
         </button>
       </p>
       <Input
+        className="h-10"
         id="otp-code"
         name="code"
         // Not `type="password"`: the code is not a secret to the person holding
@@ -195,11 +206,12 @@ export function OtpSignInFlow({ label, requestCode, submitCode, onChangeEmail }:
         </p>
       )}
       {!expired ? (
-        <Button type="submit" disabled={pending || code.trim().length !== 6}>
+        <Button size="lg" type="submit" disabled={pending || code.trim().length !== 6}>
           {pending ? "Checking…" : "Sign in"}
         </Button>
       ) : null}
       <Button
+        size="lg"
         type="button"
         variant="outline"
         disabled={pending || (cooldown > 0 && !expired)}

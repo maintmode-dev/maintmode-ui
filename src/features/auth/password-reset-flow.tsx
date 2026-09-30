@@ -206,6 +206,7 @@ export function PasswordResetFlow({
           everywhere within minutes.
         </p>
         <Input
+          className="h-10"
           id="reset-email"
           name="email"
           type="email"
@@ -216,10 +217,10 @@ export function PasswordResetFlow({
           aria-describedby={error ? "reset-error" : undefined}
         />
         {error ? <ResetError code={error} /> : null}
-        <Button type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
+        <Button size="lg" type="submit" disabled={!email.trim() || pending || spentHold.isHeld(email)}>
           {pending ? "Sending…" : "Email me a code"}
         </Button>
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Button size="lg" type="button" variant="ghost" onClick={onCancel}>
           Back to sign in
         </Button>
       </form>
@@ -250,6 +251,7 @@ export function PasswordResetFlow({
         </button>
       </p>
       <Input
+        className="h-10"
         id="reset-code"
         name="code"
         inputMode="numeric"
@@ -266,6 +268,7 @@ export function PasswordResetFlow({
       />
       <Label htmlFor="reset-password">New password</Label>
       <PasswordInput
+        className="h-10"
         id="reset-password"
         name="new-password"
         autoComplete="new-password"
@@ -296,11 +299,12 @@ export function PasswordResetFlow({
         </p>
       )}
       {!dead ? (
-        <Button type="submit" disabled={pending || code.trim().length !== 6 || !password}>
+        <Button size="lg" type="submit" disabled={pending || code.trim().length !== 6 || !password}>
           {pending ? "Saving…" : "Set new password"}
         </Button>
       ) : null}
       <Button
+        size="lg"
         type="button"
         variant="outline"
         disabled={pending || throttled}
@@ -311,7 +315,7 @@ export function PasswordResetFlow({
       {/* A way out of step two (UX-2). It discards the binding before leaving:
           otherwise the next visit to /login would rehydrate straight back into
           this step, which is the opposite of what "back" asked for. */}
-      <Button type="button" variant="ghost" disabled={pending} onClick={() => void leave()}>
+      <Button size="lg" type="button" variant="ghost" disabled={pending} onClick={() => void leave()}>
         Back to sign in
       </Button>
     </form>
