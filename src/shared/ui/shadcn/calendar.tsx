@@ -78,9 +78,12 @@ function CalendarDayButton({ className, day, modifiers, ...props }: React.Compon
   return (
     <button
       type="button"
-      // Brand accent is `var(--accent)` (#6e7bff) — the bare `bg-accent`
-      // utility maps to shadcn's muted accent, so the band uses the CSS vars
-      // explicitly. Only non-band days get the elev-3 hover.
+      // The band's filled ends and the selected day use the same filled-accent
+      // pair as a primary button (`bg-primary` = `--accent-solid`, text
+      // `--fg-on-accent`), ≥4.5:1 in both themes. They used `--accent-fg` on
+      // `--accent` — 1.46:1 light, 2.27:1 dark. (The bare `bg-accent` utility
+      // is shadcn's muted hover surface, not the brand.) Only non-band days
+      // get the elev-3 hover.
       className={cn(
         "size-9 rounded-md p-0 text-sm font-normal text-fg transition-colors outline-none",
         "focus-visible:ring-2 focus-visible:ring-ring",
@@ -89,8 +92,8 @@ function CalendarDayButton({ className, day, modifiers, ...props }: React.Compon
         range_middle && "rounded-none bg-[var(--accent-soft)] text-fg",
         range_start && "rounded-l-md rounded-r-none",
         range_end && "rounded-r-md rounded-l-none",
-        isEnd && "bg-[var(--accent)] text-[var(--accent-fg)]",
-        selected && !range_middle && !isEnd && "bg-[var(--accent)] text-[var(--accent-fg)]",
+        isEnd && "bg-primary text-primary-foreground",
+        selected && !range_middle && !isEnd && "bg-primary text-primary-foreground",
         className,
       )}
       {...props}
