@@ -1,12 +1,13 @@
 "use client";
 
-import { AlertTriangle, ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/shared/ui/shadcn/tooltip";
-import { MaintMark, SignInProviderIcon } from "@/shared/ui/icons/brand-icons";
+import { MaintMark } from "@/shared/ui/icons/brand-icons";
 import { signInProviders, type SignInMethod } from "@/domain/auth/sign-in-method";
+import { AuthScreen, ProviderButton } from "@/features/auth/auth-screen";
 import { OtpSignInFlow } from "@/features/auth/otp-sign-in-flow";
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
 // Statically imported, deliberately. It looks like a candidate for `dynamic()`
@@ -92,6 +93,32 @@ const BREAK_GLASS_METHODS: SignInMethod[] = [
  */
 const UNSUPPORTED_TOOLTIP = "This sign-in method isn't supported by this version yet";
 
+/**
+ * `?code=` values that belong to the email-based forms (password, emailed
+ * code, password reset) rather than to a provider's OAuth dance. A page that
+ * arrives with one of these opens straight on the email step, since that is the
+ * flow the error is about; every other code — `consent_cancelled`,
+ * `email_mismatch`, `signup_disabled`, `AccessDenied`, the dance's exchange
+ * failures, anything unknown — is a provider outcome and lands on the first
+ * screen, next to the buttons that retry it.
+ *
+ * Today the built-in actions return these inline rather than through the URL,
+ * so this is the defensive half: it keeps a future redirect-based failure from
+ * dropping the user one click away from the form it is about. Mirrors the names
+ * in `src/server/auth/contracts.ts` (`AUTH_ERROR_CODES`), which a browser module
+ * may not import. The generic NextAuth `credentials` / `CredentialsSignin` are
+ * deliberately absent: the OAuth dance's own redemption is a Credentials
+ * provider too, so they do not say which flow failed.
+ */
+const BUILT_IN_ERROR_CODES: ReadonlySet<string> = new Set([
+  "invalid_credentials",
+  "otp_verification_failed",
+  "otp_rate_limited",
+  "password_reset_failed",
+  "password_reset_unavailable",
+  "password_policy_violation",
+]);
+
 /** The switch between the built-in forms, worded by what it switches TO. */
 const SWITCH_LABELS: Partial<Record<SignInMethod["type"], string>> = {
   code: "Email me a code instead",
@@ -121,7 +148,6 @@ export function LoginPage({
   const [activeFormId, setActiveFormId] = useState(forms[0]?.id);
   const activeForm = forms.find((m) => m.id === activeFormId) ?? forms[0];
   const otherForms = forms.filter((m) => m !== activeForm);
-  const hasBuiltIn = activeForm !== undefined || unsupported.length > 0;
 
   const offersPassword = builtIn.some((m) => m.type === "password");
   // A live binding only rehydrates if this page is still drawing the form the
@@ -144,132 +170,176 @@ export function LoginPage({
   // correct code is answered "wrong or has expired".
   const [resumeEmail, setResumeEmail] = useState(resetInProgressEmail);
 
+  // The Linear-style two-step entry: providers and "Continue with email" first,
+  // the email forms behind that one click. Only when there is a choice to make —
+  // with no provider the form IS the page, and a step with one option in it is
+  // just a delay.
+  const stepped = providers.length > 0 && activeForm !== undefined;
+  // Opens directly on the email step when the page arrives about that flow: a
+  // reset being resumed (it lives behind "Forgot password?" on that step, and
+  // backing out of it should land there), or an error from one of the forms.
+  // Local state only — the URL does not carry it, and a reload of a plain
+  // /login starts on the first screen.
+  const [emailStep, setEmailStep] = useState(
+    () => resetting || (error !== undefined && BUILT_IN_ERROR_CODES.has(error)),
+  );
+  // Focus moves with the step: into the email field when the user opens it (or
+  // switches forms), and back to "Continue with email" on Back — never on the
+  // initial render, where it would steal focus from a page the user has not
+  // touched yet.
+  const [focusForm, setFocusForm] = useState(false);
+  const refocusContinue = useRef(false);
+  // Which of the two screens renders. Without a step the forms are the page when
+  // there is no provider, and the provider list is the page when there is no
+  // form.
+  const showForms = stepped ? emailStep : providers.length === 0;
+
   return (
     <TooltipProvider>
-      <main className="min-h-screen grid place-items-center p-6 bg-bg">
-        {/* `min-w-0`: a grid item defaults to `min-width: auto`, so the card
-            could not shrink below its widest nowrap button — a long provider
-            name pushed the page wider than a phone screen (UX-6). */}
-        <div className="w-full min-w-0 max-w-[420px] space-y-6 bg-bg-elev-1 border border-border-subtle rounded-xl p-8">
-          <header className="space-y-2">
-            <span
-              className="flex size-8 items-center justify-center text-[var(--accent-fg)]"
-              aria-hidden="true"
-            >
-              <MaintMark size={26} />
-            </span>
-            <h1 className="h2">MaintMode</h1>
-            <p className="body-sm">Sign in to plan and coordinate maintenance windows.</p>
-          </header>
+      <AuthScreen className="flex flex-col gap-6">
+        <header className="flex flex-col items-center gap-4 text-center">
+          <span className="text-[var(--accent-fg)]" aria-hidden="true">
+            <MaintMark size={32} />
+          </span>
+          <h1 className="h2">Sign in to MaintMode</h1>
+        </header>
 
-          {error ? (
-            <div
-              role="alert"
-              className="flex items-start gap-2 px-3 py-2 rounded-sm bg-[var(--destructive-bg)] border border-[var(--destructive-border)] text-sm text-[var(--destructive-fg)]"
-            >
-              <AlertTriangle className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
-              <span>{errorMessage(error)}</span>
-            </div>
-          ) : null}
+        {error ? (
+          <div
+            role="alert"
+            className="flex items-start gap-2 px-3 py-2 rounded-md bg-[var(--destructive-bg)] border border-[var(--destructive-border)] text-sm text-[var(--destructive-fg)]"
+          >
+            <AlertTriangle className="size-3.5 mt-0.5 shrink-0" aria-hidden="true" />
+            <span>{errorMessage(error)}</span>
+          </div>
+        ) : null}
 
-          {resetDone ? (
-            <div
-              role="status"
-              className="flex items-start gap-2 px-3 py-2 rounded-sm bg-bg-elev-2 border border-border-subtle text-sm"
-            >
-              <span>Password updated. Sign in with your new password.</span>
-            </div>
-          ) : null}
+        {resetDone ? (
+          <div
+            role="status"
+            className="flex items-start gap-2 px-3 py-2 rounded-md bg-bg-elev-2 border border-border-subtle text-sm"
+          >
+            <span>Password updated. Sign in with your new password.</span>
+          </div>
+        ) : null}
 
-          {resetting ? (
-            <PasswordResetFlow
-              initialEmail={resumeEmail}
-              initialStep={resumeEmail ? "code" : "email"}
-              initialExpiresAt={resetInProgressExpiresAt}
-              requestCode={requestPasswordResetAction}
-              confirm={confirmPasswordResetAction}
-              abandon={abandonPasswordResetAction}
-              onDone={() => {
-                // The backend has revoked every session and the action has torn
-                // down this browser's; there is nothing to sign the user into,
-                // so the flow ends where it began, with something to say.
-                setResetting(false);
-                setResetDone(true);
-                setResumeEmail(undefined);
-              }}
-              onCancel={() => {
-                setResetting(false);
-                setResumeEmail(undefined);
-              }}
-            />
-          ) : (
-            <div className="flex flex-col gap-4">
-              {providers.length > 0 ? (
-                <div className="flex flex-col gap-2.5">
-                  {providers.map((p) => {
-                    const label = `Continue with ${p.display_name}`;
-                    return (
-                      <form key={p.id} action={signInAction.bind(null, p.id)} className="contents">
-                        {/* A display name is whatever the operator typed. The
-                            label wraps to a second line rather than truncating
-                            at once — on a phone even "Corporate SSO" did not fit
-                            beside "Continue with" and the marks — and clamps
-                            there, with `title` carrying the full text. */}
-                        <Button
-                          type="submit"
-                          className="h-auto min-h-9 w-full min-w-0 justify-start gap-2.5 px-3 py-2"
-                          title={label}
-                          data-provider-id={p.id}
-                        >
-                          <ProviderMark id={p.id} />
-                          <span className="min-w-0 whitespace-normal break-words text-left line-clamp-2">
-                            {label}
-                          </span>
-                          <ChevronRight className="size-4 ml-auto" aria-hidden="true" />
-                        </Button>
-                      </form>
-                    );
-                  })}
-                </div>
-              ) : null}
+        {resetting ? (
+          <PasswordResetFlow
+            initialEmail={resumeEmail}
+            initialStep={resumeEmail ? "code" : "email"}
+            initialExpiresAt={resetInProgressExpiresAt}
+            requestCode={requestPasswordResetAction}
+            confirm={confirmPasswordResetAction}
+            abandon={abandonPasswordResetAction}
+            onDone={() => {
+              // The backend has revoked every session and the action has torn
+              // down this browser's; there is nothing to sign the user into,
+              // so the flow ends where it began, with something to say.
+              setResetting(false);
+              setResetDone(true);
+              setResumeEmail(undefined);
+            }}
+            onCancel={() => {
+              setResetting(false);
+              setResumeEmail(undefined);
+            }}
+          />
+        ) : showForms ? (
+          <div className="flex flex-col gap-3">
+            {activeForm ? (
+              <BuiltInMethod
+                key={activeForm.id}
+                method={activeForm}
+                autoFocus={focusForm}
+                onForgotPassword={() => {
+                  setResetDone(false);
+                  setResetting(true);
+                }}
+                {...actions}
+              />
+            ) : null}
+            {otherForms.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className="caption self-center underline-offset-4 hover:text-fg-muted hover:underline"
+                onClick={() => {
+                  setFocusForm(true);
+                  setActiveFormId(m.id);
+                }}
+              >
+                {SWITCH_LABELS[m.type] ?? `Use ${m.display_name} instead`}
+              </button>
+            ))}
+            {/* On the stepped page the unsupported methods sit on the first
+                screen with the other ways in; without a step this is the page. */}
+            {stepped
+              ? null
+              : unsupported.map((m) => (
+                  <UnsupportedMethodButton key={m.id} data-method-type={m.type}>
+                    {m.display_name}
+                  </UnsupportedMethodButton>
+                ))}
+            {stepped ? (
+              <button
+                type="button"
+                className="caption mt-2 inline-flex items-center gap-1 self-center hover:text-fg-muted"
+                onClick={() => {
+                  refocusContinue.current = true;
+                  setFocusForm(false);
+                  setResetDone(false);
+                  setEmailStep(false);
+                }}
+              >
+                <ArrowLeft className="size-3" aria-hidden="true" />
+                Back
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          // The first screen. The first provider the backend lists is the one
+          // filled button; every other way in — the rest of the providers,
+          // "Continue with email", a method this build cannot draw — is outline.
+          <div className="flex flex-col gap-2">
+            {providers.map((p, i) => (
+              <ProviderButton
+                key={p.id}
+                provider={p}
+                action={signInAction.bind(null, p.id)}
+                primary={i === 0}
+              />
+            ))}
+            {activeForm ? (
+              <Button
+                ref={(el) => {
+                  if (el && refocusContinue.current) {
+                    refocusContinue.current = false;
+                    el.focus();
+                  }
+                }}
+                type="button"
+                variant="outline"
+                size="lg"
+                data-step="continue-with-email"
+                onClick={() => {
+                  setFocusForm(true);
+                  setEmailStep(true);
+                }}
+              >
+                Continue with email
+              </Button>
+            ) : null}
+            {unsupported.map((m) => (
+              <UnsupportedMethodButton key={m.id} data-method-type={m.type}>
+                {m.display_name}
+              </UnsupportedMethodButton>
+            ))}
+          </div>
+        )}
 
-              {providers.length > 0 && hasBuiltIn ? <OrDivider /> : null}
-
-              {hasBuiltIn ? (
-                <div className="flex flex-col gap-2.5">
-                  {activeForm ? (
-                    <BuiltInMethod
-                      key={activeForm.id}
-                      method={activeForm}
-                      onForgotPassword={() => {
-                        setResetDone(false);
-                        setResetting(true);
-                      }}
-                      {...actions}
-                    />
-                  ) : null}
-                  {otherForms.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className="caption underline self-center"
-                      onClick={() => setActiveFormId(m.id)}
-                    >
-                      {SWITCH_LABELS[m.type] ?? `Use ${m.display_name} instead`}
-                    </button>
-                  ))}
-                  {unsupported.map((m) => (
-                    <UnsupportedMethodButton key={m.id} data-method-type={m.type}>
-                      {m.display_name}
-                    </UnsupportedMethodButton>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          )}
-
+        <footer className="flex flex-col items-center gap-2 text-center">
           {resolvedFailed ? (
-            <p role="status" className="caption text-center text-fg-muted">
+            <p role="status" className="caption text-fg-muted">
               Some sign-in options may be unavailable right now.
             </p>
           ) : null}
@@ -278,9 +348,9 @@ export function LoginPage({
               ships as a self-hosted product, where the reader may well be the
               person who installed it. The invitation half stays: signup is
               closed by default once the first administrator exists. */}
-          <p className="caption text-center">Access by invitation</p>
-        </div>
-      </main>
+          <p className="caption">Access by invitation</p>
+        </footer>
+      </AuthScreen>
     </TooltipProvider>
   );
 }
@@ -299,7 +369,8 @@ function BuiltInMethod({
   passwordSignInAction,
   changeEmailAction,
   onForgotPassword,
-}: BuiltInMethodActions & { method: SignInMethod; onForgotPassword: () => void }) {
+  autoFocus,
+}: BuiltInMethodActions & { method: SignInMethod; onForgotPassword: () => void; autoFocus: boolean }) {
   if (method.type === "password") {
     return (
       <div data-method-type="password">
@@ -307,6 +378,7 @@ function BuiltInMethod({
           label={method.display_name}
           submit={passwordSignInAction}
           onForgotPassword={onForgotPassword}
+          autoFocus={autoFocus}
         />
       </div>
     );
@@ -320,6 +392,7 @@ function BuiltInMethod({
           requestCode={requestOtpAction}
           submitCode={otpSignInAction}
           onChangeEmail={changeEmailAction}
+          autoFocus={autoFocus}
         />
       </div>
     );
@@ -327,19 +400,6 @@ function BuiltInMethod({
 
   return (
     <UnsupportedMethodButton data-method-type={method.type}>{method.display_name}</UnsupportedMethodButton>
-  );
-}
-
-/** Separates the provider buttons from the email-based forms below them. */
-function OrDivider() {
-  return (
-    <div className="flex items-center gap-3" role="separator" aria-label="or">
-      <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
-      <span className="caption" aria-hidden="true">
-        or
-      </span>
-      <span className="h-px flex-1 bg-border-subtle" aria-hidden="true" />
-    </div>
   );
 }
 
@@ -359,6 +419,7 @@ function UnsupportedMethodButton({ children, ...buttonProps }: React.ComponentPr
           <Button
             {...buttonProps}
             variant="outline"
+            size="lg"
             className="w-full justify-start gap-2.5 px-3 pointer-events-none"
             disabled
           >
@@ -391,26 +452,4 @@ function errorMessage(code: string): string {
     default:
       return "Sign-in didn't complete. Try again.";
   }
-}
-
-/**
- * Provider buttons come from the backend's list — every advertised `redirect`
- * method, via `signInProviders` — rather than from a table of ids this build
- * happens to know. The table is what left a configured `custom` OIDC provider
- * drawn as a disabled "coming soon" button, and GitHub as a permanent one
- * whether or not it was configured: all providers start the same backend-owned
- * dance, so nothing about drawing one is provider-specific.
- *
- * The one id-aware thing left is the brand mark, which is decoration.
- *
- * Fixed-size white brand tile — keeps the icon column aligned across buttons.
- * A provider with no brand of its own (a `custom` OIDC IdP is whoever the
- * operator points it at) gets a neutral key rather than someone else's logo.
- */
-function ProviderMark({ id }: { id: string }) {
-  return (
-    <span className="flex size-5 shrink-0 items-center justify-center rounded-sm bg-white">
-      <SignInProviderIcon id={id} size={14} />
-    </span>
-  );
 }
