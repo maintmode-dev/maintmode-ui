@@ -4,6 +4,7 @@ import type { SignInMethod } from "../sign-in-method";
 import {
   emailTransportGap,
   signInReachability,
+  wouldLockOutActor,
   type LoginRowLike,
   type SignInReachability,
 } from "../sign-in-reachability";
@@ -226,5 +227,70 @@ describe("emailTransportGap", () => {
 
   it("is satisfied by an enabled email row", () => {
     expect(emailTransportGap([{ kind: "notify", name: "email", enabled: true }])).toBeNull();
+  });
+});
+
+/**
+ * The self-lockout confirmation. An admin switched off every built-in method
+ * with no provider linked and lost their own way in; the page now asks first.
+ * It asks only when that is the outcome, and when it cannot tell, it asks.
+ */
+describe("wouldLockOutActor", () => {
+  const PASSWORD_ON = { method: "email_password", enabled: true };
+  const OTP_ON = { method: "email_otp", enabled: true };
+  const OTP_OFF = { method: "email_otp", enabled: false };
+  const GOOGLE_OFFERED = { id: "google", type: "redirect" } as const;
+  const PASSWORD_OFFERED = { id: "email_password", type: "password" } as const;
+
+  it("asks when the last built-in goes and the admin has no provider on /login", () => {
+    expect(
+      wouldLockOutActor([PASSWORD_ON, OTP_OFF], "email_password", {
+        offered: [GOOGLE_OFFERED],
+        connected: [],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not ask while another built-in method stays on", () => {
+    expect(wouldLockOutActor([PASSWORD_ON, OTP_ON], "email_password", { offered: [], connected: [] })).toBe(
+      false,
+    );
+  });
+
+  it("does not ask when the admin is linked to a provider /login offers", () => {
+    expect(
+      wouldLockOutActor([PASSWORD_ON, OTP_OFF], "email_password", {
+        offered: [PASSWORD_OFFERED, GOOGLE_OFFERED],
+        connected: ["google"],
+      }),
+    ).toBe(false);
+  });
+
+  it("asks when the admin's linked provider is not on /login", () => {
+    // Linked to Google, but Google is switched off or unresolved: the link
+    // leads nowhere, so it is not a way in.
+    expect(
+      wouldLockOutActor([PASSWORD_ON, OTP_OFF], "email_password", {
+        offered: [PASSWORD_OFFERED],
+        connected: ["google"],
+      }),
+    ).toBe(true);
+  });
+
+  it("does not count a non-provider entry sharing the linked id", () => {
+    expect(
+      wouldLockOutActor([PASSWORD_ON, OTP_OFF], "email_password", {
+        offered: [{ id: "google", type: "unsupported" }],
+        connected: ["google"],
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["the method list", undefined, { offered: [GOOGLE_OFFERED], connected: ["google"] }],
+    ["/login's list", [PASSWORD_ON, OTP_OFF], { connected: ["google"] }],
+    ["the admin's links", [PASSWORD_ON, OTP_OFF], { offered: [GOOGLE_OFFERED] }],
+  ])("asks when %s could not be read", (_what, methods, actor) => {
+    expect(wouldLockOutActor(methods, "email_password", actor)).toBe(true);
   });
 });

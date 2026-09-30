@@ -100,6 +100,43 @@ export function signInReachability(
   return "lockout";
 }
 
+/**
+ * Who is switching a method off, as far as the self-lockout check can tell.
+ * `undefined` for a field means it could not be read.
+ */
+export interface ActorSignIn {
+  /** `/login`'s list — which providers the sign-in page actually offers. */
+  offered?: readonly Pick<SignInMethod, "id" | "type">[];
+  /** `/me.connected_providers` — the providers this admin's account is linked to. */
+  connected?: readonly string[];
+}
+
+/**
+ * Whether switching `turningOff` off would leave the admin doing it with no way
+ * back in: no other built-in method stays on, and none of the providers their
+ * account is linked to is on `/login`.
+ *
+ * `signInReachability` answers "can ANYONE sign in"; this answers "can YOU",
+ * and the gap between them is how an admin locked themselves out — Google was
+ * on the sign-in page, so the page was reachable, but their account was linked
+ * to nothing. It gates a confirmation, not a refusal: an SSO-only instance is a
+ * legitimate configuration, and the break-glass administrator still has
+ * `/login/recovery`.
+ *
+ * Any source it cannot read makes it answer `true`. A confirmation nobody
+ * needed costs a click; a missing one cost an instance.
+ */
+export function wouldLockOutActor(
+  methods: readonly Pick<AuthMethod, "method" | "enabled">[] | undefined,
+  turningOff: string,
+  { offered, connected }: ActorSignIn,
+): boolean {
+  if (methods === undefined) return true;
+  if (methods.some((m) => m.method !== turningOff && m.enabled)) return false;
+  if (offered === undefined || connected === undefined) return true;
+  return !offered.some((m) => m.type === "redirect" && connected.includes(m.id));
+}
+
 /** Why the Email transport cannot deliver a code. */
 export type EmailTransportGap = "not_configured" | "disabled";
 

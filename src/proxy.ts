@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { isAdminPath } from "@/domain/auth/admin-paths";
 import { canApprove, canWrite } from "@/domain/auth/permissions";
 import { isPublicPath } from "@/domain/auth/public-paths";
 import { auth } from "@/server/auth/auth-config";
@@ -31,9 +32,10 @@ export const config = {
  *   receiver, RUK-292) and `/dev`.
  * - `/approvals`: also requires an approve-capable role (reviewer/admin);
  *   others are silently redirected to `/`.
- * - `/admin/*`: also requires `roles.includes("admin")`; non-admins
+ * - `/admin/*` and `/settings/workspace/*` (`isAdminPath`): also require
+ *   `roles.includes("admin")`; non-admins
  *   are silently redirected to `/`.
- * - Signed-in users hitting `/login` are bounced to `/`.
+ * - Signed-in users hitting `/login` or `/login/recovery` are bounced to `/`.
  *
  * Local-only escape hatch: `MAINTMODE_DISABLE_AUTH_GUARD=1` bypasses the
  * gate. The check is HARD-GATED by `NODE_ENV !== "production"` so a
@@ -65,7 +67,9 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.next();
   }
 
-  if (pathname === "/login" || pathname === "/login/") {
+  // `/login/recovery` too: a signed-in admin landing on the break-glass form
+  // has nothing to recover, and the form would mint a second session over it.
+  if (pathname === "/login" || pathname === "/login/" || pathname === "/login/recovery") {
     if (session) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }
@@ -99,7 +103,7 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
-  if (pathname.startsWith("/admin/")) {
+  if (isAdminPath(pathname)) {
     const roles = session.user?.roles ?? [];
     if (!roles.includes("admin")) {
       return NextResponse.redirect(new URL("/", request.nextUrl));

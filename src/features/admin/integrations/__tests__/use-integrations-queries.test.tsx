@@ -536,7 +536,7 @@ describe("a 409 from a row declared in the server config file", () => {
 
 /**
  * A login row is a button on `/login`, so a write that changed one must mark
- * that page's list stale — the Authentication page's preview strip reads it.
+ * that page's list stale — the Authentication page's lockout warning reads it.
  * The hooks do it themselves, so every screen that writes gets it for free.
  * Transports never appear on `/login`, and a refused write changed nothing.
  */

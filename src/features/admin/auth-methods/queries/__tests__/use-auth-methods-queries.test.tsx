@@ -215,7 +215,7 @@ describe("toggling a method", () => {
 
 /**
  * `/login` lists the built-in methods from these very flags, so a change here
- * must mark that list stale — the Authentication page's preview strip reads it.
+ * must mark that list stale — the Authentication page's lockout warning reads it.
  * The backend reads the flags from the database per request, so one immediate
  * refresh is enough; a refused change changed nothing.
  */

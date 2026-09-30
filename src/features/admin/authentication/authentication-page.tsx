@@ -4,13 +4,16 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { LOGIN_INTEGRATION_NAMES } from "@/domain/admin/integration";
+import { authMethodLabel } from "@/domain/auth/auth-method-settings";
 import {
   emailTransportGap,
   signInReachability,
+  wouldLockOutActor,
   type EmailTransportGap,
   type SignInReachability,
 } from "@/domain/auth/sign-in-reachability";
 import { BffError } from "@/features/_shared/api/bff-fetch";
+import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 import { AuthMethodRow } from "@/features/admin/auth-methods/auth-method-row";
 import {
   useAuthMethodsQuery,
@@ -21,19 +24,38 @@ import { IntegrationList } from "@/features/admin/integrations/integration-list"
 import { useIntegrationsQuery } from "@/features/admin/integrations/queries/use-integrations-queries";
 import { useSignInMethodsQuery } from "@/features/settings/queries/use-sign-in-methods";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/shadcn/alert-dialog";
 import { Button } from "@/shared/ui/shadcn/button";
 
-import { SignInPreview } from "./sign-in-preview";
+/**
+ * Where break-glass signs in when `/login` offers nothing that works. Shown only
+ * on this admin page; `/login` never links to it.
+ */
+const RECOVERY_PATH = "/login/recovery";
 
 /**
- * There is no confirmation step before turning off the last way in.
+ * Turning off the last way in is allowed, but not without asking.
  *
- * The backend had a guard that refused it with a 409; it is gone, and so is any
- * block here. An instance offering no built-in sign-in is a legitimate SSO-only
- * configuration, and even with nothing on it is not a lockout of the admin
- * acting: disabling a method or a provider does not end sessions, and
- * break-glass answers regardless. So the page WARNS, and since it sees both
- * halves it can say exactly when — see `signInReachability`.
+ * The backend had a guard that refused it with a 409; it is gone, and nothing
+ * here blocks either: an instance offering no built-in sign-in is a legitimate
+ * SSO-only configuration. This page used to only WARN, on the grounds that
+ * switching a method off ends no sessions and break-glass answers regardless.
+ * The second half did not hold in practice — `/login` stops drawing the
+ * password form once password sign-in is off, so the break-glass account had
+ * nowhere to type — and an admin with no linked provider locked themselves out.
+ *
+ * So switching off a built-in method asks first when it would leave THE ADMIN
+ * DOING IT without a way in (`wouldLockOutActor`), and both that confirmation
+ * and the lockout warning name `/login/recovery`, where break-glass still works.
  */
 
 /**
@@ -66,10 +88,10 @@ function without(refusals: Record<string, string>, method: string): Record<strin
 const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide text-fg-muted";
 
 /**
- * Admin-only `/admin/authentication`: every way into this instance on one page.
+ * Admin-only `/settings/workspace/authentication`: every way into this instance on one page.
  *
- * Three parts, from summary to detail: what `/login` shows right now, the
- * built-in methods, and the sign-in providers. The last two used to be separate
+ * Two parts: the built-in methods and the sign-in providers, with a warning
+ * above them when neither leaves a way in. They used to be separate
  * tabs ("Sign-in methods" and a section of Integrations), which is why neither
  * could say whether anybody could still sign in (UX-4). Both lists are still
  * their own queries against their own endpoints — only the page is shared.
@@ -81,12 +103,14 @@ const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide text-fg-m
 export function AuthenticationPage() {
   const methodsQuery = useAuthMethodsQuery();
   const integrationsQuery = useIntegrationsQuery();
-  // The same query the preview strip reads (one request, shared cache): what
-  // `/login` offers is the lockout check's source for the provider half.
+  // What `/login` offers is the lockout check's source for the provider half.
   const signInQuery = useSignInMethodsQuery();
+  const meQuery = useMeQuery();
   const setEnabled = useSetAuthMethodEnabled();
   const pending = usePendingAuthMethods();
   const [refusals, setRefusals] = useState<Record<string, string>>({});
+  // The method whose switch-off is waiting on the self-lockout confirmation.
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   const methods = methodsQuery.data ?? [];
   const reachability = signInReachability(methodsQuery.data, {
@@ -94,6 +118,24 @@ export function AuthenticationPage() {
     integrations: integrationsQuery.data,
   });
   const emailGap = emailTransportGap(integrationsQuery.data);
+
+  /**
+   * The switch's own handler. Switching ON never locks anyone out; switching
+   * OFF asks first when it would leave this admin without a way in.
+   */
+  function requestToggle(method: string, enabled: boolean) {
+    if (
+      !enabled &&
+      wouldLockOutActor(methodsQuery.data, method, {
+        offered: signInQuery.data,
+        connected: meQuery.data?.connected_providers,
+      })
+    ) {
+      setConfirming(method);
+      return;
+    }
+    toggle(method, enabled);
+  }
 
   function toggle(method: string, enabled: boolean) {
     setRefusals((current) => without(current, method));
@@ -118,8 +160,6 @@ export function AuthenticationPage() {
           in.
         </p>
       </header>
-
-      <SignInPreview />
 
       <LockoutNotice reachability={reachability} />
 
@@ -157,12 +197,20 @@ export function AuthenticationPage() {
                     <EmailTransportHint gap={emailGap} />
                   ) : undefined
                 }
-                onToggle={(enabled) => toggle(row.method, enabled)}
+                onToggle={(enabled) => requestToggle(row.method, enabled)}
                 onDismissRefusal={() => setRefusals((current) => without(current, row.method))}
               />
             ))}
           </ul>
         ) : null}
+
+        <p className="text-xs text-fg-muted">
+          If every way in is ever turned off, the server&apos;s break-glass administrator can still sign in at{" "}
+          <Link href={RECOVERY_PATH} className="font-mono underline underline-offset-2">
+            {RECOVERY_PATH}
+          </Link>
+          . The sign-in page does not link to it — keep the address somewhere safe.
+        </p>
       </section>
 
       <section id="providers" className="scroll-mt-20 space-y-3" aria-labelledby="providers-heading">
@@ -197,6 +245,35 @@ export function AuthenticationPage() {
           unless open sign-up is turned on in the server config.
         </p>
       </section>
+
+      <AlertDialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Turn off {confirming ? authMethodLabel(confirming) : ""} and lose your own sign-in?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              No built-in method would stay on, and your account is not linked to any provider the sign-in
+              page offers. You stay signed in for now, but once you sign out you can get back only through
+              break-glass, at <span className="font-mono">{RECOVERY_PATH}</span> — and only if the server has
+              a break-glass administrator configured. Link a provider to your profile first to keep your own
+              way in.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it on</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (confirming) toggle(confirming, false);
+                setConfirming(null);
+              }}
+            >
+              Turn it off
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -219,7 +296,8 @@ function LockoutNotice({ reachability }: { reachability: SignInReachability }) {
         className="rounded-md border border-[var(--destructive-fg)] px-3 py-2 text-sm text-[var(--destructive-fg)]"
       >
         Nobody can sign in except through break-glass: every built-in method is off and the sign-in page
-        offers no provider. People already signed in stay signed in. Turn on a method or a provider below.
+        offers no provider. People already signed in stay signed in. Turn on a method or a provider below. The
+        break-glass administrator can sign in at <span className="font-mono">{RECOVERY_PATH}</span>.
       </p>
     );
   }
@@ -250,7 +328,7 @@ function EmailTransportHint({ gap }: { gap: EmailTransportGap }) {
       {gap === "not_configured"
         ? "The Email transport is not set up, so no code can be sent."
         : "The Email transport is turned off, so no code can be sent."}{" "}
-      <Link href="/admin/integrations#transports" className="underline underline-offset-2">
+      <Link href="/settings/workspace/integrations#transports" className="underline underline-offset-2">
         {gap === "not_configured" ? "Set it up in Integrations →" : "Turn it on in Integrations →"}
       </Link>
     </p>
