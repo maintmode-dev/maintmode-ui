@@ -9,11 +9,11 @@ import { IntegrationList } from "./integration-list";
 import { useIntegrationsQuery } from "./queries/use-integrations-queries";
 
 /**
- * Admin-only integrations registry at /settings/workspace/integrations (screen 19,
+ * Admin-only integrations registry at /admin/integrations (screen 19,
  * integrations-settings design snapshot): the notification transports.
  *
  * The sign-in providers used to be a second section here. They live on
- * `/settings/workspace/authentication` now, beside the built-in methods, because what
+ * `/admin/authentication` now, beside the built-in methods, because what
  * `/login` offers is decided by both halves together and only a page that sees
  * both can say so. They are still rows of the same registry — this page simply
  * no longer draws that category. A one-line pointer stays for a release, for
@@ -32,7 +32,7 @@ export function IntegrationsPage() {
           Transports declared in the server config file are changed there and applied on restart.
         </p>
         <p className="body-sm mt-2 text-fg-muted">
-          <Link href="/settings/workspace/authentication#providers" className="underline underline-offset-2">
+          <Link href="/admin/authentication#providers" className="underline underline-offset-2">
             Sign-in providers moved to Authentication →
           </Link>
         </p>

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Role } from "@/domain/auth/permissions";
@@ -54,21 +54,10 @@ describe("AppHeader — approvals nav item", () => {
   });
 });
 
-describe("AppHeader — admin nav items still gate on admin", () => {
-  it("shows the admin tabs to an admin", () => {
+describe("AppHeader — work on the left, Administration on the right", () => {
+  it("keeps only the everyday screens in the main nav, for an admin too", () => {
     renderHeaderAs(["admin"]);
-    const labels = navLabels();
-    expect(labels).toContain("Users");
-    expect(labels).toContain("Audit log");
-  });
-
-  it("hides admin links from a reviewer", () => {
-    // Regression guard for the roles refactor: a reviewer gains Approvals but
-    // must not inherit the admin section along with it.
-    renderHeaderAs(["reviewer"]);
-    const labels = navLabels();
-    expect(labels).not.toContain("Users");
-    expect(labels).not.toContain("Audit log");
+    expect(navLabels()).toEqual(["Calendar", "Approvals", "Resources", "Channels"]);
   });
 
   it("always shows the shared links", () => {
@@ -78,31 +67,23 @@ describe("AppHeader — admin nav items still gate on admin", () => {
     expect(labels).toContain("Resources");
     expect(labels).toContain("Channels");
   });
-});
 
-/**
- * Authentication and Integrations are configuration, not everyday screens, and
- * moved out of the header into Settings. The header keeps a gear into Settings
- * for everyone — every user has a profile there; admins also see Workspace.
- */
-describe("AppHeader — Settings", () => {
-  it("no longer carries the workspace configuration tabs", () => {
+  it("offers Administration to an admin, outside the main nav, landing on Users", () => {
     renderHeaderAs(["admin"]);
-    const labels = navLabels();
-    expect(labels).not.toContain("Authentication");
-    expect(labels).not.toContain("Integrations");
-    expect(labels).not.toContain("Sign-in methods");
-    expect(labels.slice(labels.indexOf("Users"))).toEqual(["Users", "Audit log"]);
+    const link = screen.getByRole("link", { name: "Administration" });
+    expect(link.getAttribute("href")).toBe("/admin/users");
+    expect(link.closest("nav")).toBeNull();
   });
 
-  it.each([["admin"], ["guest"]] as Role[][])("offers a Settings link to %s", (role) => {
+  it.each([["reviewer"], ["editor"], ["guest"]] as Role[][])("offers no Administration to %s", (role) => {
+    // Regression guard for the roles refactor: a reviewer gains Approvals but
+    // must not inherit the admin section along with it.
     renderHeaderAs([role]);
-    const gear = document.querySelector('a[aria-label="Settings"]');
-    expect(gear?.getAttribute("href")).toBe("/settings");
+    expect(screen.queryByRole("link", { name: "Administration" })).toBeNull();
   });
 
-  it("offers no Settings link before the user is known", () => {
+  it("offers no Administration before the user is known", () => {
     render(<AppHeader user={null} />);
-    expect(document.querySelector('a[aria-label="Settings"]')).toBeNull();
+    expect(screen.queryByRole("link", { name: "Administration" })).toBeNull();
   });
 });

@@ -180,7 +180,7 @@ describe("IntegrationsPage — what the administrator actually sees", () => {
 });
 
 /**
- * The sign-in providers moved to Authentication (`/settings/workspace/authentication`). This screen still
+ * The sign-in providers moved to Authentication (`/admin/authentication`). This screen still
  * reads the whole registry — one query serves both pages — so a login row is
  * in the data it holds, and must not leak onto it: not as a section, and not
  * as a transport of the same name (covered above).
@@ -214,7 +214,7 @@ describe("IntegrationsPage — sign-in providers are no longer here", () => {
     await screen.findByText("Slack");
 
     const link = screen.getByRole("link", { name: /sign-in providers moved to authentication/i });
-    expect(link.getAttribute("href")).toBe("/settings/workspace/authentication#providers");
+    expect(link.getAttribute("href")).toBe("/admin/authentication#providers");
   });
 
   it("describes itself as notification transports", async () => {

@@ -32,8 +32,8 @@ export const config = {
  *   receiver, RUK-292) and `/dev`.
  * - `/approvals`: also requires an approve-capable role (reviewer/admin);
  *   others are silently redirected to `/`.
- * - `/admin/*` and `/settings/workspace/*` (`isAdminPath`): also require
- *   `roles.includes("admin")`; non-admins
+ * - `/admin/*` (`isAdminPath`): also requires `roles.includes("admin")`;
+ *   non-admins
  *   are silently redirected to `/`.
  * - Signed-in users hitting `/login` or `/login/recovery` are bounced to `/`.
  *

@@ -12,19 +12,20 @@ import { describe, expect, it, vi } from "vitest";
  * wider `LinkOutcome` set would turn into a "connected" toast for a link that
  * never happened.
  *
- * The card is stubbed: the property is the prop the page hands down. The shell
- * and side menu come from the Settings layout, not from this page.
+ * The children are stubbed: the property is the prop the page hands down, and
+ * rendering the shell would need a session.
  */
 
+vi.mock("@/app/_components/app-shell", () => ({ AppShell: () => null }));
 vi.mock("@/features/settings/user-settings-page", () => ({ UserSettingsPage: () => null }));
 
 const { default: Page } = await import("@/app/(app)/settings/profile/page");
 
 async function outcomeFor(params: { linked?: string; link_error?: string }): Promise<unknown> {
-  const card = (await Page({ searchParams: Promise.resolve(params) })) as {
-    props: { linkOutcome?: unknown };
+  const shell = (await Page({ searchParams: Promise.resolve(params) })) as {
+    props: { children: { props: { linkOutcome?: unknown } } };
   };
-  return card.props.linkOutcome;
+  return shell.props.children.props.linkOutcome;
 }
 
 describe("the profile reads a link outcome from the address bar", () => {
