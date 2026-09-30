@@ -14,6 +14,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { BffError } from "@/features/_shared/api/bff-fetch";
 import type { AuthMethod } from "@/domain/auth/auth-method-settings";
 
+import { signInMethodsKey } from "@/features/settings/queries/use-sign-in-methods";
+
 import { authMethodsKey, useAuthMethodsQuery, useSetAuthMethodEnabled } from "../use-auth-methods-queries";
 
 const BOTH: AuthMethod[] = [
@@ -208,5 +210,41 @@ describe("toggling a method", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(bffFetchMock.mock.calls[0]?.[0]).toBe("/api/admin/auth-methods/a%2Fb");
+  });
+});
+
+/**
+ * `/login` lists the built-in methods from these very flags, so a change here
+ * must mark that list stale — the Authentication page's preview strip reads it.
+ * The backend reads the flags from the database per request, so one immediate
+ * refresh is enough; a refused change changed nothing.
+ */
+describe("refreshing /login's list after a method changes", () => {
+  function clientWithSignInList() {
+    const client = freshClient();
+    client.setQueryData(authMethodsKey(), BOTH);
+    client.setQueryData(signInMethodsKey(), [{ id: "email_otp", type: "code", display_name: "Email code" }]);
+    return client;
+  }
+
+  it("marks it stale once the change is accepted", async () => {
+    bffFetchMock.mockResolvedValue({ ...BOTH[0], enabled: false });
+    const client = clientWithSignInList();
+    const { result } = renderHook(() => useSetAuthMethodEnabled(), { wrapper: wrapper(client) });
+
+    act(() => result.current.mutate({ method: "email_otp", enabled: false }));
+
+    await waitFor(() => expect(client.getQueryState(signInMethodsKey())?.isInvalidated).toBe(true));
+  });
+
+  it("leaves it alone when the change is refused", async () => {
+    bffFetchMock.mockRejectedValue(new BffError(403, "Admin role required", "FORBIDDEN"));
+    const client = clientWithSignInList();
+    const { result } = renderHook(() => useSetAuthMethodEnabled(), { wrapper: wrapper(client) });
+
+    act(() => result.current.mutate({ method: "email_otp", enabled: false }));
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(client.getQueryState(signInMethodsKey())?.isInvalidated).toBe(false);
   });
 });

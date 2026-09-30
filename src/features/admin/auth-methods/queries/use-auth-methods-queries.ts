@@ -4,6 +4,7 @@ import { useMutation, useMutationState, useQuery, useQueryClient } from "@tansta
 
 import { bffFetch } from "@/features/_shared/api/bff-fetch";
 import type { AuthMethod } from "@/domain/auth/auth-method-settings";
+import { refreshSignInMethods } from "@/features/settings/queries/use-sign-in-methods";
 
 export function authMethodsKey() {
   return ["auth-methods"] as const;
@@ -117,6 +118,10 @@ export function useSetAuthMethodEnabled() {
         (list ?? []).map((m) => (m.method === method ? previous : m)),
       );
     },
+    // `/login` reads the built-in flags from the database on every request, so
+    // its list is current the moment this PATCH has answered — one immediate
+    // refresh, no follow-up (contrast the provider writes).
+    onSuccess: () => refreshSignInMethods(queryClient),
     onSettled: () => {
       // The settling mutation is still counted, hence > 1 for "others pending".
       if (queryClient.isMutating({ mutationKey: TOGGLE_MUTATION_KEY }) > 1) {

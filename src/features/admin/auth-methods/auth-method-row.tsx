@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import type { AuthMethod } from "@/domain/auth/auth-method-settings";
 import { authMethodLabel, authMethodNote, isKnownAuthMethod } from "@/domain/auth/auth-method-settings";
 import { Switch } from "@/shared/ui/shadcn/switch";
@@ -28,6 +30,7 @@ export function AuthMethodRow({
   method,
   busy,
   refusal,
+  hint,
   onToggle,
   onDismissRefusal,
 }: {
@@ -35,6 +38,12 @@ export function AuthMethodRow({
   busy: boolean;
   /** The backend's explanation for a refused change, kept until dismissed. */
   refusal?: string;
+  /**
+   * A standing remark about the row's surroundings — e.g. that Email code has
+   * no transport to send through. Rendered under the note, and only by the
+   * caller that can see those surroundings.
+   */
+  hint?: ReactNode;
   onToggle: (enabled: boolean) => void;
   onDismissRefusal: () => void;
 }) {
@@ -55,6 +64,7 @@ export function AuthMethodRow({
             ) : null}
           </div>
           {note ? <p className="mt-1 text-sm text-fg-muted">{note}</p> : null}
+          {hint ? <div className="mt-2">{hint}</div> : null}
         </div>
         <Switch
           checked={method.enabled}

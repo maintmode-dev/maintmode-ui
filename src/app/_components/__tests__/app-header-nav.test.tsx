@@ -59,6 +59,7 @@ describe("AppHeader — admin nav items still gate on admin", () => {
     renderHeaderAs(["admin"]);
     const labels = navLabels();
     expect(labels).toContain("Users");
+    expect(labels).toContain("Authentication");
     expect(labels).toContain("Integrations");
     expect(labels).toContain("Audit log");
   });
@@ -69,6 +70,7 @@ describe("AppHeader — admin nav items still gate on admin", () => {
     renderHeaderAs(["reviewer"]);
     const labels = navLabels();
     expect(labels).not.toContain("Users");
+    expect(labels).not.toContain("Authentication");
     expect(labels).not.toContain("Integrations");
     expect(labels).not.toContain("Audit log");
   });
@@ -79,5 +81,33 @@ describe("AppHeader — admin nav items still gate on admin", () => {
     expect(labels).toContain("Calendar");
     expect(labels).toContain("Resources");
     expect(labels).toContain("Channels");
+  });
+});
+
+/**
+ * "Sign-in methods" and the providers half of Integrations became one admin
+ * tab. The old label must be gone rather than sit beside the new one — two nav
+ * items into one page is the confusion this merge exists to remove — and the
+ * link must go to the new address directly, not through the 308.
+ */
+describe("AppHeader — the Authentication item", () => {
+  it("links Authentication to /admin/authentication", () => {
+    renderHeaderAs(["admin"]);
+    const link = Array.from(document.querySelectorAll("nav a")).find(
+      (a) => a.textContent?.trim() === "Authentication",
+    );
+    expect(link?.getAttribute("href")).toBe("/admin/authentication");
+  });
+
+  it("no longer shows a separate Sign-in methods item", () => {
+    renderHeaderAs(["admin"]);
+    expect(navLabels()).not.toContain("Sign-in methods");
+  });
+
+  it("orders the admin items Users, Authentication, Integrations, Audit log", () => {
+    renderHeaderAs(["admin"]);
+    const labels = navLabels();
+    const admin = labels.slice(labels.indexOf("Users"));
+    expect(admin).toEqual(["Users", "Authentication", "Integrations", "Audit log"]);
   });
 });
