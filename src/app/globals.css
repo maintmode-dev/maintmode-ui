@@ -5,6 +5,17 @@
    `src/shared/ui/**`. Make the project source root explicit. */
 @source "../**/*.{ts,tsx}";
 
+/* `dark:` follows the app's theme, not the OS. Tailwind's default `dark:` is
+   `@media (prefers-color-scheme: dark)`, but the theme here is chosen in-app
+   and written to `<html data-theme>` (see `src/app/theme-provider.tsx`; the
+   server renders `data-theme="dark"`, the head script swaps in the stored
+   choice before paint). With the media query, the shadcn primitives' `dark:`
+   styles applied on a dark OS even with the light theme picked, and never
+   applied in our (default) dark theme on a light OS. There is no "system"
+   option today; if one is added it must resolve to a concrete `data-theme`
+   value, and this variant keeps working unchanged. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /* ============================================================================
    MaintMode — Colors & Type
    Source of truth for these tokens is the frozen calendar design snapshot.
