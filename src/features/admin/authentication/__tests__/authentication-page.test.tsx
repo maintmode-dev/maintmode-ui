@@ -106,8 +106,14 @@ function rowFor(label: string): HTMLElement {
   return row as HTMLElement;
 }
 
-function previewStrip(): HTMLElement {
-  return screen.getByRole("region", { name: "On the sign-in page now" });
+/**
+ * Settles `/login`'s list: waits for its request and lets the answer land. The
+ * lockout cases assert an ABSENCE, which would hold vacuously before that list
+ * arrived.
+ */
+async function signInListSettled(): Promise<void> {
+  await waitFor(() => expect(callsTo("/api/sign-in-methods")).toBeGreaterThan(0));
+  await act(async () => {});
 }
 
 // Braced: a function returned from `beforeEach` is run as a cleanup hook, and
@@ -118,12 +124,11 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("AuthenticationPage — one page for every way in", () => {
-  it("lays out the preview, the built-in methods and the providers, with anchors", async () => {
+  it("lays out the built-in methods and the providers, with anchors", async () => {
     serve({ integrations: [GOOGLE_OK] });
     renderPage();
 
     expect(screen.getByRole("heading", { level: 1, name: "Authentication" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "On the sign-in page now" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Built-in methods" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Sign-in providers (SSO)" })).toBeTruthy();
     // Deep links from Integrations and docs land on these.
@@ -145,94 +150,6 @@ describe("AuthenticationPage — one page for every way in", () => {
     expect(within(rowFor("Custom OIDC")).getByText("Set up")).toBeTruthy();
     expect(within(rowFor("GitHub")).getByText("Set up")).toBeTruthy();
     expect(within(rowFor("Google")).getByText("Configure")).toBeTruthy();
-  });
-});
-
-describe("the 'On the sign-in page now' strip", () => {
-  it("shows what /login offers, as the backend lists it", async () => {
-    serve({
-      signIn: [
-        { id: "email_password", type: "password", display_name: "Password" },
-        { id: "google", type: "redirect", display_name: "Google Workspace" },
-        { id: "webauthn", type: "passkey", display_name: "Passkey" },
-      ],
-    });
-    renderPage();
-
-    const strip = previewStrip();
-    expect(await within(strip).findByText("Password")).toBeTruthy();
-    expect(within(strip).getByText("Continue with Google Workspace")).toBeTruthy();
-    // A type this build cannot draw is shown as such, not as a working button.
-    expect(within(strip).getByText("Passkey (not supported by this version)")).toBeTruthy();
-    expect(within(strip).getByText(/by invitation only/)).toBeTruthy();
-    expect(within(strip).getByText(/break-glass: always available/i)).toBeTruthy();
-  });
-
-  it("says plainly when /login offers nothing", async () => {
-    serve({ signIn: [] });
-    renderPage();
-
-    expect(await within(previewStrip()).findByText(/nothing — only break-glass/i)).toBeTruthy();
-  });
-
-  it("reports a failed read as a failure, not as an empty sign-in page", async () => {
-    serve({ signIn: new BffError(503, "down") });
-    renderPage();
-
-    const strip = previewStrip();
-    expect(await within(strip).findByText(/couldn't load what the sign-in page offers/i)).toBeTruthy();
-    expect(within(strip).queryByText(/nothing — only break-glass/i)).toBeNull();
-  });
-
-  /**
-   * The strip is the sum of the two lists below it, so a change to either must
-   * reach it. The write hooks mark `/login`'s list stale themselves (pinned in
-   * their own suites); these cases check the page end to end.
-   */
-  it("follows a built-in method being switched off", async () => {
-    const wire: Wire = {
-      methods: BOTH_ON,
-      signIn: [
-        { id: "email_password", type: "password", display_name: "Password" },
-        { id: "email_otp", type: "code", display_name: "Email code" },
-      ],
-    };
-    serve(wire, () => {
-      wire.methods = PASSWORD_ONLY;
-      wire.signIn = [{ id: "email_password", type: "password", display_name: "Password" }];
-      return PASSWORD_ONLY[0];
-    });
-    renderPage();
-
-    const strip = previewStrip();
-    await within(strip).findByText("Email code");
-    const before = callsTo("/api/sign-in-methods");
-
-    fireEvent.click(await screen.findByLabelText("Email code sign-in"));
-
-    await waitFor(() => expect(within(strip).queryByText("Email code")).toBeNull());
-    expect(callsTo("/api/sign-in-methods")).toBeGreaterThan(before);
-  });
-
-  it("follows a sign-in provider being switched off", async () => {
-    const wire: Wire = {
-      integrations: [GOOGLE_OK],
-      signIn: [{ id: "google", type: "redirect", display_name: "Google" }],
-    };
-    serve(wire, (path) => {
-      expect(path).toBe("/api/admin/integrations/login/google/toggle");
-      wire.integrations = [{ ...GOOGLE_OK, enabled: false, health: "disabled" }];
-      wire.signIn = [];
-      return wire.integrations[0];
-    });
-    renderPage();
-
-    const strip = previewStrip();
-    await within(strip).findByText("Continue with Google");
-
-    fireEvent.click(within(rowFor("Google")).getByRole("switch"));
-
-    await waitFor(() => expect(within(strip).queryByText("Continue with Google")).toBeNull());
   });
 });
 
@@ -272,7 +189,7 @@ describe("the lockout warning", () => {
     });
     renderPage();
 
-    await within(previewStrip()).findByText("Continue with Google");
+    await signInListSettled();
     await screen.findByLabelText("Password sign-in");
     expect(screen.queryByText(LOCKOUT)).toBeNull();
   });
@@ -322,8 +239,35 @@ describe("the lockout warning", () => {
     renderPage();
 
     await screen.findByText("Google");
-    await within(previewStrip()).findByText(/couldn't load what the sign-in page offers/i);
+    await signInListSettled();
     expect(screen.queryByText(LOCKOUT)).toBeNull();
+  });
+
+  /**
+   * The provider half comes from `/login`'s list, so switching off the last
+   * provider must refetch it for the warning to appear. The toggle hook marks
+   * that list stale (pinned in its own suite); this checks the page end to end.
+   */
+  it("appears once the last working provider is switched off", async () => {
+    const wire: Wire = {
+      methods: BOTH_OFF,
+      integrations: [GOOGLE_OK],
+      signIn: [{ id: "google", type: "redirect", display_name: "Google" }],
+    };
+    serve(wire, (path) => {
+      expect(path).toBe("/api/admin/integrations/login/google/toggle");
+      wire.integrations = [{ ...GOOGLE_OK, enabled: false, health: "disabled" }];
+      wire.signIn = [];
+      return wire.integrations[0];
+    });
+    renderPage();
+    await screen.findByText("Google");
+    await signInListSettled();
+    expect(screen.queryByText(LOCKOUT)).toBeNull();
+
+    fireEvent.click(within(rowFor("Google")).getByRole("switch"));
+
+    expect(await screen.findByText(LOCKOUT)).toBeTruthy();
   });
 
   it("stays quiet while a built-in method is on, providers or not", async () => {

@@ -32,7 +32,7 @@ export const PROVIDER_RELOAD_FOLLOW_UP_MS = 1500;
 
 /**
  * Marks `/login`'s list stale after a write that changes what it offers, so the
- * admin preview strip (and the profile's linking card) re-read it.
+ * admin lockout warning (and the profile's linking card) re-read it.
  *
  * Called by the write hooks themselves — the built-in method toggle and the
  * login-provider writes — rather than by a page, so every screen that performs

@@ -23,8 +23,6 @@ import { useSignInMethodsQuery } from "@/features/settings/queries/use-sign-in-m
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { Button } from "@/shared/ui/shadcn/button";
 
-import { SignInPreview } from "./sign-in-preview";
-
 /**
  * There is no confirmation step before turning off the last way in.
  *
@@ -68,8 +66,8 @@ const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide text-fg-m
 /**
  * Admin-only `/admin/authentication`: every way into this instance on one page.
  *
- * Three parts, from summary to detail: what `/login` shows right now, the
- * built-in methods, and the sign-in providers. The last two used to be separate
+ * Two parts: the built-in methods and the sign-in providers, with a warning
+ * above them when neither leaves a way in. They used to be separate
  * tabs ("Sign-in methods" and a section of Integrations), which is why neither
  * could say whether anybody could still sign in (UX-4). Both lists are still
  * their own queries against their own endpoints — only the page is shared.
@@ -81,8 +79,7 @@ const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide text-fg-m
 export function AuthenticationPage() {
   const methodsQuery = useAuthMethodsQuery();
   const integrationsQuery = useIntegrationsQuery();
-  // The same query the preview strip reads (one request, shared cache): what
-  // `/login` offers is the lockout check's source for the provider half.
+  // What `/login` offers is the lockout check's source for the provider half.
   const signInQuery = useSignInMethodsQuery();
   const setEnabled = useSetAuthMethodEnabled();
   const pending = usePendingAuthMethods();
@@ -118,8 +115,6 @@ export function AuthenticationPage() {
           in.
         </p>
       </header>
-
-      <SignInPreview />
 
       <LockoutNotice reachability={reachability} />
 
