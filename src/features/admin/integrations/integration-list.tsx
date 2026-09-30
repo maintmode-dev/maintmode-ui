@@ -22,8 +22,8 @@ import {
  * One category of the integrations registry as a list of rows, with the
  * dialogs that open from them.
  *
- * Two screens render one category each: `/admin/integrations` the transports,
- * `/admin/authentication` the sign-in providers. Both read the SAME query and
+ * Two screens render one category each: `/settings/workspace/integrations` the transports,
+ * `/settings/workspace/authentication` the sign-in providers. Both read the SAME query and
  * hand its rows in, so a screen keeps one loading state and one way to fail;
  * this component only places rows and owns which one is open.
  *

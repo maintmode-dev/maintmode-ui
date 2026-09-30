@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { isAdminPath } from "@/domain/auth/admin-paths";
 import { canApprove, canWrite } from "@/domain/auth/permissions";
 import { isPublicPath } from "@/domain/auth/public-paths";
 import { auth } from "@/server/auth/auth-config";
@@ -31,7 +32,8 @@ export const config = {
  *   receiver, RUK-292) and `/dev`.
  * - `/approvals`: also requires an approve-capable role (reviewer/admin);
  *   others are silently redirected to `/`.
- * - `/admin/*`: also requires `roles.includes("admin")`; non-admins
+ * - `/admin/*` and `/settings/workspace/*` (`isAdminPath`): also require
+ *   `roles.includes("admin")`; non-admins
  *   are silently redirected to `/`.
  * - Signed-in users hitting `/login` or `/login/recovery` are bounced to `/`.
  *
@@ -101,7 +103,7 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
-  if (pathname.startsWith("/admin/")) {
+  if (isAdminPath(pathname)) {
     const roles = session.user?.roles ?? [];
     if (!roles.includes("admin")) {
       return NextResponse.redirect(new URL("/", request.nextUrl));

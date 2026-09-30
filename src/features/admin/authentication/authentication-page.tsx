@@ -88,7 +88,7 @@ function without(refusals: Record<string, string>, method: string): Record<strin
 const SECTION_HEADING = "text-xs font-semibold uppercase tracking-wide text-fg-muted";
 
 /**
- * Admin-only `/admin/authentication`: every way into this instance on one page.
+ * Admin-only `/settings/workspace/authentication`: every way into this instance on one page.
  *
  * Two parts: the built-in methods and the sign-in providers, with a warning
  * above them when neither leaves a way in. They used to be separate
@@ -328,7 +328,7 @@ function EmailTransportHint({ gap }: { gap: EmailTransportGap }) {
       {gap === "not_configured"
         ? "The Email transport is not set up, so no code can be sent."
         : "The Email transport is turned off, so no code can be sent."}{" "}
-      <Link href="/admin/integrations#transports" className="underline underline-offset-2">
+      <Link href="/settings/workspace/integrations#transports" className="underline underline-offset-2">
         {gap === "not_configured" ? "Set it up in Integrations →" : "Turn it on in Integrations →"}
       </Link>
     </p>

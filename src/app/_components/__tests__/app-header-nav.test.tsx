@@ -55,12 +55,10 @@ describe("AppHeader — approvals nav item", () => {
 });
 
 describe("AppHeader — admin nav items still gate on admin", () => {
-  it("shows admin links to an admin", () => {
+  it("shows the admin tabs to an admin", () => {
     renderHeaderAs(["admin"]);
     const labels = navLabels();
     expect(labels).toContain("Users");
-    expect(labels).toContain("Authentication");
-    expect(labels).toContain("Integrations");
     expect(labels).toContain("Audit log");
   });
 
@@ -70,8 +68,6 @@ describe("AppHeader — admin nav items still gate on admin", () => {
     renderHeaderAs(["reviewer"]);
     const labels = navLabels();
     expect(labels).not.toContain("Users");
-    expect(labels).not.toContain("Authentication");
-    expect(labels).not.toContain("Integrations");
     expect(labels).not.toContain("Audit log");
   });
 
@@ -85,29 +81,28 @@ describe("AppHeader — admin nav items still gate on admin", () => {
 });
 
 /**
- * "Sign-in methods" and the providers half of Integrations became one admin
- * tab. The old label must be gone rather than sit beside the new one — two nav
- * items into one page is the confusion this merge exists to remove — and the
- * link must go to the new address directly, not through the 308.
+ * Authentication and Integrations are configuration, not everyday screens, and
+ * moved out of the header into Settings. The header keeps a gear into Settings
+ * for everyone — every user has a profile there; admins also see Workspace.
  */
-describe("AppHeader — the Authentication item", () => {
-  it("links Authentication to /admin/authentication", () => {
-    renderHeaderAs(["admin"]);
-    const link = Array.from(document.querySelectorAll("nav a")).find(
-      (a) => a.textContent?.trim() === "Authentication",
-    );
-    expect(link?.getAttribute("href")).toBe("/admin/authentication");
-  });
-
-  it("no longer shows a separate Sign-in methods item", () => {
-    renderHeaderAs(["admin"]);
-    expect(navLabels()).not.toContain("Sign-in methods");
-  });
-
-  it("orders the admin items Users, Authentication, Integrations, Audit log", () => {
+describe("AppHeader — Settings", () => {
+  it("no longer carries the workspace configuration tabs", () => {
     renderHeaderAs(["admin"]);
     const labels = navLabels();
-    const admin = labels.slice(labels.indexOf("Users"));
-    expect(admin).toEqual(["Users", "Authentication", "Integrations", "Audit log"]);
+    expect(labels).not.toContain("Authentication");
+    expect(labels).not.toContain("Integrations");
+    expect(labels).not.toContain("Sign-in methods");
+    expect(labels.slice(labels.indexOf("Users"))).toEqual(["Users", "Audit log"]);
+  });
+
+  it.each([["admin"], ["guest"]] as Role[][])("offers a Settings link to %s", (role) => {
+    renderHeaderAs([role]);
+    const gear = document.querySelector('a[aria-label="Settings"]');
+    expect(gear?.getAttribute("href")).toBe("/settings");
+  });
+
+  it("offers no Settings link before the user is known", () => {
+    render(<AppHeader user={null} />);
+    expect(document.querySelector('a[aria-label="Settings"]')).toBeNull();
   });
 });

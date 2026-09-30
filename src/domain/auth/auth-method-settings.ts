@@ -5,7 +5,7 @@
  *
  * That file models the PUBLIC listing behind `/login`
  * (`GET /api/v1/auth/providers`: `id` / `type` / `display_name`). This one
- * models the ADMIN setting behind `/admin/authentication`
+ * models the ADMIN setting behind `/settings/workspace/authentication`
  * (`GET /api/v1/auth/settings`: `method` / `enabled` / `updated_at`).
  *
  * The two are causally linked — disabling a method here removes it from that

@@ -20,6 +20,11 @@ import {
   DropdownMenuTrigger,
 } from "@/shared/ui/shadcn/dropdown-menu";
 
+/**
+ * The everyday screens. Instance configuration (Authentication, Integrations)
+ * is not here: it lives in Settings, behind the gear, next to each person's
+ * own profile.
+ */
 const NAV = [
   { href: "/", label: "Calendar" },
   // Reviewer/admin only — mirrors the backend gate on GET /ui/v1/approvals.
@@ -28,8 +33,6 @@ const NAV = [
   { href: "/resources", label: "Resources" },
   { href: "/channels", label: "Channels" },
   { href: "/admin/users", label: "Users", adminOnly: true },
-  { href: "/admin/authentication", label: "Authentication", adminOnly: true },
-  { href: "/admin/integrations", label: "Integrations", adminOnly: true },
   { href: "/admin/audit-log", label: "Audit log", adminOnly: true },
 ];
 
@@ -91,6 +94,22 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
           )}
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          {user ? (
+            <Button
+              asChild
+              variant="ghost"
+              size="icon-sm"
+              className={cn(pathname.startsWith("/settings") && "bg-bg-elev-2 text-fg-strong")}
+            >
+              <Link
+                href="/settings"
+                aria-label="Settings"
+                aria-current={pathname.startsWith("/settings") ? "page" : undefined}
+              >
+                <SettingsIcon className="size-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : null}
           <ThemeToggle />
           {user ? (
             <DropdownMenu>

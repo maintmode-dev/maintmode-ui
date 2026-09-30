@@ -168,14 +168,14 @@ const forbiddenInClient = [
  *
  * What it proves is narrower than "the screen renders": this walks every chunk
  * with no route attribution, so a match means the string was bundled, not that
- * the section is reachable from /admin/authentication. That remains a job for
+ * the section is reachable from /settings/workspace/authentication. That remains a job for
  * looking at a real build.
  */
 const requiredInClient = [
   {
     marker: "Sign-in providers",
-    // Rendered by /admin/authentication since the providers moved there from
-    // /admin/integrations; the Integrations page also carries it in its
+    // Rendered by /settings/workspace/authentication since the providers moved there from
+    // /settings/workspace/integrations; the Integrations page also carries it in its
     // "moved" pointer for one release.
     why: "the sign-in providers section is gated out of the production bundle again — check for a NODE_ENV branch or a lost import",
   },
