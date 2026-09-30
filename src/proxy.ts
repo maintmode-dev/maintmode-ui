@@ -33,7 +33,7 @@ export const config = {
  *   others are silently redirected to `/`.
  * - `/admin/*`: also requires `roles.includes("admin")`; non-admins
  *   are silently redirected to `/`.
- * - Signed-in users hitting `/login` are bounced to `/`.
+ * - Signed-in users hitting `/login` or `/login/recovery` are bounced to `/`.
  *
  * Local-only escape hatch: `MAINTMODE_DISABLE_AUTH_GUARD=1` bypasses the
  * gate. The check is HARD-GATED by `NODE_ENV !== "production"` so a
@@ -65,7 +65,9 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.next();
   }
 
-  if (pathname === "/login" || pathname === "/login/") {
+  // `/login/recovery` too: a signed-in admin landing on the break-glass form
+  // has nothing to recover, and the form would mint a second session over it.
+  if (pathname === "/login" || pathname === "/login/" || pathname === "/login/recovery") {
     if (session) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }

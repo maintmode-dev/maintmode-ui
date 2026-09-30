@@ -57,3 +57,24 @@ describe("the login page hands a resumed reset its deadline", () => {
     expect(page).toMatch(/resetInProgressExpiresAt=\{resetBinding\?\.expiresAt\}/);
   });
 });
+
+/**
+ * `/login/recovery` is a server page this project has no harness to render, so
+ * its three load-bearing choices are pinned in its source, like the page above.
+ */
+describe("the recovery page", () => {
+  const recovery = readFileSync(join(process.cwd(), "src/app/(public)/login/recovery/page.tsx"), "utf8");
+
+  it("signs in through the same password action as /login", () => {
+    expect(recovery).toMatch(/credentialsSignInAction\(\{\s*kind: "password"/);
+  });
+
+  it("lands on a fixed destination rather than one from the query", () => {
+    expect(recovery).toMatch(/next: "\/"/);
+    expect(recovery).not.toMatch(/searchParams|safeNext/);
+  });
+
+  it("asks search engines not to index it", () => {
+    expect(recovery).toMatch(/robots: \{ index: false, follow: false \}/);
+  });
+});
