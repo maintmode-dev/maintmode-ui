@@ -49,19 +49,10 @@ export function ProvisionedIntegrationView({
           className="flex items-start gap-2 rounded-sm border border-border bg-bg-elev-2 px-3 py-2 text-sm text-fg"
         >
           <Lock className="size-4 shrink-0 mt-0.5 text-fg-muted" aria-hidden="true" />
-          <div className="min-w-0 space-y-1">
-            <p>{PROVISIONED_NOTICE}</p>
-            {/* The key is a mirror of the backend's config schema
-                (`oauth_providers.providers.<name>`), which exists for sign-in
-                providers only. If that file format moves, this line goes stale
-                silently — there is no API field to read it from. Other
-                categories get the sentence without a path rather than a guess. */}
-            {integration.kind === "login" ? (
-              <p className="text-xs text-fg-muted">
-                Key: <code className="font-mono">{`oauth_providers.providers.${integration.name}`}</code>
-              </p>
-            ) : null}
-          </div>
+          {/* The sentence only, no config key. The API does not say where in the
+              file a row is declared, and a path mirrored from the backend's file
+              format would go stale silently the day that format moves. */}
+          <p className="min-w-0">{PROVISIONED_NOTICE}</p>
         </div>
 
         {integration.kind === "login" && healthAddsInformation(integration) ? (

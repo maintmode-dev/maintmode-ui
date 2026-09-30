@@ -99,19 +99,24 @@ describe("IntegrationDialog — a row declared in the server config file", () =>
     expect(screen.queryByText(/not set/i)).toBeNull();
   });
 
-  it("names the config key for a sign-in provider", () => {
+  /**
+   * The sentence only, no config key. The key is not in the API, and a path
+   * mirrored from the backend's file format would go stale silently the day
+   * that format moves — a wrong path is worse than none.
+   */
+  it("points at the config file without naming a key", () => {
     renderDialog(PROVISIONED_GOOGLE);
 
-    expect(screen.getByText(/declared in the server config file/i)).toBeTruthy();
-    expect(screen.getByText("oauth_providers.providers.google")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toBe(
+      "Declared in the server config file. Change it there and restart the backend.",
+    );
   });
 
-  it("names no config key for a category whose file layout this UI does not know", () => {
+  it("renders a provisioned transport the same way", () => {
     renderDialog(PROVISIONED_SLACK);
 
     expect(screen.getByText("View Slack")).toBeTruthy();
     expect(screen.getByText(/declared in the server config file/i)).toBeTruthy();
-    expect(screen.queryByText(/oauth_providers/)).toBeNull();
     expect(screen.getByText("Disabled")).toBeTruthy();
     expect(document.querySelectorAll("input").length).toBe(0);
     // The flag, not the category, decides how an empty secrets_set reads.
