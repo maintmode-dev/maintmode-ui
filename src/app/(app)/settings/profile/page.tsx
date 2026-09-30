@@ -1,3 +1,4 @@
+import { AppShell } from "@/app/_components/app-shell";
 import { UserSettingsPage } from "@/features/settings/user-settings-page";
 import { isLinkFailure, type LinkOutcome } from "@/domain/auth/link-outcome";
 
@@ -16,5 +17,9 @@ export default async function Page({
   const linkOutcome: LinkOutcome | undefined =
     sp.linked === "1" ? "linked" : isLinkFailure(sp.link_error) ? sp.link_error : undefined;
 
-  return <UserSettingsPage linkOutcome={linkOutcome} />;
+  return (
+    <AppShell>
+      <UserSettingsPage linkOutcome={linkOutcome} />
+    </AppShell>
+  );
 }

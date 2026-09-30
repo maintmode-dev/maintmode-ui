@@ -6,7 +6,10 @@ import { ChevronDown, LogOut, Settings as SettingsIcon, Sun, Moon } from "lucide
 import { useTheme } from "@/app/theme-provider";
 import { useSyncExternalStore } from "react";
 
+import { ADMIN_HOME } from "./admin-tabs";
+
 import { signOutAction } from "@/server/auth/auth-actions";
+import { isAdminPath } from "@/domain/auth/admin-paths";
 import { canApprove, isAdmin, type Role } from "@/domain/auth/permissions";
 import { cn } from "@/shared/ui/lib/cn";
 import { MaintMark } from "@/shared/ui/icons/brand-icons";
@@ -21,9 +24,10 @@ import {
 } from "@/shared/ui/shadcn/dropdown-menu";
 
 /**
- * The everyday screens. Instance configuration (Authentication, Integrations)
- * is not here: it lives in Settings, behind the gear, next to each person's
- * own profile.
+ * The everyday screens. Administration (Users, Authentication, Integrations,
+ * Audit log) is not here: it is one item on the right, beside the theme
+ * switch, with its own tab row — work on the left, running the instance on the
+ * right. Each person's profile stays in the user menu.
  */
 const NAV = [
   { href: "/", label: "Calendar" },
@@ -32,8 +36,6 @@ const NAV = [
   { href: "/approvals", label: "Approvals", requiresApprove: true },
   { href: "/resources", label: "Resources" },
   { href: "/channels", label: "Channels" },
-  { href: "/admin/users", label: "Users", adminOnly: true },
-  { href: "/admin/audit-log", label: "Audit log", adminOnly: true },
 ];
 
 export interface AppHeaderUser {
@@ -74,41 +76,35 @@ export function AppHeader({ user }: { user: AppHeaderUser | null }) {
           <span className="hidden sm:inline">MaintMode</span>
         </Link>
         <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto text-sm [scrollbar-width:none]">
-          {NAV.filter((n) => (!n.adminOnly || isAdminUser) && (!n.requiresApprove || mayApprove)).map(
-            (item) => {
-              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "px-3 h-9 inline-flex shrink-0 items-center whitespace-nowrap rounded-sm text-fg-muted hover:text-fg hover:bg-bg-elev-2 transition-colors",
-                    active && "text-fg-strong bg-bg-elev-2",
-                  )}
-                  aria-current={active ? "page" : undefined}
-                >
-                  {item.label}
-                </Link>
-              );
-            },
-          )}
+          {NAV.filter((n) => !n.requiresApprove || mayApprove).map((item) => {
+            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "px-3 h-9 inline-flex shrink-0 items-center whitespace-nowrap rounded-sm text-fg-muted hover:text-fg hover:bg-bg-elev-2 transition-colors",
+                  active && "text-fg-strong bg-bg-elev-2",
+                )}
+                aria-current={active ? "page" : undefined}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {user ? (
-            <Button
-              asChild
-              variant="ghost"
-              size="icon-sm"
-              className={cn(pathname.startsWith("/settings") && "bg-bg-elev-2 text-fg-strong")}
+          {isAdminUser ? (
+            <Link
+              href={ADMIN_HOME}
+              aria-current={isAdminPath(pathname) ? "page" : undefined}
+              className={cn(
+                "inline-flex h-9 shrink-0 items-center whitespace-nowrap rounded-sm px-3 text-sm text-fg-muted transition-colors hover:bg-bg-elev-2 hover:text-fg",
+                isAdminPath(pathname) && "bg-bg-elev-2 text-fg-strong",
+              )}
             >
-              <Link
-                href="/settings"
-                aria-label="Settings"
-                aria-current={pathname.startsWith("/settings") ? "page" : undefined}
-              >
-                <SettingsIcon className="size-4" aria-hidden="true" />
-              </Link>
-            </Button>
+              Administration
+            </Link>
           ) : null}
           <ThemeToggle />
           {user ? (

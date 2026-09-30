@@ -397,7 +397,7 @@ describe("the Email code hint", () => {
 
     expect(await screen.findByText(/email transport is not set up/i)).toBeTruthy();
     const link = screen.getByRole("link", { name: /set it up in integrations/i });
-    expect(link.getAttribute("href")).toBe("/settings/workspace/integrations#transports");
+    expect(link.getAttribute("href")).toBe("/admin/integrations#transports");
   });
 
   it("says the transport is turned off", async () => {

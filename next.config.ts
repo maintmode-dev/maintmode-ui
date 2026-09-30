@@ -16,27 +16,15 @@ const nextConfig: NextConfig = {
   },
 
   async redirects() {
-    // Workspace settings left the header for Settings. Every old address
-    // points straight at the new one — `/admin/auth-methods` included, rather
-    // than chaining through `/admin/authentication` — so each bookmark costs
-    // one hop. Permanent (308) so browsers and docs learn the new address. Runs
-    // before `proxy.ts`, so the admin gate applies to the destination
-    // (`/settings/workspace/*` is admin-only, see `isAdminPath`).
     return [
       {
-        // The "Sign-in methods" tab became part of Authentication.
+        // The "Sign-in methods" tab became part of Authentication, which also
+        // holds the sign-in providers that used to sit under Integrations.
+        // Permanent (308) so old bookmarks and links in docs keep working and
+        // browsers learn the new address. Runs before `proxy.ts`, so the admin
+        // gate applies to the destination as it does to every `/admin/*` page.
         source: "/admin/auth-methods",
-        destination: "/settings/workspace/authentication",
-        permanent: true,
-      },
-      {
-        source: "/admin/authentication",
-        destination: "/settings/workspace/authentication",
-        permanent: true,
-      },
-      {
-        source: "/admin/integrations",
-        destination: "/settings/workspace/integrations",
+        destination: "/admin/authentication",
         permanent: true,
       },
     ];
