@@ -49,8 +49,9 @@ import {
  * Create ↔ edit dialog for one integration system (Grafana-OAuth-style form,
  * frozen in the integrations-settings design snapshot).
  *
- * Secrets are write-only: a stored secret renders as a locked "Configured"
- * plate with Replace (and Clear where the secret is optional). Untouched
+ * Secrets are write-only: a stored secret renders as a locked "Stored" plate —
+ * not "Configured", which is the sign-in health label shown in the same
+ * dialog — with Replace (and Clear where the secret is optional). Untouched
  * secrets never enter the payload — see `secret-patch.ts` for the intent map.
  */
 export function IntegrationDialog({
@@ -667,7 +668,7 @@ function SecretField({
         </FieldLabel>
         <div className="flex items-center gap-3 rounded-sm border border-border bg-bg-elev-2 px-3 py-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--status-completed-border,var(--border))] bg-[var(--status-completed-bg,transparent)] px-2 py-0.5 text-xs font-semibold text-[var(--status-completed-fg)]">
-            <Check className="size-3" aria-hidden="true" /> Configured
+            <Check className="size-3" aria-hidden="true" /> Stored
           </span>
           <span className="flex-1 min-w-0 text-xs text-fg-dim">
             Value is stored encrypted and can&apos;t be viewed.

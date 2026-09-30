@@ -75,7 +75,7 @@ const secretInput = () => document.getElementById("integration-secret-bot_token"
 describe("IntegrationDialog", () => {
   it("edit mode renders the stored secret as a locked Configured plate, never an input", () => {
     renderDialog({ integration: SLACK_CONFIGURED });
-    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.getByText("Stored")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Replace" })).toBeTruthy();
     expect(secretInput()).toBeNull();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
@@ -602,7 +602,7 @@ describe("sign-in provider kinds", () => {
     );
 
     // Stored and untouched: the secret stands in for itself.
-    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.getByText("Stored")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "a-different-id" } });
 
@@ -645,7 +645,7 @@ describe("sign-in provider kinds", () => {
     });
 
     expect(screen.queryByText(/no longer works/i)).toBeNull();
-    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.getByText("Stored")).toBeTruthy();
   });
 
   it("shows no notification-transport copy", () => {
