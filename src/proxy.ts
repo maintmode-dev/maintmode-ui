@@ -4,6 +4,7 @@ import type { NextRequest } from "next/server";
 import { isAdminPath } from "@/domain/auth/admin-paths";
 import { canApprove, canWrite } from "@/domain/auth/permissions";
 import { isPublicPath } from "@/domain/auth/public-paths";
+import { bouncesSignedInVisitor, SIGN_IN_PAGES } from "@/domain/auth/sign-in-pages";
 import { auth } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
 
@@ -35,7 +36,8 @@ export const config = {
  * - `/admin/*` (`isAdminPath`): also requires `roles.includes("admin")`;
  *   non-admins
  *   are silently redirected to `/`.
- * - Signed-in users hitting `/login` or `/login/recovery` are bounced to `/`.
+ * - Signed-in users navigating to `/login` or `/login/recovery` are bounced to
+ *   `/`; a Server Action posted there still reaches the page.
  *
  * Local-only escape hatch: `MAINTMODE_DISABLE_AUTH_GUARD=1` bypasses the
  * gate. The check is HARD-GATED by `NODE_ENV !== "production"` so a
@@ -67,10 +69,11 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.next();
   }
 
-  // `/login/recovery` too: a signed-in admin landing on the break-glass form
-  // has nothing to recover, and the form would mint a second session over it.
-  if (pathname === "/login" || pathname === "/login/" || pathname === "/login/recovery") {
-    if (session) {
+  // A signed-in visitor has nothing to do on a sign-in page — but only a
+  // navigation is sent home. A Server Action posted from a form left open
+  // reaches the page; see `bouncesSignedInVisitor`.
+  if ((SIGN_IN_PAGES as readonly string[]).includes(pathname)) {
+    if (session && bouncesSignedInVisitor(pathname, request.method)) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }
     return NextResponse.next();
