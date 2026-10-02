@@ -74,3 +74,22 @@ describe("password sign-in form", () => {
     expect(screen.getByLabelText("Password").getAttribute("type")).toBe("password");
   });
 });
+
+/**
+ * A rejected action left the button on "Signing in…" with no message — the
+ * form had no way out short of a reload.
+ */
+describe("when the action itself fails", () => {
+  it("comes back from Signing in… and says something went wrong", async () => {
+    setup(
+      vi.fn(async () => Promise.reject(new Error("An unexpected response was received from the server."))),
+    );
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@example.test" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong. Try again.");
+    expect(screen.getByRole("button", { name: "Sign in" }).hasAttribute("disabled")).toBe(false);
+  });
+});

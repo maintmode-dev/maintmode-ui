@@ -42,9 +42,17 @@ export function PasswordSignInForm({ label, submit, onForgotPassword, autoFocus 
 
     setPending(true);
     setError(undefined);
-    const result = await submit(trimmed, password);
-    setPending(false);
-    if (result.error) setError(result.error);
+    // A rejected action must not leave the button on "Signing in…" for good:
+    // the form is then a dead end with nothing to say. Any rejection reads as
+    // the generic failure — what failed is not the user's to fix.
+    try {
+      const result = await submit(trimmed, password);
+      if (result.error) setError(result.error);
+    } catch {
+      setError("unexpected");
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
