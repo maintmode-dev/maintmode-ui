@@ -134,3 +134,25 @@ describe("the invitation page starts the dance with the invitation", () => {
     expect(preview).toMatch(/signal:\s*AbortSignal\.timeout\(/);
   });
 });
+
+/**
+ * Accepting with a password. The token is the credential, so the page — not the
+ * form — must supply it, from the URL it was opened with.
+ */
+describe("the invitation page accepts with a password", () => {
+  it("closes the URL's token over the password action", () => {
+    expect(page).toMatch(
+      /acceptInvitationWithPasswordAction\(\{\s*invitationToken:\s*sp\.token\s*\?\?\s*""\s*,\s*password\s*\}\)/,
+    );
+  });
+
+  it("hands the form an action that takes the password only", () => {
+    expect(page).toMatch(/async function passwordAcceptAction\(password: string\)/);
+    expect(page).toContain("passwordAcceptAction={passwordAcceptAction}");
+  });
+
+  it("offers the password when the backend lists it, or when the list could not be read", () => {
+    expect(page).toMatch(/!providers\.ok \|\| providers\.methods\.some\(\(m\) => m\.type === "password"\)/);
+    expect(page).toContain("passwordOffered={passwordOffered}");
+  });
+});

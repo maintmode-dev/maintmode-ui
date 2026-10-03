@@ -1,6 +1,5 @@
 "use client";
 
-import { unstable_rethrow } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/shared/ui/shadcn/button";
@@ -8,6 +7,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 
 import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
+import { isRouterNavigation } from "@/features/auth/router-navigation";
 
 /**
  * Email + password sign-in (RUK-288).
@@ -48,10 +48,8 @@ export function PasswordSignInForm({ label, submit, onForgotPassword, autoFocus 
       setPending(false);
       if (result.error) setError(result.error);
     } catch (error) {
-      // A SUCCESSFUL sign-in lands here too: when an action redirects, Next
-      // rejects its promise with a redirect error while the router navigates
-      // away. Read as a failure, it flashed "Something went wrong" over every
-      // sign-in. So the form stays on "Signing in…" until the page goes.
+      // A SUCCESSFUL sign-in lands here too (see `isRouterNavigation`): the
+      // form stays on "Signing in…" until the page goes.
       if (isRouterNavigation(error)) return;
       // Anything else must not leave the button on "Signing in…" for good: the
       // form would be a dead end with nothing to say. It reads as the generic
@@ -115,19 +113,4 @@ export function PasswordSignInForm({ label, submit, onForgotPassword, autoFocus 
       ) : null}
     </form>
   );
-}
-
-/**
- * Whether a rejection is Next's own navigation (a redirect from the action)
- * rather than a failure. `unstable_rethrow` is Next's public test for exactly
- * that — it rethrows its router errors and returns for anything else — which
- * saves importing the predicate from Next's internals.
- */
-function isRouterNavigation(error: unknown): boolean {
-  try {
-    unstable_rethrow(error);
-    return false;
-  } catch {
-    return true;
-  }
 }

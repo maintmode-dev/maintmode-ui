@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  acceptInvitationWithPassword,
   changeBackendPassword,
   confirmPasswordReset,
   requestPasswordResetCode,
@@ -295,5 +296,36 @@ describe("requestPasswordResetCode", () => {
     fetchMock.mockResolvedValue(respond(429, "slow down"));
 
     await expect(requestPasswordResetCode("op@example.test")).rejects.toMatchObject({ status: 429 });
+  });
+});
+
+describe("acceptInvitationWithPassword", () => {
+  const ARGS = { invitationToken: "tok-1", password: "correct horse battery" };
+
+  it("posts the token and the password to the accept-with-password path", async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, JSON.stringify({ access_token: "a", refresh_token: "r", expires_in: 900 })),
+    );
+
+    await acceptInvitationWithPassword(ARGS);
+
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/v1\/users\/invitations\/accept\/password$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(sentBody()).toEqual({ invitation_token: "tok-1", password: "correct horse battery" });
+  });
+
+  it("refuses a pair without a refresh token rather than signing in for minutes", async () => {
+    fetchMock.mockResolvedValue(respond(200, JSON.stringify({ access_token: "a", expires_in: 900 })));
+
+    await expect(acceptInvitationWithPassword(ARGS)).rejects.toMatchObject({ name: "BackendAuthError" });
+  });
+
+  it("keeps the status and the body of a refusal for the caller to map", async () => {
+    fetchMock.mockResolvedValue(respond(409, JSON.stringify({ code: "conflict" })));
+
+    await expect(acceptInvitationWithPassword(ARGS)).rejects.toMatchObject({
+      status: 409,
+      responseBody: JSON.stringify({ code: "conflict" }),
+    });
   });
 });

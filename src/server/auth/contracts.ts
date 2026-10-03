@@ -112,5 +112,26 @@ export const AUTH_ERROR_CODES = {
   // nothing. Kept apart from the anti-enumeration collapse because folding it
   // in tells every user their input was wrong during an outage.
   passwordResetUnavailable: "password_reset_unavailable",
+  // Accepting an invitation by setting a password. The backend answers this
+  // path with distinct codes, and unlike password SIGN-IN they reveal nothing a
+  // stranger could use: the caller holds the invitation, which already names
+  // the address.
+  //
+  // The invitation is unknown, expired, revoked or already claimed — one 400
+  // `invalid` for all four, and kept as one.
+  invitationInvalid: "invitation_invalid",
+  // Password sign-in (`email_password`) is switched off on this instance, so an
+  // invitation cannot be accepted with a password.
+  signInMethodDisabled: "method_disabled",
+  // No free seat for the roles the invitation grants.
+  seatsLimitExceeded: "seats_limit_exceeded",
+  // An account with the invited address already exists. The backend does NOT
+  // set a password on it — the person should sign in instead.
+  accountExists: "account_exists",
+  // The invitation endpoints' per-IP limiter refused the request.
+  inviteRateLimited: "invite_rate_limited",
+  // Anything else on the accept-with-password path: transport, 5xx, a payload
+  // without both tokens.
+  inviteAcceptFailed: "invite_accept_failed",
 } as const;
 export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];
