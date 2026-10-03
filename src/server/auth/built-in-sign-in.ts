@@ -3,6 +3,7 @@ import "server-only";
 import {
   acceptInvitationWithPassword,
   fetchBackendMe,
+  loginWithBreakGlass,
   loginWithPassword,
   verifyOtpCode,
 } from "@/server/auth/backend-token-exchange";
@@ -35,7 +36,7 @@ import {
 export async function runBuiltInSignIn(
   account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
   user: {
-    signInKind?: "otp" | "password" | "invite";
+    signInKind?: "otp" | "password" | "invite" | "break-glass";
     email?: string | null;
     otpCode?: string;
     password?: string;
@@ -97,6 +98,14 @@ export async function runBuiltInSignIn(
       });
     } catch (error) {
       throw new BuiltInSignInError(inviteAcceptFailureCode(error));
+    }
+  } else if (user.signInKind === "break-glass") {
+    try {
+      tokens = await loginWithBreakGlass(user.password ?? "");
+    } catch {
+      // One uniform 401 by contract, and one answer here: whether this instance
+      // has an emergency entrance at all must stay unknowable from outside.
+      throw new BuiltInSignInError(AUTH_ERROR_CODES.invalidCredentials);
     }
   } else {
     try {

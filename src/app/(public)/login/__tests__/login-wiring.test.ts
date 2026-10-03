@@ -65,12 +65,14 @@ describe("the login page hands a resumed reset its deadline", () => {
 describe("the recovery page", () => {
   const recovery = readFileSync(join(process.cwd(), "src/app/(public)/login/recovery/page.tsx"), "utf8");
 
-  it("signs in through the same password action as /login", () => {
-    expect(recovery).toMatch(/credentialsSignInAction\(\{\s*kind: "password"/);
+  it("signs in through the break-glass action, not /login's email-and-password one", () => {
+    expect(recovery).toContain("breakGlassSignInAction={breakGlassSignInAction}");
+    expect(recovery).not.toMatch(/credentialsSignInAction/);
   });
 
-  it("lands on a fixed destination rather than one from the query", () => {
-    expect(recovery).toMatch(/next: "\/"/);
+  it("takes no destination from the query", () => {
+    // The action lands on a fixed `/`; a page that read `?next=` here would add
+    // an open parameter to the emergency entrance.
     expect(recovery).not.toMatch(/searchParams|safeNext/);
   });
 

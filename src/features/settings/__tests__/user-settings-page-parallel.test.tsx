@@ -41,3 +41,43 @@ describe("UserSettingsPage — independent reads start together", () => {
     });
   });
 });
+
+/**
+ * The break-glass account signs in by the password in the server's secrets, and
+ * the backend refuses a personal one on it — a form there could only fail.
+ */
+describe("UserSettingsPage — the break-glass account", () => {
+  const ME = (email: string) => ({
+    id: "u-1",
+    email,
+    display_name: "Someone",
+    roles: ["admin"],
+    connected_providers: [],
+    password_set: false,
+  });
+
+  function renderAs(email: string) {
+    bffFetch.mockImplementation((path: string) =>
+      Promise.resolve(path === "/api/me" ? ME(email) : { methods: [] }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <UserSettingsPage />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("shows where its password lives instead of a form", async () => {
+    const view = renderAs("break-glass@maintmode.invalid");
+
+    await waitFor(() => expect(view.getByText(/the break-glass account/i)).toBeTruthy());
+    expect(view.queryByLabelText("New password")).toBeNull();
+  });
+
+  it("keeps the form for everyone else", async () => {
+    const view = renderAs("someone@example.test");
+
+    await waitFor(() => expect(view.getByLabelText("New password")).toBeTruthy());
+  });
+});

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acceptInvitationWithPassword,
   changeBackendPassword,
+  loginWithBreakGlass,
   confirmPasswordReset,
   requestPasswordResetCode,
 } from "@/server/auth/backend-token-exchange";
@@ -327,5 +328,24 @@ describe("acceptInvitationWithPassword", () => {
       status: 409,
       responseBody: JSON.stringify({ code: "conflict" }),
     });
+  });
+});
+
+describe("loginWithBreakGlass", () => {
+  it("posts the password alone to the break-glass path", async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, JSON.stringify({ access_token: "a", refresh_token: "r", expires_in: 900 })),
+    );
+
+    await loginWithBreakGlass("correct horse battery staple");
+
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/v1\/login\/break-glass$/);
+    expect(sentBody()).toEqual({ password: "correct horse battery staple" });
+  });
+
+  it("refuses a pair without a refresh token", async () => {
+    fetchMock.mockResolvedValue(respond(200, JSON.stringify({ access_token: "a", expires_in: 900 })));
+
+    await expect(loginWithBreakGlass("pw")).rejects.toMatchObject({ name: "BackendAuthError" });
   });
 });

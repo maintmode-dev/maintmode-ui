@@ -40,8 +40,13 @@ vi.mock("@/server/auth/otp-nonce-cookie", () => ({
 vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => redirect(to) }));
 
-const { acceptInvitationWithPasswordAction, changeEmailAction, credentialsSignInAction, requestOtpAction } =
-  await import("@/server/auth/built-in-sign-in-actions");
+const {
+  acceptInvitationWithPasswordAction,
+  breakGlassSignInAction,
+  changeEmailAction,
+  credentialsSignInAction,
+  requestOtpAction,
+} = await import("@/server/auth/built-in-sign-in-actions");
 
 beforeEach(() => {
   requestOtpCode.mockReset();
@@ -302,5 +307,43 @@ describe("acceptInvitationWithPasswordAction", () => {
     await expect(acceptInvitationWithPasswordAction(VALID)).resolves.toEqual({
       error: "invite_accept_failed",
     });
+  });
+});
+
+describe("breakGlassSignInAction", () => {
+  it("signs in through backend-login with the break-glass kind, landing on /", async () => {
+    signIn.mockResolvedValue(undefined);
+
+    await expect(breakGlassSignInAction("correct horse battery staple")).resolves.toEqual({});
+    expect(signIn).toHaveBeenCalledWith("backend-login", {
+      kind: "break-glass",
+      password: "correct horse battery staple",
+      redirectTo: "/",
+    });
+  });
+
+  it("passes a success redirect through", async () => {
+    signIn.mockRejectedValue(
+      Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/;303;" }),
+    );
+
+    await expect(breakGlassSignInAction("pw")).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("answers every refusal the same", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "credentials" }));
+
+    await expect(breakGlassSignInAction("pw")).resolves.toEqual({ error: "invalid_credentials" });
+  });
+
+  it("does not call an accepted password wrong when only the profile failed", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "identity_lookup_failed" }));
+
+    await expect(breakGlassSignInAction("pw")).resolves.toEqual({ error: "identity_lookup_failed" });
+  });
+
+  it("sends nothing for an empty password", async () => {
+    await expect(breakGlassSignInAction("")).resolves.toEqual({ error: "invalid_credentials" });
+    expect(signIn).not.toHaveBeenCalled();
   });
 });

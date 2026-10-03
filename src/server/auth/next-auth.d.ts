@@ -52,7 +52,7 @@ declare module "next-auth" {
      * nothing derived from a session lives here, and none of it reaches the
      * browser.
      */
-    signInKind?: "otp" | "password" | "invite";
+    signInKind?: "otp" | "password" | "invite" | "break-glass";
     /**
      * The invitation token, for `signInKind: "invite"` — accepting an
      * invitation by setting a password. An input to the exchange like the

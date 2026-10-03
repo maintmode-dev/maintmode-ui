@@ -15,42 +15,59 @@ import { RecoverySignInPage } from "@/features/auth/recovery-sign-in-page";
 
 afterEach(() => cleanup());
 
-function fill(email: string, password: string) {
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: email } });
-  fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, {
-    target: { value: password },
-  });
-}
+const passwordField = () => screen.getByLabelText("Break-glass password");
 
 describe("RecoverySignInPage", () => {
-  it("offers a password form and nothing else", () => {
-    render(<RecoverySignInPage passwordSignInAction={async () => ({})} />);
+  it("offers a password field and nothing else — no email, no reset, no providers", () => {
+    render(<RecoverySignInPage breakGlassSignInAction={async () => ({})} />);
 
     expect(screen.getByRole("heading", { name: "Administrator sign-in" })).toBeTruthy();
-    expect(document.querySelector('input[type="password"]')).not.toBeNull();
+    expect(passwordField().getAttribute("type")).toBe("password");
+    // Break-glass signs in by password alone: an email field would only be one
+    // more thing to get wrong.
+    expect(document.querySelectorAll("input")).toHaveLength(1);
+    expect(screen.queryByLabelText("Email")).toBeNull();
     expect(screen.queryByRole("button", { name: /continue with/i })).toBeNull();
     // A reset by email is one of the methods this page exists to work without.
     expect(screen.queryByRole("button", { name: /forgot password/i })).toBeNull();
     expect(screen.getByRole("link", { name: "Back to sign-in" }).getAttribute("href")).toBe("/login");
   });
 
-  it("submits the trimmed address and the password to the action", async () => {
+  it("submits the password, and only the password", async () => {
     const action = vi.fn(async () => ({}));
-    render(<RecoverySignInPage passwordSignInAction={action} />);
+    render(<RecoverySignInPage breakGlassSignInAction={action} />);
 
-    fill("  admin@example.test ", "correct horse");
+    fireEvent.change(passwordField(), { target: { value: "correct horse battery staple" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    await waitFor(() => expect(action).toHaveBeenCalledWith("admin@example.test", "correct horse"));
+    await waitFor(() => expect(action).toHaveBeenCalledWith("correct horse battery staple"));
   });
 
-  it("answers a refusal the way /login does, naming neither field", async () => {
-    render(<RecoverySignInPage passwordSignInAction={async () => ({ error: "invalid_credentials" })} />);
+  it("answers a refusal with one uniform sentence about the password", async () => {
+    render(<RecoverySignInPage breakGlassSignInAction={async () => ({ error: "invalid_credentials" })} />);
 
-    fill("admin@example.test", "wrong");
+    fireEvent.change(passwordField(), { target: { value: "wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
-    expect((await screen.findByRole("alert")).textContent).toBe("That email or password isn't right.");
+    expect((await screen.findByRole("alert")).textContent).toBe("That password isn't right.");
+  });
+
+  it("shows no error while a successful sign-in navigates away", async () => {
+    const { redirect } = await import("next/navigation");
+    let redirectError: unknown;
+    try {
+      redirect("/");
+    } catch (error) {
+      redirectError = error;
+    }
+    render(<RecoverySignInPage breakGlassSignInAction={async () => Promise.reject(redirectError)} />);
+
+    fireEvent.change(passwordField(), { target: { value: "correct horse battery staple" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await screen.findByRole("button", { name: "Signing in…" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
 

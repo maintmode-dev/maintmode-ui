@@ -20,6 +20,7 @@ import { Skeleton } from "@/shared/ui/domain/skeleton";
 import { useMeQuery } from "@/features/_shared/queries/use-me-query";
 import { MessengerTagsFields } from "./messenger-tags-card";
 import { TimezoneCard } from "./timezone-card";
+import { isBreakGlassAccount } from "@/domain/auth/break-glass";
 import { PasswordCard } from "./password-card";
 import { SignInMethodsCard } from "./sign-in-methods-card";
 import { useSignInMethodsQuery } from "./queries/use-sign-in-methods";
@@ -119,7 +120,16 @@ export function UserSettingsPage({ linkOutcome }: { linkOutcome?: LinkOutcome } 
         </Card>
 
         <Card title="Password">
-          <PasswordCard passwordSet={user.password_set} />
+          {isBreakGlassAccount(user.email) ? (
+            // The backend refuses a personal password on this account, so a form
+            // here could only ever fail. Say where the password lives instead.
+            <p className="body-sm text-fg-muted">
+              This is the break-glass account. Its password is set in the server&apos;s secrets file and
+              can&apos;t be changed here.
+            </p>
+          ) : (
+            <PasswordCard passwordSet={user.password_set} />
+          )}
         </Card>
 
         <Card title="Session">

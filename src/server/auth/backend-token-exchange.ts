@@ -14,6 +14,7 @@ const ME_PATH = "/api/v1/me";
 const OTP_REQUEST_PATH = "/api/v1/login/otp/request";
 const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
 const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
+const BREAK_GLASS_LOGIN_PATH = "/api/v1/login/break-glass";
 const PASSWORD_RESET_REQUEST_PATH = "/api/v1/password/reset/request";
 const PASSWORD_RESET_CONFIRM_PATH = "/api/v1/password/reset/confirm";
 const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
@@ -177,6 +178,27 @@ export async function loginWithPassword(args: {
     PASSWORD_LOGIN_PATH,
     { email: args.email, password: args.password },
     (parsed) => Boolean(parsed?.access_token),
+  );
+}
+
+/**
+ * Break-glass sign-in: the server's emergency administrator, by PASSWORD ALONE.
+ *
+ * Its own endpoint since the backend split it from `/login/password`, which now
+ * serves personal passwords only and answers a break-glass password with 401.
+ * There is no email: the account is a fixed service identity
+ * (`break-glass@maintmode.invalid`), so asking for an address would only add a
+ * way to get it wrong.
+ *
+ * Every refusal — wrong password, break-glass not configured, the account
+ * blocked, a malformed body — is one uniform 401 by contract, so that from
+ * outside this endpoint cannot tell an instance with an emergency entrance from
+ * one without. Kept that way here.
+ */
+export async function loginWithBreakGlass(password: string): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(BREAK_GLASS_LOGIN_PATH, { password }, (parsed) =>
+    // BOTH tokens, as for every call that mints a session.
+    Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 
