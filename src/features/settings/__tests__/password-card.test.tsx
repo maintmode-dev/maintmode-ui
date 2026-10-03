@@ -274,16 +274,3 @@ describe("the destructive consequence is stated before the submit", () => {
     expect(screen.getByText(/signs your other devices out within minutes/i)).toBeTruthy();
   });
 });
-
-describe("an account that may not hold a personal password", () => {
-  it("says so on a 403 rather than echoing the backend's text", async () => {
-    bffFetch.mockRejectedValue(new BffError(403, "forbidden"));
-    renderCard(false);
-    fill("New password", LONG_ENOUGH);
-    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert").textContent).toBe("This account can't have a personal password.");
-    });
-  });
-});

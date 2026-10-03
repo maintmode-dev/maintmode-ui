@@ -77,13 +77,10 @@ type BuiltInMethodActions = Pick<
 >;
 
 /**
- * What `/login` offers when the providers fetch fails at the transport level:
- * the email-and-password form, so people with a personal password can still
- * sign in during a degraded read.
- *
- * It is NOT the break-glass path any more. Break-glass signs in by password
- * alone on its own endpoint, from `/login/recovery`; `/login/password` refuses
- * the break-glass password with the same 401 as any wrong one.
+ * What `/login` offers when the providers fetch fails at the transport level.
+ * The backend guarantees its real list always contains a `password` element, so
+ * this matches what a healthy fetch would have produced — and it is the
+ * administrator's break-glass path when the auth service is degraded.
  */
 const BREAK_GLASS_METHODS: SignInMethod[] = [
   { id: "email_password", type: "password", display_name: "Password" },

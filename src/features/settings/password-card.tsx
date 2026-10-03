@@ -103,12 +103,6 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
             setError("That current password isn't right.");
             return;
           }
-          if (mutationError.status === 403) {
-            // The account may not hold a personal password at all — the
-            // break-glass account is the case the backend refuses today.
-            setError("This account can't have a personal password.");
-            return;
-          }
           if (mutationError.status === 409) {
             // Nothing the user typed was wrong, and nothing was changed.
             toast.error("Your session expired before the change was saved. Sign in again.");
