@@ -21,15 +21,25 @@ function renderPage(
     signedInAs?: string;
     providers?: SignInMethod[];
     acceptAction?: (providerId: string) => Promise<void>;
+    passwordOffered?: boolean;
+    passwordAcceptAction?: (password: string) => Promise<{ error?: string }>;
   } = {},
 ) {
-  const { providers = [GOOGLE], acceptAction = noopAccept, ...rest } = extra;
+  const {
+    providers = [GOOGLE],
+    acceptAction = noopAccept,
+    passwordOffered = false,
+    passwordAcceptAction = async () => ({}),
+    ...rest
+  } = extra;
   render(
     <AcceptInvitePage
       token={token}
       preview={preview}
       acceptAction={acceptAction}
       providers={providers}
+      passwordOffered={passwordOffered}
+      passwordAcceptAction={passwordAcceptAction}
       {...rest}
     />,
   );
@@ -244,5 +254,124 @@ describe("BUG-4 — an invitation can be accepted through any advertised provide
     renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE, CUSTOM], signedInAs: "a@corp.test" });
 
     expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
+  });
+});
+
+/**
+ * Accepting an invitation by setting a password — for an organisation with no
+ * identity provider, or an invitee who would rather not use one.
+ */
+describe("accepting with a password", () => {
+  const passwordField = () => screen.getByLabelText("Create a password");
+  const accept = () => screen.getByRole("button", { name: "Accept invitation" });
+
+  it("offers the password form alongside the providers when password sign-in is on", () => {
+    renderPage({ status: "valid" }, "tok-1", { passwordOffered: true });
+
+    expect(screen.getByRole("button", { name: /Continue with Google/ })).toBeTruthy();
+    expect(passwordField().getAttribute("autocomplete")).toBe("new-password");
+    expect(screen.getByText("At least 12 characters.")).toBeTruthy();
+  });
+
+  it("offers the form on its own, instead of 'not set up', when no provider exists", () => {
+    renderPage({ status: "valid" }, "tok-1", { providers: [], passwordOffered: true });
+
+    expect(passwordField()).toBeTruthy();
+    expect(screen.queryByText(/isn't set up/)).toBeNull();
+    expect(screen.getByText("Set a password to accept this invitation.")).toBeTruthy();
+  });
+
+  it("offers no form when password sign-in is off", () => {
+    renderPage({ status: "valid" }, "tok-1", { passwordOffered: false });
+
+    expect(screen.queryByLabelText("Create a password")).toBeNull();
+  });
+
+  it("offers no form to a signed-in visitor", () => {
+    renderPage({ status: "valid" }, "tok-1", { passwordOffered: true, signedInAs: "admin@example.test" });
+
+    expect(screen.queryByLabelText("Create a password")).toBeNull();
+  });
+
+  it("offers no form on an unusable invitation", () => {
+    renderPage({ status: "expired" }, "tok-1", { passwordOffered: true });
+
+    expect(screen.queryByLabelText("Create a password")).toBeNull();
+  });
+
+  it("sends only the password — the token is the server's", async () => {
+    const submit = vi.fn(async () => ({}));
+    renderPage({ status: "valid" }, "tok-1", { passwordOffered: true, passwordAcceptAction: submit });
+
+    fireEvent.change(passwordField(), { target: { value: "correct horse battery" } });
+    fireEvent.click(accept());
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith("correct horse battery"));
+  });
+
+  it("answers a short password without sending it", async () => {
+    const submit = vi.fn(async () => ({}));
+    renderPage({ status: "valid" }, "tok-1", { passwordOffered: true, passwordAcceptAction: submit });
+
+    fireEvent.change(passwordField(), { target: { value: "short" } });
+    fireEvent.click(accept());
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Use at least 12 characters.");
+    expect(submit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["invitation_invalid", /can no longer be used/],
+    ["method_disabled", /Password sign-in is turned off/],
+    ["seats_limit_exceeded", /no free seats/],
+    ["account_exists", /already exists — sign in instead/],
+    ["invite_rate_limited", /Too many attempts/],
+    ["identity_lookup_failed", /account is ready/],
+    ["invite_accept_failed", /Something went wrong/],
+  ])("words %s on its own", async (code, text) => {
+    renderPage({ status: "valid" }, "tok-1", {
+      passwordOffered: true,
+      passwordAcceptAction: async () => ({ error: code }),
+    });
+
+    fireEvent.change(passwordField(), { target: { value: "correct horse battery" } });
+    fireEvent.click(accept());
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(text);
+  });
+
+  it("points an existing account at sign-in", async () => {
+    renderPage({ status: "valid" }, "tok-1", {
+      passwordOffered: true,
+      passwordAcceptAction: async () => ({ error: "account_exists" }),
+    });
+
+    fireEvent.change(passwordField(), { target: { value: "correct horse battery" } });
+    fireEvent.click(accept());
+
+    const link = await screen.findByRole("link", { name: "Go to sign-in" });
+    expect(link.getAttribute("href")).toBe("/login");
+  });
+
+  /** A successful accept redirects, and Next rejects the action while it navigates. */
+  it("shows no error while a successful accept navigates away", async () => {
+    const { redirect } = await import("next/navigation");
+    let redirectError: unknown;
+    try {
+      redirect("/");
+    } catch (error) {
+      redirectError = error;
+    }
+    renderPage({ status: "valid" }, "tok-1", {
+      passwordOffered: true,
+      passwordAcceptAction: async () => Promise.reject(redirectError),
+    });
+
+    fireEvent.change(passwordField(), { target: { value: "correct horse battery" } });
+    fireEvent.click(accept());
+
+    await screen.findByRole("button", { name: "Accepting…" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const verifyOtpCode = vi.fn();
 const loginWithPassword = vi.fn();
+const acceptInvitationWithPassword = vi.fn();
 const fetchBackendMe = vi.fn();
 const readOtpBinding = vi.fn();
 const clearOtpBinding = vi.fn();
@@ -20,6 +21,7 @@ const recordRefusedCode = vi.fn();
 vi.mock("@/server/auth/backend-token-exchange", () => ({
   verifyOtpCode: (...args: unknown[]) => verifyOtpCode(...args),
   loginWithPassword: (...args: unknown[]) => loginWithPassword(...args),
+  acceptInvitationWithPassword: (...args: unknown[]) => acceptInvitationWithPassword(...args),
   fetchBackendMe: (...args: unknown[]) => fetchBackendMe(...args),
   exchangeGoogleIdToken: vi.fn(),
   acceptInvitation: vi.fn(),
@@ -66,6 +68,7 @@ async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
 beforeEach(() => {
   verifyOtpCode.mockReset();
   loginWithPassword.mockReset();
+  acceptInvitationWithPassword.mockReset();
   fetchBackendMe.mockReset();
   readOtpBinding.mockReset();
   clearOtpBinding.mockReset();
@@ -249,5 +252,56 @@ describe("failures are attributed to the stage that actually failed", () => {
 
     expect(code).toBe(AUTH_ERROR_CODES.identityLookupFailed);
     expect(code).not.toBe(AUTH_ERROR_CODES.otpVerificationFailed);
+  });
+});
+
+/**
+ * Accepting an invitation by setting a password. Each refusal is told apart,
+ * because each asks the person for something different — and none of them
+ * enumerates anything: the caller holds the invitation, which names the address.
+ *
+ * NOTE: the envelopes below follow the contract the backend announced for
+ * `POST /api/v1/users/invitations/accept/password`; they are not yet recorded
+ * from the wire. The recorded fixture and its contract test land once the
+ * endpoint is on the local stand.
+ */
+describe("accepting an invitation with a password", () => {
+  const INVITE_USER = { signInKind: "invite", invitationToken: "tok-1", password: "correct horse battery" };
+  const refusal = (status: number, body: unknown) => new BackendAuthError(status, JSON.stringify(body));
+
+  it("sends the token and password, and signs in with the pair it gets back", async () => {
+    acceptInvitationWithPassword.mockResolvedValue(TOKENS);
+    fetchBackendMe.mockResolvedValue(ME);
+    const account: Account = { provider: "backend-login" };
+
+    await expect(callSignIn(account, INVITE_USER)).resolves.toBe(true);
+
+    expect(acceptInvitationWithPassword).toHaveBeenCalledWith({
+      invitationToken: "tok-1",
+      password: "correct horse battery",
+    });
+    expect(loginWithPassword).not.toHaveBeenCalled();
+    expect(account.maintmodeTokens).toEqual(TOKENS);
+  });
+
+  it.each([
+    ["an unusable invitation", refusal(400, { code: "invalid" }), "invitation_invalid"],
+    [
+      "a password outside the policy",
+      refusal(400, { code: "invalid request", message: "x" }),
+      "password_policy_violation",
+    ],
+    ["password sign-in switched off", refusal(403, { code: "method_disabled" }), "method_disabled"],
+    ["no free seat", refusal(403, { code: "seats_limit_exceeded" }), "seats_limit_exceeded"],
+    ["an existing account", refusal(409, { code: "conflict" }), "account_exists"],
+    ["the rate limiter", refusal(429, ""), "invite_rate_limited"],
+    ["a 403 with no known code", refusal(403, { code: "something_new" }), "invite_accept_failed"],
+    ["a server error", refusal(502, "bad gateway"), "invite_accept_failed"],
+    ["a transport failure", new Error("ECONNREFUSED"), "invite_accept_failed"],
+  ])("maps %s to its own code", async (_label, error, expected) => {
+    acceptInvitationWithPassword.mockRejectedValue(error);
+
+    expect(await codeOf(callSignIn({ provider: "backend-login" }, INVITE_USER))).toBe(expected);
+    expect(fetchBackendMe).not.toHaveBeenCalled();
   });
 });

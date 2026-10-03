@@ -71,7 +71,7 @@ providers.push(
   Credentials({
     id: BACKEND_LOGIN_PROVIDER_ID,
     name: "Email sign-in",
-    credentials: { kind: {}, email: {}, code: {}, password: {} },
+    credentials: { kind: {}, email: {}, code: {}, password: {}, invitation: {} },
     /**
      * Shape validation ONLY — deliberately no network call. The exchange lives
      * in the `signIn` callback so the backend call and its error mapping stay in
@@ -81,6 +81,19 @@ providers.push(
      */
     async authorize(credentials) {
       const kind = typeof credentials?.kind === "string" ? credentials.kind : "";
+
+      // Accepting an invitation by setting a password. No email: the backend
+      // takes the address from the invitation, so there is nothing for the
+      // person to type that could disagree with it.
+      if (kind === "invite") {
+        const invitationToken = typeof credentials?.invitation === "string" ? credentials.invitation : "";
+        const password = typeof credentials?.password === "string" ? credentials.password : "";
+        if (!invitationToken || !password) {
+          return null;
+        }
+        return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "invite" as const, invitationToken, password };
+      }
+
       const email = typeof credentials?.email === "string" ? credentials.email.trim() : "";
       if (!email) {
         return null;

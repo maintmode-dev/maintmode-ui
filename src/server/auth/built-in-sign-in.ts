@@ -1,6 +1,11 @@
 import "server-only";
 
-import { fetchBackendMe, loginWithPassword, verifyOtpCode } from "@/server/auth/backend-token-exchange";
+import {
+  acceptInvitationWithPassword,
+  fetchBackendMe,
+  loginWithPassword,
+  verifyOtpCode,
+} from "@/server/auth/backend-token-exchange";
 import {
   clearAllBindings,
   clearOtpBinding,
@@ -8,7 +13,13 @@ import {
   readOtpBinding,
   recordRefusedCode,
 } from "@/server/auth/otp-nonce-cookie";
-import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
+import {
+  AUTH_ERROR_CODES,
+  BackendAuthError,
+  type AuthErrorCode,
+  type AuthSessionUser,
+  type BackendTokenPair,
+} from "@/server/auth/contracts";
 
 /**
  * Built-in sign-in exchange — email OTP and email+password (RUK-288).
@@ -23,7 +34,13 @@ import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@
  */
 export async function runBuiltInSignIn(
   account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
-  user: { signInKind?: "otp" | "password"; email?: string | null; otpCode?: string; password?: string },
+  user: {
+    signInKind?: "otp" | "password" | "invite";
+    email?: string | null;
+    otpCode?: string;
+    password?: string;
+    invitationToken?: string;
+  },
 ): Promise<true> {
   const email = normalizeEmail(typeof user.email === "string" ? user.email : "");
   let tokens: BackendTokenPair;
@@ -72,6 +89,15 @@ export async function runBuiltInSignIn(
     // Single-use: a verified code must not be replayable — and the backend's
     // one code may be bound by the reset flow too.
     await clearAllBindings();
+  } else if (user.signInKind === "invite") {
+    try {
+      tokens = await acceptInvitationWithPassword({
+        invitationToken: user.invitationToken ?? "",
+        password: user.password ?? "",
+      });
+    } catch (error) {
+      throw new BuiltInSignInError(inviteAcceptFailureCode(error));
+    }
   } else {
     try {
       tokens = await loginWithPassword({ email, password: user.password ?? "" });
@@ -97,6 +123,46 @@ export async function runBuiltInSignIn(
     // Credentials were accepted but loading the profile did not: the one
     // genuine identity-lookup failure.
     throw new BuiltInSignInError(AUTH_ERROR_CODES.identityLookupFailed);
+  }
+}
+
+/**
+ * What a refused invitation-with-password means to the person holding it.
+ *
+ * Read from the status AND the backend's `code`, because two statuses carry
+ * more than one answer: a 400 is either the invitation (`invalid`) or the
+ * password/body (`invalid request`), and a 403 is either the method being off or
+ * the seats being gone. Anything unrecognised — including a status the contract
+ * does not list — is the generic failure, never a guess at a specific one.
+ */
+function inviteAcceptFailureCode(error: unknown): AuthErrorCode {
+  if (!(error instanceof BackendAuthError)) return AUTH_ERROR_CODES.inviteAcceptFailed;
+  const code = backendErrorCode(error.responseBody);
+  switch (error.status) {
+    case 400:
+      return code === "invalid"
+        ? AUTH_ERROR_CODES.invitationInvalid
+        : AUTH_ERROR_CODES.passwordPolicyViolation;
+    case 403:
+      if (code === "method_disabled") return AUTH_ERROR_CODES.signInMethodDisabled;
+      if (code === "seats_limit_exceeded") return AUTH_ERROR_CODES.seatsLimitExceeded;
+      return AUTH_ERROR_CODES.inviteAcceptFailed;
+    case 409:
+      return AUTH_ERROR_CODES.accountExists;
+    case 429:
+      return AUTH_ERROR_CODES.inviteRateLimited;
+    default:
+      return AUTH_ERROR_CODES.inviteAcceptFailed;
+  }
+}
+
+/** The `code` field of a backend error envelope, or "" when there is none. */
+function backendErrorCode(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown };
+    return typeof parsed.code === "string" ? parsed.code : "";
+  } catch {
+    return "";
   }
 }
 

@@ -1,5 +1,6 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
 import { auth } from "@/server/auth/auth-config";
+import { acceptInvitationWithPasswordAction } from "@/server/auth/built-in-sign-in-actions";
 import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
 import { resolveAuthProviders } from "@/server/backend/auth/resolve-auth-providers";
 import { signInProviders } from "@/domain/auth/sign-in-method";
@@ -44,11 +45,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * here, because the page only ever looked for Google.
    *
    * `{ ok: false }` (transport failure) is treated as AVAILABLE rather than
-   * unavailable: `signInProviders` falls back to Google. Unlike `/login` there
-   * is no break-glass path — an invitation can only be accepted through the
-   * dance — so hiding the button on a failed read would strand an invitee whose
-   * provider is fine. A dance that then fails is recoverable: the backend
-   * refuses before minting state, so the invitation is not spent.
+   * unavailable: `signInProviders` falls back to Google, and the password form
+   * is offered too. Hiding either on a failed read would strand an invitee
+   * whose way in is fine. Both fail recoverably: a dance is refused before any
+   * state is minted, and the password path answers `method_disabled` without
+   * claiming the invitation.
    *
    * Only a RESOLVED list with no provider in it suppresses the button, which
    * is the deterministic post-migration case.
@@ -58,6 +59,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
     resolveAuthProviders(),
   ]);
   const offered = signInProviders(providers.ok ? providers.methods : undefined);
+
+  /**
+   * An invitation can also be accepted by SETTING A PASSWORD — the way in for
+   * an organisation with no identity provider. Offered when the backend lists
+   * password sign-in (the same test `/login` draws its form from), or when the
+   * list could not be read: the backend then decides, and a switched-off method
+   * comes back as `method_disabled` on the form rather than as a lost way in.
+   */
+  const passwordOffered = !providers.ok || providers.methods.some((m) => m.type === "password");
 
   /**
    * Accepting an invitation is now the ordinary OAuth dance with the invitation
@@ -79,6 +89,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   async function acceptAction(providerId: string) {
     "use server";
     await startOAuthDanceAction(providerId, undefined, sp.token);
+  }
+
+  /**
+   * Accepting with a password. The token is closed over here for the same
+   * reason as above: the form sends only the password, so it cannot accept a
+   * different invitation than the one this page was opened with.
+   */
+  async function passwordAcceptAction(password: string) {
+    "use server";
+    return acceptInvitationWithPasswordAction({ invitationToken: sp.token ?? "", password });
   }
 
   /**
@@ -109,6 +129,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
       acceptAction={acceptAction}
       signedInAs={signedInAs}
       providers={offered}
+      passwordOffered={passwordOffered}
+      passwordAcceptAction={passwordAcceptAction}
     />
   );
 }

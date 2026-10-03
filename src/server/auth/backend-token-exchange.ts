@@ -6,6 +6,7 @@ import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
 const DANCE_CODE_EXCHANGE_PATH = "/api/v1/login/oauth/code/exchange";
 const ACCEPT_INVITATION_PATH = "/api/v1/users/invitations/accept";
+const ACCEPT_INVITATION_PASSWORD_PATH = "/api/v1/users/invitations/accept/password";
 const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
 const LOGOUT_ALL_PATH = "/api/v1/logout/all";
@@ -84,6 +85,31 @@ export async function acceptInvitation(args: {
       invitation_token: args.invitationToken,
       oauth_payload: { provider: args.provider, id_token: args.idToken },
     },
+    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
+  );
+}
+
+/**
+ * Accepts an invitation by setting a password — no identity provider involved.
+ *
+ * Public and unauthenticated: the invitation token is the credential. The
+ * backend creates the user with the invited address, sets the password, claims
+ * the invitation and grants its roles in one transaction, then issues a token
+ * pair shaped like password sign-in's.
+ *
+ * Unlike `loginWithPassword`, its failures are distinct (`invalid`,
+ * `method_disabled`, `seats_limit_exceeded`, `conflict`, a policy 400, 429) and
+ * the caller maps them; they are carried on `BackendAuthError` untouched.
+ */
+export async function acceptInvitationWithPassword(args: {
+  invitationToken: string;
+  password: string;
+}): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    ACCEPT_INVITATION_PASSWORD_PATH,
+    { invitation_token: args.invitationToken, password: args.password },
+    // BOTH tokens, as for every call that mints a session: a pair with no
+    // refresh token signs the person in and dies at the first rotation.
     (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
