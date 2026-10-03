@@ -1,0 +1,23 @@
+{
+  "_recorded": "2026-10-04, local stand, maintmode @ 865234f (feat/break-glass-password-only). POST /api/v1/login/break-glass sent with a script straight to the backend; status, Cache-Control and body copied off the wire. The password is the dev stand's own and is not in this file.",
+  "_masked": "access_token and refresh_token in `success` are replaced with placeholders — they are live bearer tokens. Their presence, `expires_in` and its value, and the refusal envelope are the backend's own.",
+  "success": {
+    "_note": "The break-glass password from the dev secrets. expires_in is 300: a break-glass access token lives five minutes, and the session ends 24 hours after sign-in whatever refresh does.",
+    "status": 200,
+    "cacheControl": "no-store",
+    "body": {
+      "access_token": "<access-token>",
+      "refresh_token": "<refresh-token>",
+      "expires_in": 300
+    }
+  },
+  "refused": {
+    "_note": "A wrong password. Every refusal — wrong password, no break-glass configured, account blocked, bad body — is this one 401 by contract.",
+    "status": 401,
+    "cacheControl": "no-store",
+    "body": {
+      "code": "unauthorized",
+      "message": "authentication failed"
+    }
+  }
+}
