@@ -113,8 +113,13 @@ export function inviteErrorMessage(code: string): string {
       return "Password sign-in is turned off on this instance. Ask an administrator, or use another way in if one is offered.";
     case "seats_limit_exceeded":
       return "There are no free seats on this instance. Ask an administrator to free one, then try again.";
+    // The backend rolls the whole accept back, so the invitation stays pending
+    // — but an ordinary sign-in does not grant its roles, and an account with
+    // only a password has no way to accept it (only a provider dance with the
+    // same address can). So the advice is to sign in AND ask for the access,
+    // not to come back to this link.
     case "account_exists":
-      return "An account with this email already exists — sign in instead.";
+      return "An account with this email already exists — sign in. If you need the access this invitation gives, ask an administrator to grant it.";
     case "invite_rate_limited":
       return "Too many attempts. Wait a moment and try again.";
     // The backend accepted: the account exists, the password is set and the

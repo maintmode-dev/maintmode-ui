@@ -324,7 +324,10 @@ describe("accepting with a password", () => {
     ["invitation_invalid", /can no longer be used/],
     ["method_disabled", /Password sign-in is turned off/],
     ["seats_limit_exceeded", /no free seats/],
-    ["account_exists", /already exists — sign in instead/],
+    [
+      "account_exists",
+      /already exists — sign in\. If you need the access this invitation gives, ask an administrator/,
+    ],
     ["invite_rate_limited", /Too many attempts/],
     ["identity_lookup_failed", /account is ready/],
     ["invite_accept_failed", /Something went wrong/],
