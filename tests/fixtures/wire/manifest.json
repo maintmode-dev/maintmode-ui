@@ -218,6 +218,15 @@
       "handEdited": true,
       "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, so it cannot capture a write whose only shape is an error envelope. Taken off the wire with an admin bearer against the local backend (maintmode @ e439d98) and recorded verbatim; the rows were unchanged afterwards."
     },
+    "invitation-accept-password": {
+      "url": "http://localhost:9000/auth/api/v1/users/invitations/accept/password",
+      "method": "POST",
+      "status": "200 / 400 / 403 (four shapes, see the file)",
+      "capturedAt": "2026-10-04",
+      "why": "Accepting an invitation by setting a password. The frontend maps each refusal to its own copy by status AND code, and requires both tokens on success — so the envelopes it branches on are pinned from the wire, not from the announced contract.",
+      "handEdited": true,
+      "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx. Taken off the wire with curl against the local backend (maintmode @ 09abc73); the two tokens in the success body are masked, everything else verbatim. 403 seats_limit_exceeded and 409 conflict cannot be produced on the dev stand and are absent."
+    },
     "integrations": {
       "url": "http://localhost:9000/maintmode/api/v1/integrations",
       "method": "GET",
