@@ -214,3 +214,38 @@ export async function acceptInvitationWithPasswordAction(input: {
     return { error: INVITE_ACCEPT_ERRORS.has(code) ? code : AUTH_ERROR_CODES.inviteAcceptFailed };
   }
 }
+
+/**
+ * Break-glass sign-in from `/login/recovery`: the password alone.
+ *
+ * Its own action rather than another `credentialsSignInAction` kind because it
+ * takes neither an email nor a destination — the emergency account is a fixed
+ * service identity, and the page is reached by typing its address, never by a
+ * redirect with somewhere to return to. Lands on `/`.
+ *
+ * Every failure is the uniform `invalid_credentials`, matching the backend's
+ * single 401: telling "wrong password" from "no break-glass on this instance"
+ * would answer, from outside, whether an emergency entrance exists.
+ */
+export async function breakGlassSignInAction(password: string): Promise<SignInActionResult> {
+  if (!password) {
+    return { error: AUTH_ERROR_CODES.invalidCredentials };
+  }
+  try {
+    await signIn("backend-login", { kind: "break-glass", password, redirectTo: "/" });
+    return {};
+  } catch (error) {
+    // Success arrives here too: `signIn` redirects by throwing NEXT_REDIRECT.
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    // The password WAS accepted when only the profile failed to load — saying
+    // it was wrong would send the administrator after the wrong problem.
+    const code =
+      typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
+    if (code === AUTH_ERROR_CODES.identityLookupFailed) {
+      return { error: code };
+    }
+    return { error: AUTH_ERROR_CODES.invalidCredentials };
+  }
+}

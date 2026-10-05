@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const verifyOtpCode = vi.fn();
 const loginWithPassword = vi.fn();
 const acceptInvitationWithPassword = vi.fn();
+const loginWithBreakGlass = vi.fn();
 const fetchBackendMe = vi.fn();
 const readOtpBinding = vi.fn();
 const clearOtpBinding = vi.fn();
@@ -22,6 +23,7 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
   verifyOtpCode: (...args: unknown[]) => verifyOtpCode(...args),
   loginWithPassword: (...args: unknown[]) => loginWithPassword(...args),
   acceptInvitationWithPassword: (...args: unknown[]) => acceptInvitationWithPassword(...args),
+  loginWithBreakGlass: (...args: unknown[]) => loginWithBreakGlass(...args),
   fetchBackendMe: (...args: unknown[]) => fetchBackendMe(...args),
   exchangeGoogleIdToken: vi.fn(),
   acceptInvitation: vi.fn(),
@@ -69,6 +71,7 @@ beforeEach(() => {
   verifyOtpCode.mockReset();
   loginWithPassword.mockReset();
   acceptInvitationWithPassword.mockReset();
+  loginWithBreakGlass.mockReset();
   fetchBackendMe.mockReset();
   readOtpBinding.mockReset();
   clearOtpBinding.mockReset();
@@ -303,5 +306,37 @@ describe("accepting an invitation with a password", () => {
 
     expect(await codeOf(callSignIn({ provider: "backend-login" }, INVITE_USER))).toBe(expected);
     expect(fetchBackendMe).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Break-glass signs in by password alone on its own endpoint; `/login/password`
+ * no longer accepts the break-glass password.
+ */
+describe("break-glass sign-in", () => {
+  const BREAK_GLASS = { signInKind: "break-glass", password: "correct horse battery staple" };
+
+  it("signs in through the break-glass endpoint with the password only", async () => {
+    loginWithBreakGlass.mockResolvedValue(TOKENS);
+    fetchBackendMe.mockResolvedValue(ME);
+    const account: Account = { provider: "backend-login" };
+
+    await expect(callSignIn(account, BREAK_GLASS)).resolves.toBe(true);
+
+    expect(loginWithBreakGlass).toHaveBeenCalledWith("correct horse battery staple");
+    expect(loginWithPassword).not.toHaveBeenCalled();
+    expect(account.maintmodeTokens).toEqual(TOKENS);
+  });
+
+  it.each([
+    ["the uniform 401", new BackendAuthError(401, JSON.stringify({ code: "unauthorized" }))],
+    ["the rate limiter", new BackendAuthError(429, "")],
+    ["a transport failure", new Error("ECONNREFUSED")],
+  ])("answers %s with the one uniform failure", async (_label, error) => {
+    loginWithBreakGlass.mockRejectedValue(error);
+
+    expect(await codeOf(callSignIn({ provider: "backend-login" }, BREAK_GLASS))).toBe(
+      AUTH_ERROR_CODES.invalidCredentials,
+    );
   });
 });

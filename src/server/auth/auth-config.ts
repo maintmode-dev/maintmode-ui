@@ -94,6 +94,16 @@ providers.push(
         return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "invite" as const, invitationToken, password };
       }
 
+      // Break-glass signs in by password alone: the account is a fixed service
+      // identity, so there is no address to ask for.
+      if (kind === "break-glass") {
+        const password = typeof credentials?.password === "string" ? credentials.password : "";
+        if (!password) {
+          return null;
+        }
+        return { id: BACKEND_LOGIN_PROVIDER_ID, signInKind: "break-glass" as const, password };
+      }
+
       const email = typeof credentials?.email === "string" ? credentials.email.trim() : "";
       if (!email) {
         return null;

@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 import { MaintMark } from "@/shared/ui/icons/brand-icons";
+import { Button } from "@/shared/ui/shadcn/button";
+import { Input } from "@/shared/ui/shadcn/input";
+import { Label } from "@/shared/ui/shadcn/label";
 import { AuthScreen } from "@/features/auth/auth-screen";
-import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
+import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
+import { isRouterNavigation } from "@/features/auth/router-navigation";
 
 /**
  * `/login/recovery` — the administrator's way back in when `/login` offers
@@ -14,9 +19,9 @@ import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
  * ## Why a separate page nobody links to
  *
  * `/login` draws only what the backend lists, and the backend stops listing
- * password sign-in once an admin switches it off. Its password endpoint still
- * accepts the server's break-glass administrator in that state — only the form
- * was gone, which is how an admin locked themselves out. Putting the form back
+ * password sign-in once an admin switches it off. Break-glass is not one of
+ * those methods — it has its own endpoint, which answers whatever is switched
+ * off — but its form was gone, which is how an admin locked themselves out. Putting the form back
  * on `/login` would show it to everyone and undo the switch, so it lives here:
  * the Authentication settings show this address to admins, `/login` never links
  * to it, and search engines are told not to index it.
@@ -32,11 +37,17 @@ import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
  * secret — the backend's password check is the control — and the page must not
  * answer "does this deployment have a break-glass account?" either: the backend
  * deliberately keeps that unanswerable from outside.
+ *
+ * ## Why only a password
+ *
+ * Break-glass signs in by password alone (`POST /login/break-glass`): the
+ * emergency account is a fixed service identity, so an email field would only
+ * be one more thing to get wrong at the worst possible moment.
  */
 export function RecoverySignInPage({
-  passwordSignInAction,
+  breakGlassSignInAction,
 }: {
-  passwordSignInAction: (email: string, password: string) => Promise<{ error?: string }>;
+  breakGlassSignInAction: (password: string) => Promise<{ error?: string }>;
 }) {
   return (
     <AuthScreen className="flex flex-col gap-6">
@@ -50,10 +61,7 @@ export function RecoverySignInPage({
         </p>
       </header>
 
-      {/* No "Forgot password?": the break-glass password lives in the server's
-          secrets, and a reset by email is exactly the kind of method this page
-          exists to work without. */}
-      <PasswordSignInForm label="Password" submit={passwordSignInAction} autoFocus />
+      <BreakGlassForm submit={breakGlassSignInAction} />
 
       <Link
         href="/login"
@@ -63,4 +71,69 @@ export function RecoverySignInPage({
       </Link>
     </AuthScreen>
   );
+}
+
+/**
+ * The break-glass password, and nothing else. No "Forgot password?": the
+ * password lives in the server's secrets, and a reset by email is exactly the
+ * kind of method this page exists to work without.
+ */
+function BreakGlassForm({ submit }: { submit: (password: string) => Promise<{ error?: string }> }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | undefined>();
+  const [pending, setPending] = useState(false);
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!password || pending) return;
+
+    setPending(true);
+    setError(undefined);
+    try {
+      const result = await submit(password);
+      setPending(false);
+      if (result.error) setError(result.error);
+    } catch (thrown) {
+      // A successful sign-in redirects, and Next rejects the action's promise
+      // while it navigates — stay on "Signing in…" until the page goes.
+      if (isRouterNavigation(thrown)) return;
+      setPending(false);
+      setError("unexpected");
+    }
+  }
+
+  return (
+    <form className="flex flex-col gap-3" onSubmit={onSubmit}>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="break-glass-password">Break-glass password</Label>
+        <Input
+          className="h-10"
+          id="break-glass-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          autoFocus
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          aria-describedby={error ? "break-glass-error" : undefined}
+        />
+      </div>
+      {error ? (
+        <p id="break-glass-error" role="alert" className="text-xs text-[var(--destructive-fg)]">
+          {breakGlassErrorMessage(error)}
+        </p>
+      ) : null}
+      <Button size="lg" type="submit" disabled={!password || pending}>
+        {pending ? "Signing in…" : "Sign in"}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * "Password", not "email or password": there is no email here. Every refusal
+ * reads the same — the backend answers one 401 for all of them on purpose.
+ */
+function breakGlassErrorMessage(code: string): string {
+  return code === "invalid_credentials" ? "That password isn't right." : flowErrorMessage(code);
 }

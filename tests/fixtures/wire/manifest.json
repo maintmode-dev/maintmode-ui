@@ -227,6 +227,15 @@
       "handEdited": true,
       "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx. Taken off the wire with curl against the local backend (maintmode @ 09abc73); the two tokens in the success body are masked, everything else verbatim. 403 seats_limit_exceeded and 409 conflict cannot be produced on the dev stand and are absent."
     },
+    "login-break-glass": {
+      "url": "http://localhost:9000/auth/api/v1/login/break-glass",
+      "method": "POST",
+      "status": "200 / 401",
+      "capturedAt": "2026-10-04",
+      "why": "/login/recovery signs the break-glass administrator in by password alone. The frontend requires both tokens on success and reads every refusal as one uniform answer, so both shapes are pinned from the wire.",
+      "handEdited": true,
+      "handEditedReason": "scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx. Taken off the wire against the local backend (maintmode @ 865234f) with the dev stand's break-glass password, used with the user's permission; the two tokens are masked, everything else verbatim."
+    },
     "integrations": {
       "url": "http://localhost:9000/maintmode/api/v1/integrations",
       "method": "GET",
