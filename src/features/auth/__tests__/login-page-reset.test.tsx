@@ -177,3 +177,39 @@ describe("what the user is told afterwards", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+
+/**
+ * With a provider on the page the password form sits behind "Continue with
+ * email". A reset lives inside that step, so resuming one skips the first
+ * screen, and leaving it lands back on the step rather than on the providers.
+ */
+describe("with a provider beside the password form", () => {
+  const GOOGLE: SignInMethod = { id: "google", type: "redirect", display_name: "Google" };
+
+  it("resumes the reset directly, without the 'Continue with email' click", () => {
+    renderLogin({ methods: [GOOGLE, PASSWORD_METHOD], resetInProgressEmail: "op@example.test" });
+
+    expect(screen.getByLabelText("Enter the 6-digit code")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue with email" })).toBeNull();
+  });
+
+  it("lands on the email step, not the providers, when the resumed reset is abandoned", async () => {
+    renderLogin({ methods: [GOOGLE, PASSWORD_METHOD], resetInProgressEmail: "op@example.test" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to sign in" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Forgot password?" })).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Back" })).toBeTruthy();
+  });
+
+  it("stays on the first screen when the page arrived with a provider error", () => {
+    renderLogin({
+      methods: [GOOGLE, PASSWORD_METHOD],
+      resetInProgressEmail: "op@example.test",
+      error: "consent_cancelled",
+    });
+
+    expect(screen.queryByLabelText("Enter the 6-digit code")).toBeNull();
+    expect(screen.getByRole("button", { name: "Continue with email" })).toBeTruthy();
+  });
+});

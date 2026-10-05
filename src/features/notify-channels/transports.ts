@@ -126,19 +126,19 @@ export function transportStatusCopy(status: NotifyTransportStatus): TransportSta
       return {
         badge: "Integration unreadable",
         detail: (t) =>
-          `The ${t} integration is enabled but its credentials can't be read (a broken or rotated encryption key). Notifications will fail to send. Re-check the integration secret in Settings → Integrations.`,
+          `The ${t} integration is enabled but its credentials can't be read (a broken or rotated encryption key). Notifications will fail to send. Re-check the integration secret under Integrations (admins only).`,
       };
     case "disabled":
       return {
         badge: "Integration disabled",
         detail: (t) =>
-          `The ${t} integration is disabled. Notifications to this channel are silently dropped. Enable the integration in Settings → Integrations.`,
+          `The ${t} integration is disabled. Notifications to this channel are silently dropped. Enable the integration under Integrations (admins only).`,
       };
     case "not_configured":
       return {
         badge: "Integration not configured",
         detail: (t) =>
-          `No ${t} integration is configured. Notifications to this channel will not be delivered. Configure the integration in Settings → Integrations.`,
+          `No ${t} integration is configured. Notifications to this channel will not be delivered. Configure the integration under Integrations (admins only).`,
       };
     default:
       return {

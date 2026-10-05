@@ -6,6 +6,7 @@ import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
 const DANCE_CODE_EXCHANGE_PATH = "/api/v1/login/oauth/code/exchange";
 const ACCEPT_INVITATION_PATH = "/api/v1/users/invitations/accept";
+const ACCEPT_INVITATION_PASSWORD_PATH = "/api/v1/users/invitations/accept/password";
 const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
 const LOGOUT_ALL_PATH = "/api/v1/logout/all";
@@ -13,6 +14,7 @@ const ME_PATH = "/api/v1/me";
 const OTP_REQUEST_PATH = "/api/v1/login/otp/request";
 const OTP_VERIFY_PATH = "/api/v1/login/otp/verify";
 const PASSWORD_LOGIN_PATH = "/api/v1/login/password";
+const BREAK_GLASS_LOGIN_PATH = "/api/v1/login/break-glass";
 const PASSWORD_RESET_REQUEST_PATH = "/api/v1/password/reset/request";
 const PASSWORD_RESET_CONFIRM_PATH = "/api/v1/password/reset/confirm";
 const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
@@ -89,6 +91,31 @@ export async function acceptInvitation(args: {
 }
 
 /**
+ * Accepts an invitation by setting a password — no identity provider involved.
+ *
+ * Public and unauthenticated: the invitation token is the credential. The
+ * backend creates the user with the invited address, sets the password, claims
+ * the invitation and grants its roles in one transaction, then issues a token
+ * pair shaped like password sign-in's.
+ *
+ * Unlike `loginWithPassword`, its failures are distinct (`invalid`,
+ * `method_disabled`, `seats_limit_exceeded`, `conflict`, a policy 400, 429) and
+ * the caller maps them; they are carried on `BackendAuthError` untouched.
+ */
+export async function acceptInvitationWithPassword(args: {
+  invitationToken: string;
+  password: string;
+}): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(
+    ACCEPT_INVITATION_PASSWORD_PATH,
+    { invitation_token: args.invitationToken, password: args.password },
+    // BOTH tokens, as for every call that mints a session: a pair with no
+    // refresh token signs the person in and dies at the first rotation.
+    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
+  );
+}
+
+/**
  * Step one of the email OTP flow: ask the backend to mail a code (RUK-288).
  *
  * The backend answers 202 for EVERY outcome — unknown address, blocked account,
@@ -151,6 +178,27 @@ export async function loginWithPassword(args: {
     PASSWORD_LOGIN_PATH,
     { email: args.email, password: args.password },
     (parsed) => Boolean(parsed?.access_token),
+  );
+}
+
+/**
+ * Break-glass sign-in: the server's emergency administrator, by PASSWORD ALONE.
+ *
+ * Its own endpoint since the backend split it from `/login/password`, which now
+ * serves personal passwords only and answers a break-glass password with 401.
+ * There is no email: the account is a fixed service identity
+ * (`break-glass@maintmode.invalid`), so asking for an address would only add a
+ * way to get it wrong.
+ *
+ * Every refusal — wrong password, break-glass not configured, the account
+ * blocked, a malformed body — is one uniform 401 by contract, so that from
+ * outside this endpoint cannot tell an instance with an emergency entrance from
+ * one without. Kept that way here.
+ */
+export async function loginWithBreakGlass(password: string): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(BREAK_GLASS_LOGIN_PATH, { password }, (parsed) =>
+    // BOTH tokens, as for every call that mints a session.
+    Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 

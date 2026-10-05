@@ -49,6 +49,8 @@ describe("public pages render without a QueryClientProvider", () => {
             preview={{ status }}
             acceptAction={async () => {}}
             providers={[{ id: "google", type: "redirect", display_name: "Google" }]}
+            passwordOffered
+            passwordAcceptAction={async () => ({})}
           />,
         ),
       ).not.toThrow();

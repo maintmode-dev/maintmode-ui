@@ -20,6 +20,7 @@ import { formatUtc } from "@/shared/ui/lib/format";
 
 import {
   CONFIG_FIELD_UNSET,
+  integrationLabel,
   kindMeta,
   type ConfigFieldMeta,
   type IntegrationKindMeta,
@@ -36,6 +37,7 @@ import {
   validateUrlFields,
   type FieldVerdict,
 } from "./dialog-form";
+import { ProvisionedIntegrationView } from "./provisioned-integration-view";
 import { buildTestSendBody, shouldWarnAboutMissingSecret } from "./test-send-body";
 import {
   useCreateIntegration,
@@ -47,8 +49,9 @@ import {
  * Create ↔ edit dialog for one integration system (Grafana-OAuth-style form,
  * frozen in the integrations-settings design snapshot).
  *
- * Secrets are write-only: a stored secret renders as a locked "Configured"
- * plate with Replace (and Clear where the secret is optional). Untouched
+ * Secrets are write-only: a stored secret renders as a locked "Stored" plate —
+ * not "Configured", which is the sign-in health label shown in the same
+ * dialog — with Replace (and Clear where the secret is optional). Untouched
  * secrets never enter the payload — see `secret-patch.ts` for the intent map.
  */
 export function IntegrationDialog({
@@ -75,12 +78,18 @@ export function IntegrationDialog({
 }) {
   const meta = name ? kindMeta(name) : null;
   const isEdit = integration !== null;
+  // Branches BEFORE the form body mounts, so a config-declared row never
+  // instantiates the save/test mutations at all. Re-evaluated on every render:
+  // when a 409 race refetches the list and the row comes back provisioned, an
+  // open edit dialog turns into the view, whose notice is the explanation.
+  const provisioned = integration?.provisioned === true;
+  const verb = provisioned ? "View" : isEdit ? "Configure" : "Set up";
 
   return (
     <CreateDialog
       open={open}
       onOpenChange={onOpenChange}
-      title={meta ? (isEdit ? `Configure ${meta.label}` : `Set up ${meta.label}`) : ""}
+      title={meta ? `${verb} ${integrationLabel(meta, integration)}` : ""}
       description={
         meta
           ? isEdit
@@ -94,7 +103,14 @@ export function IntegrationDialog({
       {/* The body unmounts the moment the dialog closes (before the exit
           animation finishes) — deliberate: typed secret drafts must be
           destroyed on close, and that outweighs the brief empty flash. */}
-      {name && meta ? (
+      {name && meta && provisioned ? (
+        <ProvisionedIntegrationView
+          key={`${kind}/${name}-view`}
+          meta={meta}
+          integration={integration}
+          onClose={() => onOpenChange(false)}
+        />
+      ) : name && meta ? (
         <IntegrationDialogBody
           key={`${kind}/${name}-${integration?.updated_at ?? "create"}`}
           kind={kind}
@@ -652,7 +668,7 @@ function SecretField({
         </FieldLabel>
         <div className="flex items-center gap-3 rounded-sm border border-border bg-bg-elev-2 px-3 py-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--status-completed-border,var(--border))] bg-[var(--status-completed-bg,transparent)] px-2 py-0.5 text-xs font-semibold text-[var(--status-completed-fg)]">
-            <Check className="size-3" aria-hidden="true" /> Configured
+            <Check className="size-3" aria-hidden="true" /> Stored
           </span>
           <span className="flex-1 min-w-0 text-xs text-fg-dim">
             Value is stored encrypted and can&apos;t be viewed.

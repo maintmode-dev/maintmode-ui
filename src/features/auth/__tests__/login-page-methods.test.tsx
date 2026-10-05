@@ -185,29 +185,124 @@ describe("BUG-4 — every advertised provider is a working button", () => {
   });
 });
 
-describe("UX-1 — providers and the email forms are separated", () => {
-  it("puts an 'or' divider between providers and a form", () => {
-    render(<LoginPage methods={[GOOGLE, PASSWORD]} {...actions} />);
+/**
+ * The Linear-style entry (supersedes UX-1's divider): providers and "Continue
+ * with email" on the first screen, the email forms one click behind it. Still
+ * one thing at a time — the providers and a form are never drawn together.
+ */
+describe("the 'Continue with email' step", () => {
+  const continueWithEmail = () => screen.getByRole("button", { name: "Continue with email" });
 
-    expect(screen.getByRole("separator", { name: "or" })).toBeDefined();
-  });
-
-  it("draws the providers above the form", () => {
+  it("starts on the providers and 'Continue with email', with no form mounted", () => {
     render(<LoginPage methods={[PASSWORD, GOOGLE]} {...actions} />);
 
-    const provider = providerButton("Google");
-    const form = document.querySelector('[data-method-type="password"]');
-    // Backend order puts the password first; the layout does not follow it.
-    expect(provider.compareDocumentPosition(form as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(providerButton("Google")).toBeDefined();
+    expect(continueWithEmail()).toBeDefined();
+    // Not hidden — absent. A password field kept in the DOM behind the step
+    // would be autofilled by password managers on a screen nobody can see.
+    expect(document.querySelector('[data-method-type="password"]')).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
   });
 
-  it("draws no divider when there is nothing on one side of it", () => {
-    render(<LoginPage methods={[PASSWORD]} {...actions} />);
-    expect(screen.queryByRole("separator")).toBeNull();
-    cleanup();
+  it("draws the providers before 'Continue with email', whatever the backend order", () => {
+    render(<LoginPage methods={[PASSWORD, GOOGLE]} {...actions} />);
 
+    const order = providerButton("Google").compareDocumentPosition(continueWithEmail());
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("fills only the first provider; the other ways in are outline", () => {
+    render(<LoginPage methods={[CUSTOM, GOOGLE, PASSWORD]} {...actions} />);
+
+    expect(providerButton("Corporate SSO").getAttribute("data-variant")).toBe("default");
+    expect(providerButton("Google").getAttribute("data-variant")).toBe("outline");
+    expect(continueWithEmail().getAttribute("data-variant")).toBe("outline");
+  });
+
+  it("opens the form on click, hides the providers, and focuses the email field", () => {
+    render(<LoginPage methods={[GOOGLE, PASSWORD]} {...actions} />);
+
+    fireEvent.click(continueWithEmail());
+
+    expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
+    expect(screen.queryByRole("button", { name: /Continue with/ })).toBeNull();
+    const email = screen.getByLabelText("Email");
+    expect(document.activeElement).toBe(email);
+    // What password managers key on — the step must not lose it.
+    expect(email.getAttribute("autocomplete")).toBe("username");
+    expect(screen.getByLabelText("Password").getAttribute("autocomplete")).toBe("current-password");
+  });
+
+  it("opens the emailed-code form when that is what the backend lists first", () => {
+    render(<LoginPage methods={[GOOGLE, OTP, PASSWORD]} {...actions} />);
+
+    fireEvent.click(continueWithEmail());
+
+    expect(document.querySelector('[data-method-type="code"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Sign in with a password instead" })).toBeDefined();
+  });
+
+  it("goes back to the first screen and returns focus to 'Continue with email'", () => {
+    render(<LoginPage methods={[GOOGLE, PASSWORD]} {...actions} />);
+    fireEvent.click(continueWithEmail());
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    expect(document.querySelector('[data-method-type="password"]')).toBeNull();
+    expect(providerButton("Google")).toBeDefined();
+    expect(document.activeElement).toBe(continueWithEmail());
+  });
+
+  it("does not focus anything on first render", () => {
+    render(<LoginPage methods={[PASSWORD]} {...actions} />);
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("skips the step when there is no provider — the form is the page", () => {
+    render(<LoginPage methods={[PASSWORD]} {...actions} />);
+
+    expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Continue with email" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back" })).toBeNull();
+  });
+
+  it("offers no step when there is no email form, only providers", () => {
     render(<LoginPage methods={[GOOGLE]} {...actions} />);
-    expect(screen.queryByRole("separator")).toBeNull();
+
+    expect(providerButton("Google")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Continue with email" })).toBeNull();
+  });
+
+  it.each(["invalid_credentials", "otp_verification_failed", "password_reset_failed"])(
+    "opens on the email step for a form error (%s)",
+    (code) => {
+      render(<LoginPage methods={[GOOGLE, PASSWORD]} error={code} {...actions} />);
+
+      expect(screen.getByRole("alert")).toBeDefined();
+      expect(document.querySelector('[data-method-type="password"]')).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Back" })).toBeDefined();
+    },
+  );
+
+  it.each(["consent_cancelled", "signup_disabled", "AccessDenied", "email_mismatch", "CredentialsSignin"])(
+    "stays on the first screen for a provider or ambiguous error (%s)",
+    (code) => {
+      render(<LoginPage methods={[GOOGLE, PASSWORD]} error={code} {...actions} />);
+
+      expect(screen.getByRole("alert")).toBeDefined();
+      expect(providerButton("Google")).toBeDefined();
+      expect(document.querySelector('[data-method-type="password"]')).toBeNull();
+    },
+  );
+
+  it("keeps an unsupported method on the first screen, beside the other ways in", () => {
+    const future: SignInMethod = { id: "passkey", type: "unsupported", display_name: "Passkey" };
+    render(<LoginPage methods={[GOOGLE, PASSWORD, future]} {...actions} />);
+
+    expect(screen.getByText("Passkey").closest("button")?.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(continueWithEmail());
+    expect(screen.queryByText("Passkey")).toBeNull();
   });
 });
 
@@ -253,13 +348,18 @@ describe("AC-11 — a broken auth service must not lock everyone out", () => {
   it("offers only Google then — a list it could not read names no other provider", () => {
     render(<LoginPage methods={undefined} {...actions} />);
 
-    expect(screen.getAllByText(/^Continue with/)).toHaveLength(1);
+    expect(document.querySelectorAll("[data-provider-id]")).toHaveLength(1);
+    expect(document.querySelector('[data-provider-id="google"]')).not.toBeNull();
   });
 
   it("offers the break-glass password form when the providers fetch failed", () => {
     render(<LoginPage methods={undefined} {...actions} />);
 
+    // Behind the email step, like any password form beside a provider — but
+    // there, one click away.
+    fireEvent.click(screen.getByRole("button", { name: "Continue with email" }));
     expect(screen.getByText("Password")).toBeDefined();
+    expect(document.querySelector('input[type="password"]')).not.toBeNull();
   });
 
   it("says something is degraded, without naming a cause a user can't act on", () => {

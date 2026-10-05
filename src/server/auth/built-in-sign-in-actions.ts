@@ -1,11 +1,15 @@
 "use server";
 
+import { redirect } from "next/navigation";
+
+import { isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
 import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
 import { bindWithinReissueCooldown, putBindingToSleep, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
 import { safeNext } from "@/server/auth/safe-next";
+import { readActiveSession } from "@/server/auth/session-token";
 
 /**
  * Server actions behind the built-in sign-in methods (RUK-288).
@@ -145,4 +149,103 @@ export async function credentialsSignInAction(
  */
 export async function changeEmailAction(): Promise<void> {
   await putBindingToSleep("sign-in");
+}
+
+/**
+ * The codes the accept-with-password form knows how to word. Anything else
+ * reaching the catch below — a NextAuth code this path never produces — reads as
+ * the generic failure rather than leaking an unworded string to the client.
+ */
+const INVITE_ACCEPT_ERRORS: ReadonlySet<string> = new Set([
+  AUTH_ERROR_CODES.invitationInvalid,
+  AUTH_ERROR_CODES.passwordPolicyViolation,
+  AUTH_ERROR_CODES.signInMethodDisabled,
+  AUTH_ERROR_CODES.seatsLimitExceeded,
+  AUTH_ERROR_CODES.accountExists,
+  AUTH_ERROR_CODES.inviteRateLimited,
+  AUTH_ERROR_CODES.identityLookupFailed,
+]);
+
+/**
+ * Accepts an invitation by setting a password, and signs the new user in.
+ *
+ * Refuses outright while a session is live, like `startOAuthDanceAction`:
+ * accepting means BECOMING the invited person, and the backend claims the
+ * invitation in the same transaction that creates the account — so a click from
+ * someone already signed in (an admin checking the link) would spend it on the
+ * wrong browser. `readActiveSession()` because an action may write the cookie
+ * its refresh rotates; the page uses `auth()` for the same reason it does there.
+ *
+ * Exported, so callable by action id with any token — which grants nothing the
+ * public backend endpoint does not: the token is the credential either way. The
+ * page closes its own token over a wrapper so its form cannot send another.
+ *
+ * The policy check is a UX guard ahead of the backend's, which re-checks.
+ */
+export async function acceptInvitationWithPasswordAction(input: {
+  invitationToken: string;
+  password: string;
+}): Promise<SignInActionResult> {
+  if (await readActiveSession()) {
+    redirect("/");
+  }
+  if (!input.invitationToken) {
+    return { error: AUTH_ERROR_CODES.invitationInvalid };
+  }
+  if (!isPasswordWithinPolicy(input.password)) {
+    return { error: AUTH_ERROR_CODES.passwordPolicyViolation };
+  }
+
+  try {
+    await signIn("backend-login", {
+      kind: "invite",
+      invitation: input.invitationToken,
+      password: input.password,
+      redirectTo: "/",
+    });
+    return {};
+  } catch (error) {
+    // Success arrives here too: `signIn` redirects by throwing NEXT_REDIRECT.
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    const code =
+      typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
+    return { error: INVITE_ACCEPT_ERRORS.has(code) ? code : AUTH_ERROR_CODES.inviteAcceptFailed };
+  }
+}
+
+/**
+ * Break-glass sign-in from `/login/recovery`: the password alone.
+ *
+ * Its own action rather than another `credentialsSignInAction` kind because it
+ * takes neither an email nor a destination — the emergency account is a fixed
+ * service identity, and the page is reached by typing its address, never by a
+ * redirect with somewhere to return to. Lands on `/`.
+ *
+ * Every failure is the uniform `invalid_credentials`, matching the backend's
+ * single 401: telling "wrong password" from "no break-glass on this instance"
+ * would answer, from outside, whether an emergency entrance exists.
+ */
+export async function breakGlassSignInAction(password: string): Promise<SignInActionResult> {
+  if (!password) {
+    return { error: AUTH_ERROR_CODES.invalidCredentials };
+  }
+  try {
+    await signIn("backend-login", { kind: "break-glass", password, redirectTo: "/" });
+    return {};
+  } catch (error) {
+    // Success arrives here too: `signIn` redirects by throwing NEXT_REDIRECT.
+    if (isNextRedirect(error)) {
+      throw error;
+    }
+    // The password WAS accepted when only the profile failed to load — saying
+    // it was wrong would send the administrator after the wrong problem.
+    const code =
+      typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
+    if (code === AUTH_ERROR_CODES.identityLookupFailed) {
+      return { error: code };
+    }
+    return { error: AUTH_ERROR_CODES.invalidCredentials };
+  }
 }

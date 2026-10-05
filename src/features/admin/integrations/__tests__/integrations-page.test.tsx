@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -38,6 +38,7 @@ const CONFIGURED: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: { bot_token: true },
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   },
@@ -48,6 +49,7 @@ const CONFIGURED: Integration[] = [
     enabled: false,
     config: {},
     secrets_set: { password: true },
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   },
@@ -70,6 +72,7 @@ const LOGIN_NAMED_LIKE_A_TRANSPORT: Integration = {
   config: {},
   secrets_set: { client_secret: true },
   health: "ok",
+  provisioned: false,
   created_at: "2026-07-01T10:00:00Z",
   updated_at: "2026-07-01T10:00:00Z",
 };
@@ -177,13 +180,10 @@ describe("IntegrationsPage — what the administrator actually sees", () => {
 });
 
 /**
- * The sign-in half, which this screen renders for the first time.
- *
- * The transport cases above were written for the incident where configured
- * rows showed "Set up". Nothing asserted the same thing about login rows until
- * now — and pointing the login section at the wrong category left every test
- * green while every configured provider rendered as unconfigured. Same defect,
- * same screen, one section over.
+ * The sign-in providers moved to Authentication (`/admin/authentication`). This screen still
+ * reads the whole registry — one query serves both pages — so a login row is
+ * in the data it holds, and must not leak onto it: not as a section, and not
+ * as a transport of the same name (covered above).
  */
 const GOOGLE_CONFIGURED: Integration = {
   id: "i-google",
@@ -193,103 +193,84 @@ const GOOGLE_CONFIGURED: Integration = {
   config: { issuer_url: "https://accounts.google.com" },
   secrets_set: { client_secret: true },
   health: "ok",
+  provisioned: false,
   created_at: "2026-07-01T10:00:00Z",
   updated_at: "2026-07-02T14:21:00Z",
 };
 
-describe("IntegrationsPage — the sign-in providers section", () => {
-  it("shows a configured provider as configured, not as 'Set up'", async () => {
+describe("IntegrationsPage — sign-in providers are no longer here", () => {
+  it("renders transports only, even with login rows in the registry", async () => {
     renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
-    await screen.findByText("Google");
+    await screen.findByText("Slack");
 
-    expect(within(rowFor("Google")).queryByText("Set up")).toBeNull();
-    expect(within(rowFor("Google")).getByText("Enabled")).toBeTruthy();
+    expect(screen.queryByText("Google")).toBeNull();
+    expect(screen.queryByText("Custom OIDC")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /sign-in providers/i })).toBeNull();
+    expect(screen.getAllByRole("switch")).toHaveLength(2);
   });
 
-  it("still lists a provider the backend has no row for", async () => {
-    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
-    await screen.findByText("Google");
+  it("points to where they moved, for one release", async () => {
+    renderPage(CONFIGURED);
+    await screen.findByText("Slack");
 
-    // `custom` is unconfigured here, and must be offered rather than hidden —
-    // a registry name with no row is "not set up yet", not "does not exist".
-    expect(within(rowFor("Custom OIDC")).getByText("Set up")).toBeTruthy();
+    const link = screen.getByRole("link", { name: /sign-in providers moved to authentication/i });
+    expect(link.getAttribute("href")).toBe("/admin/authentication#providers");
   });
 
-  /**
-   * Health is reported for login rows only. Rendering it off truthiness rather
-   * than off the category would make "transports show nothing" an accident of
-   * the backend's empty string — and would hide the badge on a login row whose
-   * state the backend could not read, which is the case that matters most.
-   */
-  it("shows health on a login row and never on a transport", async () => {
-    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
-    await screen.findByText("Google");
+  it("describes itself as notification transports", async () => {
+    renderPage([]);
 
-    expect(within(rowFor("Google")).getByText("Active")).toBeTruthy();
-    expect(within(rowFor("Slack")).queryByText("Active")).toBeNull();
-    expect(within(rowFor("Slack")).queryByText(/unknown/i)).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Notification transports" })).toBeTruthy();
+    expect(screen.getByText(/how MaintMode delivers messages/i)).toBeTruthy();
+  });
+});
+
+/**
+ * Backend `87da097`: a row declared in the server's config file refuses every
+ * admin write with 409. The row must say so before the admin tries — and it
+ * must say so by the FLAG, for any category. The backend decides which kinds can
+ * be provisioned; the notify case below is what fails if the gate is ever
+ * narrowed to `kind === "login"`. The login cases live with the Authentication
+ * page, which is where login rows are drawn now.
+ */
+describe("IntegrationsPage — rows declared in the server config file", () => {
+  const PROVISIONED_SLACK: Integration = { ...CONFIGURED[0], provisioned: true };
+
+  /** View is the only way into a provisioned row; the dialog tests render it directly. */
+  it("opens the read-only view from a provisioned transport's View button", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
+
+    fireEvent.click(within(rowFor("Slack")).getByText("View"));
+
+    expect(await screen.findByText("View Slack")).toBeTruthy();
+    expect(screen.getByRole("note").textContent).toMatch(/server config file/i);
   });
 
-  /**
-   * UX-8: a turned-off provider reports `health: "disabled"`, which rendered as
-   * "Disabled · Turned off" — the same fact twice. The badge stays for health
-   * that is news, including "Turned off" on a row that claims to be enabled.
-   */
-  it("does not repeat 'Turned off' beside 'Disabled'", async () => {
-    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, enabled: false, health: "disabled" }]);
-    await screen.findByText("Google");
+  it("marks a provisioned transport read-only too — the flag decides, not the category", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
 
-    expect(within(rowFor("Google")).getByText("Disabled")).toBeTruthy();
-    expect(within(rowFor("Google")).queryByText("Turned off")).toBeNull();
+    const slack = rowFor("Slack");
+    expect(within(slack).getByText("View")).toBeTruthy();
+    expect(within(slack).queryByRole("button", { name: "Delete Slack" })).toBeNull();
+    expect(within(slack).getByRole("switch", { name: "Slack enabled" })).toHaveProperty("disabled", true);
   });
 
-  it("still says 'Turned off' when the row claims to be enabled", async () => {
-    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, enabled: true, health: "disabled" }]);
-    await screen.findByText("Google");
+  it("leaves a row created through the UI editable", async () => {
+    renderPage([PROVISIONED_SLACK, CONFIGURED[1]]);
+    await screen.findByText("Managed by config");
 
-    expect(within(rowFor("Google")).getByText("Turned off")).toBeTruthy();
+    const email = rowFor("Email");
+    expect(within(email).queryByText("Managed by config")).toBeNull();
+    expect(within(email).getByText("Configure")).toBeTruthy();
+    expect(within(email).getByRole("button", { name: "Delete Email" })).toBeTruthy();
+    expect(within(email).getByRole("switch", { name: "Email enabled" })).toHaveProperty("disabled", false);
   });
 
-  it("still reports an unreadable secret on a disabled row", async () => {
-    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, enabled: false, health: "unreadable" }]);
-    await screen.findByText("Google");
+  it("tells the admin where config-declared transports are changed", async () => {
+    renderPage([]);
 
-    expect(within(rowFor("Google")).getByText("Secret unreadable")).toBeTruthy();
-  });
-
-  it("shows a login row with no health as unknown, never as active", async () => {
-    renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, health: undefined }]);
-    await screen.findByText("Google");
-
-    expect(within(rowFor("Google")).getByText(/unknown/i)).toBeTruthy();
-    expect(within(rowFor("Google")).queryByText("Active")).toBeNull();
-  });
-
-  /**
-   * A row this build has no descriptor for must not reach the screen — but it
-   * must be announced, because a row that vanishes in silence is the shape of
-   * the incident this whole feature already had once.
-   */
-  it("drops an unknown login provider and says so", async () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      renderPage([...CONFIGURED, { ...GOOGLE_CONFIGURED, id: "i-gl", name: "gitlab" }]);
-      await screen.findByText("Google");
-
-      expect(screen.queryByText("gitlab")).toBeNull();
-      expect(spy).toHaveBeenCalled();
-      expect(JSON.stringify(spy.mock.calls)).toContain("gitlab");
-    } finally {
-      spy.mockRestore();
-    }
-  });
-
-  /** Only a configured row can be deleted — there is nothing to remove otherwise. */
-  it("offers delete on a configured row and not on an empty one", async () => {
-    renderPage([...CONFIGURED, GOOGLE_CONFIGURED]);
-    await screen.findByText("Google");
-
-    expect(within(rowFor("Google")).getByRole("button", { name: /Delete/ })).toBeTruthy();
-    expect(within(rowFor("Custom OIDC")).queryByRole("button", { name: /Delete/ })).toBeNull();
+    expect(await screen.findByText(/declared in the server config file/i)).toBeTruthy();
   });
 });

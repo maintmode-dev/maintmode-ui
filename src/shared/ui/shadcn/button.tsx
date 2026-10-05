@@ -9,7 +9,10 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        // Hover/pressed from our tokens rather than shadcn's `bg-primary/90`:
+        // 90% over the page LIGHTENED the light-theme fill to 4.20:1 with white.
+        default:
+          "bg-primary text-primary-foreground hover:bg-[var(--accent-solid-hover)] active:bg-[var(--accent-solid-pressed)]",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         outline:

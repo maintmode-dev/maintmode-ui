@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { Role } from "@/domain/auth/permissions";
@@ -54,23 +54,10 @@ describe("AppHeader — approvals nav item", () => {
   });
 });
 
-describe("AppHeader — admin nav items still gate on admin", () => {
-  it("shows admin links to an admin", () => {
+describe("AppHeader — work on the left, Administration on the right", () => {
+  it("keeps only the everyday screens in the main nav, for an admin too", () => {
     renderHeaderAs(["admin"]);
-    const labels = navLabels();
-    expect(labels).toContain("Users");
-    expect(labels).toContain("Integrations");
-    expect(labels).toContain("Audit log");
-  });
-
-  it("hides admin links from a reviewer", () => {
-    // Regression guard for the roles refactor: a reviewer gains Approvals but
-    // must not inherit the admin section along with it.
-    renderHeaderAs(["reviewer"]);
-    const labels = navLabels();
-    expect(labels).not.toContain("Users");
-    expect(labels).not.toContain("Integrations");
-    expect(labels).not.toContain("Audit log");
+    expect(navLabels()).toEqual(["Calendar", "Approvals", "Resources", "Channels"]);
   });
 
   it("always shows the shared links", () => {
@@ -79,5 +66,24 @@ describe("AppHeader — admin nav items still gate on admin", () => {
     expect(labels).toContain("Calendar");
     expect(labels).toContain("Resources");
     expect(labels).toContain("Channels");
+  });
+
+  it("offers Administration to an admin, outside the main nav, landing on Users", () => {
+    renderHeaderAs(["admin"]);
+    const link = screen.getByRole("link", { name: "Administration" });
+    expect(link.getAttribute("href")).toBe("/admin/users");
+    expect(link.closest("nav")).toBeNull();
+  });
+
+  it.each([["reviewer"], ["editor"], ["guest"]] as Role[][])("offers no Administration to %s", (role) => {
+    // Regression guard for the roles refactor: a reviewer gains Approvals but
+    // must not inherit the admin section along with it.
+    renderHeaderAs([role]);
+    expect(screen.queryByRole("link", { name: "Administration" })).toBeNull();
+  });
+
+  it("offers no Administration before the user is known", () => {
+    render(<AppHeader user={null} />);
+    expect(screen.queryByRole("link", { name: "Administration" })).toBeNull();
   });
 });

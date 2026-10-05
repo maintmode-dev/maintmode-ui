@@ -5,6 +5,8 @@ import { AlertTriangle, Mail, RefreshCw } from "lucide-react";
 
 import { Button } from "@/shared/ui/shadcn/button";
 import { Stack } from "@/shared/ui/domain/stack";
+import { AuthScreen, ProviderButton } from "@/features/auth/auth-screen";
+import { InvitePasswordForm } from "@/features/auth/invite-password-form";
 
 import type { SignInMethod } from "@/domain/auth/sign-in-method";
 
@@ -38,11 +40,21 @@ export interface AcceptInvitePageProps {
    * cannot be resolved here — this component is `"use client"` and may not
    * import from `src/server/**`.
    *
-   * Unlike `/login` there is no break-glass to fall back to: an invitation is
-   * only acceptable through the dance, so a page with no provider has nothing
-   * else to offer.
+   * A page with no provider can still offer a password (`passwordOffered`).
    */
   providers: SignInMethod[];
+  /**
+   * Whether the invitation can be accepted by setting a password: the backend
+   * lists password sign-in, or its list could not be read (the backend then
+   * decides — `method_disabled` is worded on the form). Resolved on the server
+   * for the same reason as `providers`.
+   */
+  passwordOffered: boolean;
+  /**
+   * Server action that accepts the invitation with a password and signs the new
+   * user in. The token is closed over on the server, like `acceptAction`'s.
+   */
+  passwordAcceptAction: (password: string) => Promise<{ error?: string }>;
   /**
    * The signed-in visitor's own email, when there is a session. Not the invited
    * address — the frozen tone forbids surfacing that, and this is a fact about
@@ -67,27 +79,34 @@ export function AcceptInvitePage({
   acceptAction,
   signedInAs,
   providers,
+  passwordOffered,
+  passwordAcceptAction,
 }: AcceptInvitePageProps) {
   return (
-    <main className="min-h-screen grid place-items-center p-6 bg-bg">
-      {/* `min-w-0`, as on /login: a grid item cannot otherwise shrink below its
-          widest nowrap button. */}
-      <div className="w-full min-w-0 max-w-[480px] bg-bg-elev-1 border border-border-subtle rounded-lg shadow-[var(--shadow-md)] p-8 space-y-5">
-        {preview.status === "valid" ? (
-          <ValidInvite acceptAction={acceptAction} signedInAs={signedInAs} providers={providers} />
-        ) : (
-          <InvalidInvite status={preview.status} token={token} />
-        )}
-      </div>
-    </main>
+    // Same bare column as /login (`AuthScreen`): no card, so the two public
+    // screens a newcomer passes through in a row read as one product.
+    <AuthScreen>
+      {preview.status === "valid" ? (
+        <ValidInvite
+          acceptAction={acceptAction}
+          signedInAs={signedInAs}
+          providers={providers}
+          passwordOffered={passwordOffered}
+          passwordAcceptAction={passwordAcceptAction}
+        />
+      ) : (
+        <InvalidInvite status={preview.status} token={token} />
+      )}
+    </AuthScreen>
   );
 }
 
-function ValidInvite({
-  acceptAction,
-  signedInAs,
-  providers,
-}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs" | "providers">) {
+type CallToActionProps = Pick<
+  AcceptInvitePageProps,
+  "acceptAction" | "signedInAs" | "providers" | "passwordOffered" | "passwordAcceptAction"
+>;
+
+function ValidInvite(props: CallToActionProps) {
   // Each button's label and the provider its action starts come from the SAME
   // list entry, so they cannot disagree.
   //
@@ -108,23 +127,29 @@ function ValidInvite({
         </span>
         <h1 className="h2">You&apos;ve been invited</h1>
       </header>
-      <p className="body-sm">Sign in with the email this invitation was sent to.</p>
-      <InviteCallToAction acceptAction={acceptAction} signedInAs={signedInAs} providers={providers} />
+      <p className="body-sm">
+        {props.providers.length > 0
+          ? "Sign in with the email this invitation was sent to."
+          : "Set a password to accept this invitation."}
+      </p>
+      <InviteCallToAction {...props} />
     </div>
   );
 }
 
 /**
- * The one interactive slot on a valid invite: the accept button, or the reason
- * there isn't one. Three mutually exclusive states, read top to bottom in
- * order of precedence — a session blocks the dance outright, and a missing
- * provider blocks it even without one.
+ * The one interactive slot on a valid invite: the ways to accept it, or the
+ * reason there are none. Read top to bottom in order of precedence — a session
+ * blocks accepting outright, and with neither a provider nor a password there
+ * is nothing to offer.
  */
 function InviteCallToAction({
   acceptAction,
   signedInAs,
   providers,
-}: Pick<AcceptInvitePageProps, "acceptAction" | "signedInAs" | "providers">) {
+  passwordOffered,
+  passwordAcceptAction,
+}: CallToActionProps) {
   // Signing in here means BECOMING the invited person, so an existing session
   // has to go first — and the stake is higher than a wrong identity. The
   // backend claims the invitation inside the dance, before this app sees the
@@ -149,7 +174,7 @@ function InviteCallToAction({
   // state, so the invitation is untouched and the link still works. Shown an
   // explanation with no button, an invitee would otherwise reasonably conclude
   // they had just spent it.
-  if (providers.length === 0) {
+  if (providers.length === 0 && !passwordOffered) {
     return (
       <p role="status" className="caption">
         Sign-in isn&apos;t set up on this instance yet, so this invitation can&apos;t be accepted right now.
@@ -159,22 +184,30 @@ function InviteCallToAction({
   }
 
   return (
-    <div className="flex w-full flex-col gap-2.5">
-      {providers.map((p) => {
-        const label = `Continue with ${p.display_name}`;
-        return (
-          <form key={p.id} action={acceptAction.bind(null, p.id)} className="w-full">
-            <Button
-              type="submit"
-              className="h-auto min-h-9 w-full min-w-0 py-2"
-              title={label}
-              data-provider-id={p.id}
-            >
-              <span className="min-w-0 whitespace-normal break-words line-clamp-2">{label}</span>
-            </Button>
-          </form>
-        );
-      })}
+    <div className="flex w-full flex-col gap-4">
+      {providers.length > 0 ? (
+        // The first provider the backend lists is filled, the rest are outline:
+        // one primary action, as on /login, rather than a stack of equally loud
+        // buttons.
+        <div className="flex w-full flex-col gap-2">
+          {providers.map((p, i) => (
+            <ProviderButton
+              key={p.id}
+              provider={p}
+              action={acceptAction.bind(null, p.id)}
+              primary={i === 0}
+            />
+          ))}
+        </div>
+      ) : null}
+      {providers.length > 0 && passwordOffered ? (
+        <div className="flex items-center gap-3 text-xs text-fg-muted" aria-hidden="true">
+          <span className="h-px flex-1 bg-border-subtle" />
+          or
+          <span className="h-px flex-1 bg-border-subtle" />
+        </div>
+      ) : null}
+      {passwordOffered ? <InvitePasswordForm submit={passwordAcceptAction} /> : null}
     </div>
   );
 }

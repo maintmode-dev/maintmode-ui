@@ -6,21 +6,56 @@
       "name": "google",
       "enabled": true,
       "config": {
-        "client_id": "fixture-client-id.apps.googleusercontent.com",
+        "client_id": "local-mock.apps.googleusercontent.com",
         "issuer_url": "https://accounts.google.com",
         "display_name": "Google",
-        "redirect_uri": "https://maintmode.example.com/auth/callback"
+        "redirect_uri": "http://localhost:8000/api/v1/login/oauth/google/callback"
       },
       "health": "ok",
-      "secrets_set": {
-        "client_secret": true
-      },
+      "secrets_set": {},
+      "provisioned": true,
       "created_at": "<ts-1>",
-      "created_by": {
-        "id": "<uuid-2>",
-        "display_name": "User Name[<uuid-3>]",
-        "email": "<email-1>"
+      "created_by": null,
+      "updated_at": "<ts-1>",
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-2>",
+      "kind": "login",
+      "name": "github",
+      "enabled": true,
+      "config": {
+        "client_id": "local-mock-github-client",
+        "token_url": "<redacted-token_url>",
+        "api_base_url": "https://api.github.com",
+        "display_name": "GitHub",
+        "redirect_uri": "http://localhost:8000/api/v1/login/oauth/github/callback",
+        "authorize_url": "https://github.com/login/oauth/authorize"
       },
+      "health": "ok",
+      "secrets_set": {},
+      "provisioned": true,
+      "created_at": "<ts-1>",
+      "created_by": null,
+      "updated_at": "<ts-1>",
+      "updated_by": null
+    },
+    {
+      "id": "<uuid-3>",
+      "kind": "login",
+      "name": "custom",
+      "enabled": true,
+      "config": {
+        "client_id": "maintmode-local",
+        "issuer_url": "https://sso.example.com/realms/maintmode",
+        "display_name": "Corporate SSO (mock)",
+        "redirect_uri": "http://localhost:8000/api/v1/login/oauth/custom/callback"
+      },
+      "health": "ok",
+      "secrets_set": {},
+      "provisioned": true,
+      "created_at": "<ts-1>",
+      "created_by": null,
       "updated_at": "<ts-1>",
       "updated_by": null
     },
@@ -36,17 +71,18 @@
       "secrets_set": {
         "bot_token": true
       },
+      "provisioned": false,
       "created_at": "<ts-2>",
       "created_by": {
-        "id": "<uuid-2>",
-        "display_name": "User Name[<uuid-3>]",
+        "id": "<uuid-5>",
+        "display_name": "User Name[<uuid-6>]",
         "email": "<email-1>"
       },
       "updated_at": "<ts-2>",
       "updated_by": null
     },
     {
-      "id": "<uuid-5>",
+      "id": "<uuid-7>",
       "kind": "notify",
       "name": "email",
       "enabled": true,
@@ -60,10 +96,11 @@
       "secrets_set": {
         "password": true
       },
+      "provisioned": false,
       "created_at": "<ts-3>",
       "created_by": {
-        "id": "<uuid-2>",
-        "display_name": "User Name[<uuid-3>]",
+        "id": "<uuid-5>",
+        "display_name": "User Name[<uuid-6>]",
         "email": "<email-1>"
       },
       "updated_at": "<ts-3>",

@@ -7,6 +7,28 @@ const nextConfig: NextConfig = {
   // Docker image can run on a minimal node:slim base without node_modules.
   // See deployment/.build/Dockerfile.
   output: "standalone",
+  // Dev-only switch. Next prints every Server Function call with its
+  // arguments, so signing in with a password wrote the password to the dev
+  // terminal — and the reset and one-time-code actions carry secrets the same
+  // way. Next has no per-action setting, so the log is off for all of them.
+  logging: {
+    serverFunctions: false,
+  },
+
+  async redirects() {
+    return [
+      {
+        // The "Sign-in methods" tab became part of Authentication, which also
+        // holds the sign-in providers that used to sit under Integrations.
+        // Permanent (308) so old bookmarks and links in docs keep working and
+        // browsers learn the new address. Runs before `proxy.ts`, so the admin
+        // gate applies to the destination as it does to every `/admin/*` page.
+        source: "/admin/auth-methods",
+        destination: "/admin/authentication",
+        permanent: true,
+      },
+    ];
+  },
 
   async headers() {
     return [

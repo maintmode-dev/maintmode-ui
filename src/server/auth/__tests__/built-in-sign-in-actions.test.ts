@@ -14,6 +14,10 @@ const setOtpBinding = vi.fn();
 const bindWithinReissueCooldown = vi.fn();
 const clearOtpBinding = vi.fn();
 const putBindingToSleep = vi.fn();
+const readActiveSession = vi.fn();
+const redirect = vi.fn((to: string) => {
+  throw Object.assign(new Error("NEXT_REDIRECT"), { digest: `NEXT_REDIRECT;replace;${to};307;` });
+});
 
 /** The deadline the mocked cookie write reports back. */
 const DEADLINE = Date.parse("2026-09-27T12:05:00Z");
@@ -33,8 +37,16 @@ vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   putBindingToSleep: (...args: unknown[]) => putBindingToSleep(...args),
 }));
 
-const { changeEmailAction, credentialsSignInAction, requestOtpAction } =
-  await import("@/server/auth/built-in-sign-in-actions");
+vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+vi.mock("next/navigation", () => ({ redirect: (to: string) => redirect(to) }));
+
+const {
+  acceptInvitationWithPasswordAction,
+  breakGlassSignInAction,
+  changeEmailAction,
+  credentialsSignInAction,
+  requestOtpAction,
+} = await import("@/server/auth/built-in-sign-in-actions");
 
 beforeEach(() => {
   requestOtpCode.mockReset();
@@ -43,6 +55,8 @@ beforeEach(() => {
   bindWithinReissueCooldown.mockReset().mockResolvedValue(undefined);
   clearOtpBinding.mockReset();
   putBindingToSleep.mockReset();
+  readActiveSession.mockReset().mockResolvedValue(null);
+  redirect.mockClear();
 });
 
 describe("requestOtpAction — the address must stay unknowable", () => {
@@ -228,5 +242,108 @@ describe("changeEmailAction — leaving step two", () => {
 
     expect(putBindingToSleep).toHaveBeenCalledWith("sign-in");
     expect(clearOtpBinding).not.toHaveBeenCalled();
+  });
+});
+
+describe("acceptInvitationWithPasswordAction", () => {
+  const VALID = { invitationToken: "tok-1", password: "correct horse battery" };
+
+  it("signs in through backend-login with the invite kind, landing on /", async () => {
+    signIn.mockResolvedValue(undefined);
+
+    await expect(acceptInvitationWithPasswordAction(VALID)).resolves.toEqual({});
+    expect(signIn).toHaveBeenCalledWith("backend-login", {
+      kind: "invite",
+      invitation: "tok-1",
+      password: "correct horse battery",
+      redirectTo: "/",
+    });
+  });
+
+  /**
+   * The backend claims the invitation in the same transaction that creates the
+   * account, so a click from someone already signed in would spend it on the
+   * wrong browser.
+   */
+  it("refuses while a session is live, before touching the invitation", async () => {
+    readActiveSession.mockResolvedValue({ accessToken: "at" });
+
+    await expect(acceptInvitationWithPasswordAction(VALID)).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing for a password outside the policy", async () => {
+    await expect(acceptInvitationWithPasswordAction({ ...VALID, password: "short" })).resolves.toEqual({
+      error: "password_policy_violation",
+    });
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing without a token", async () => {
+    await expect(acceptInvitationWithPasswordAction({ ...VALID, invitationToken: "" })).resolves.toEqual({
+      error: "invitation_invalid",
+    });
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("passes a success redirect through", async () => {
+    signIn.mockRejectedValue(
+      Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/;303;" }),
+    );
+
+    await expect(acceptInvitationWithPasswordAction(VALID)).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("hands a known refusal back as its code", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "account_exists" }));
+
+    await expect(acceptInvitationWithPasswordAction(VALID)).resolves.toEqual({ error: "account_exists" });
+  });
+
+  it("reads an unknown code as the generic failure", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "credentials" }));
+
+    await expect(acceptInvitationWithPasswordAction(VALID)).resolves.toEqual({
+      error: "invite_accept_failed",
+    });
+  });
+});
+
+describe("breakGlassSignInAction", () => {
+  it("signs in through backend-login with the break-glass kind, landing on /", async () => {
+    signIn.mockResolvedValue(undefined);
+
+    await expect(breakGlassSignInAction("correct horse battery staple")).resolves.toEqual({});
+    expect(signIn).toHaveBeenCalledWith("backend-login", {
+      kind: "break-glass",
+      password: "correct horse battery staple",
+      redirectTo: "/",
+    });
+  });
+
+  it("passes a success redirect through", async () => {
+    signIn.mockRejectedValue(
+      Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/;303;" }),
+    );
+
+    await expect(breakGlassSignInAction("pw")).rejects.toThrow("NEXT_REDIRECT");
+  });
+
+  it("answers every refusal the same", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "credentials" }));
+
+    await expect(breakGlassSignInAction("pw")).resolves.toEqual({ error: "invalid_credentials" });
+  });
+
+  it("does not call an accepted password wrong when only the profile failed", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "identity_lookup_failed" }));
+
+    await expect(breakGlassSignInAction("pw")).resolves.toEqual({ error: "identity_lookup_failed" });
+  });
+
+  it("sends nothing for an empty password", async () => {
+    await expect(breakGlassSignInAction("")).resolves.toEqual({ error: "invalid_credentials" });
+    expect(signIn).not.toHaveBeenCalled();
   });
 });

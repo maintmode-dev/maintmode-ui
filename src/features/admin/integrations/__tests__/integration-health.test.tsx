@@ -20,7 +20,20 @@ describe("IntegrationHealthBadge", () => {
     render(<IntegrationHealthBadge />);
 
     expect(screen.getByText(/unknown/i)).toBeTruthy();
-    expect(screen.queryByText(/active/i)).toBeNull();
+    expect(screen.queryByText(/configured/i)).toBeNull();
+  });
+
+  /**
+   * The backend's `ok` means the settings parsed, validated and the provider was
+   * built — discovery runs lazily on the first sign-in and credentials are never
+   * checked, so mock credentials read `ok` too. "Active" promised that sign-in
+   * works; "Configured" says what the backend actually knows.
+   */
+  it("words ok as configured, not as working", () => {
+    render(<IntegrationHealthBadge health="ok" />);
+
+    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.queryByText(/active|working/i)).toBeNull();
   });
 
   it("names each of the four backend states distinctly", () => {

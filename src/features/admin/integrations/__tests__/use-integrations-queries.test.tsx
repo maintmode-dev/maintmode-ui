@@ -30,6 +30,10 @@ import {
   useToggleIntegration,
   useUpdateIntegration,
 } from "../queries/use-integrations-queries";
+import {
+  PROVIDER_RELOAD_FOLLOW_UP_MS,
+  signInMethodsKey,
+} from "@/features/settings/queries/use-sign-in-methods";
 
 /**
  * RUK-304. These hooks addressed a row by `kind` alone, which stopped
@@ -50,6 +54,7 @@ const ROWS: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: {},
+    provisioned: false,
     created_at: "",
     updated_at: "",
   },
@@ -60,6 +65,7 @@ const ROWS: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: {},
+    provisioned: false,
     created_at: "",
     updated_at: "",
   },
@@ -70,6 +76,7 @@ const ROWS: Integration[] = [
     enabled: true,
     config: {},
     secrets_set: {},
+    provisioned: false,
     created_at: "",
     updated_at: "",
   },
@@ -423,5 +430,215 @@ describe("useDeleteIntegration", () => {
 
     await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
     expect(before).toBe(false);
+  });
+});
+
+/**
+ * Backend `87da097`: a row declared in the server's config file refuses every
+ * write with 409. The screen hides the controls once it knows, so these are the
+ * race — the row became provisioned after the page loaded.
+ *
+ * The toast carries the backend's own message. It is NOT classified by status:
+ * DELETE has a second 409 under the same `conflict` code ("still has linked
+ * accounts; retry the delete"), and a confident wrong reason is worse than the
+ * backend's accurate one.
+ */
+describe("a 409 from a row declared in the server config file", () => {
+  const MESSAGE = "integration is managed by the config file; change it there and restart: login/google";
+
+  it("useUpdateIntegration shows the backend's reason and refetches", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    const client = seededClient();
+    const update = renderHook(() => useUpdateIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      update.result.current.mutate({ ref: { kind: "login", name: "google" }, body: { enabled: false } });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't save google: ${MESSAGE}`));
+    await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
+  });
+
+  it("useToggleIntegration shows the backend's reason and still rolls back", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    const client = seededClient();
+    const toggle = renderHook(() => useToggleIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      toggle.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't toggle slack: ${MESSAGE}`));
+    expect(cachedByName(client).slack.enabled).toBe(true);
+  });
+
+  /**
+   * Unlike update and delete, a toggle 409 must NOT invalidate from `onError`:
+   * the refetch would land while another row's flip is still in flight and
+   * overwrite its optimistic state. `onSettled` reconciles once the last one
+   * settles — which, with another toggle pending, is not yet.
+   */
+  it("useToggleIntegration leaves the refetch to the last toggle in flight", async () => {
+    const client = seededClient();
+    const wrapper = wrapperFor(client);
+    const pendingForever = renderHook(() => useToggleIntegration(), { wrapper });
+    const refused = renderHook(() => useToggleIntegration(), { wrapper });
+
+    bffFetchMock.mockReturnValueOnce(new Promise(() => {}));
+    act(() => {
+      pendingForever.result.current.mutate({ ref: { kind: "notify", name: "email" }, enabled: false });
+    });
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    act(() => {
+      refused.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false });
+    });
+
+    // Spied BEFORE the refusal settles. Reading `isInvalidated` afterwards is not
+    // enough: the rollback's `setQueryData` resets that flag, so an invalidate at
+    // the top of `onError` — the natural regression, and the one that refetches
+    // over the other row's optimistic flip — would leave it `false`.
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't toggle slack: ${MESSAGE}`));
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(false);
+  });
+
+  it("useDeleteIntegration shows the backend's reason, not a success, and refetches", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, MESSAGE, "conflict"));
+    const client = seededClient();
+    const del = renderHook(() => useDeleteIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => {
+      del.result.current.mutate({ kind: "login", name: "custom" });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(`Couldn't delete custom: ${MESSAGE}`));
+    expect(toastSuccess).not.toHaveBeenCalled();
+    await waitFor(() => expect(client.getQueryState(integrationsKey())?.isInvalidated).toBe(true));
+  });
+
+  /**
+   * Create's 409 is "already exists". Its old advice — edit the existing
+   * connection — is wrong when the row that exists turns out to be read-only,
+   * so the toast states the fact and the refetch shows which it is.
+   */
+  it("useCreateIntegration no longer promises the existing row is editable", async () => {
+    bffFetchMock.mockRejectedValueOnce(new BffError(409, "integration already exists", "conflict"));
+    const create = renderHook(() => useCreateIntegration(), { wrapper: wrapperFor(seededClient()) });
+
+    act(() => {
+      create.result.current.mutate({ kind: "login", name: "google", enabled: true, config: {}, secrets: {} });
+    });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("google is already set up."));
+  });
+});
+
+/**
+ * A login row is a button on `/login`, so a write that changed one must mark
+ * that page's list stale — the Authentication page's lockout warning reads it.
+ * The hooks do it themselves, so every screen that writes gets it for free.
+ * Transports never appear on `/login`, and a refused write changed nothing.
+ */
+describe("refreshing /login's list after a sign-in provider changes", () => {
+  const SIGN_IN = [{ id: "google", type: "redirect", display_name: "Google" }];
+
+  function clientWithSignInList() {
+    const client = seededClient();
+    client.setQueryData(signInMethodsKey(), SIGN_IN);
+    return client;
+  }
+
+  const previewStale = (client: QueryClient) => client.getQueryState(signInMethodsKey())?.isInvalidated;
+
+  it("after a login toggle, and not after a transport toggle", async () => {
+    bffFetchMock.mockResolvedValue({});
+    const loginClient = clientWithSignInList();
+    const login = renderHook(() => useToggleIntegration(), { wrapper: wrapperFor(loginClient) });
+    act(() => login.result.current.mutate({ ref: { kind: "login", name: "google" }, enabled: false }));
+    await waitFor(() => expect(previewStale(loginClient)).toBe(true));
+
+    const notifyClient = clientWithSignInList();
+    const notify = renderHook(() => useToggleIntegration(), { wrapper: wrapperFor(notifyClient) });
+    act(() => notify.result.current.mutate({ ref: { kind: "notify", name: "slack" }, enabled: false }));
+    await waitFor(() => expect(notify.result.current.isSuccess).toBe(true));
+    expect(previewStale(notifyClient)).toBe(false);
+  });
+
+  it("not after a refused toggle", async () => {
+    bffFetchMock.mockRejectedValue(new BffError(409, "managed by the config file", "CONFLICT"));
+    const client = clientWithSignInList();
+    const toggle = renderHook(() => useToggleIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => toggle.result.current.mutate({ ref: { kind: "login", name: "google" }, enabled: false }));
+
+    await waitFor(() => expect(toggle.result.current.isError).toBe(true));
+    expect(previewStale(client)).toBe(false);
+  });
+
+  it("after a login update, and not after a transport update", async () => {
+    bffFetchMock.mockResolvedValue({ name: "google" });
+    const loginClient = clientWithSignInList();
+    const login = renderHook(() => useUpdateIntegration(), { wrapper: wrapperFor(loginClient) });
+    act(() =>
+      login.result.current.mutate({ ref: { kind: "login", name: "google" }, body: { enabled: true } }),
+    );
+    await waitFor(() => expect(previewStale(loginClient)).toBe(true));
+
+    const notifyClient = clientWithSignInList();
+    const notify = renderHook(() => useUpdateIntegration(), { wrapper: wrapperFor(notifyClient) });
+    act(() =>
+      notify.result.current.mutate({ ref: { kind: "notify", name: "email" }, body: { enabled: true } }),
+    );
+    await waitFor(() => expect(notify.result.current.isSuccess).toBe(true));
+    expect(previewStale(notifyClient)).toBe(false);
+  });
+
+  it("after a login create", async () => {
+    bffFetchMock.mockResolvedValue({ name: "github" });
+    const client = clientWithSignInList();
+    const create = renderHook(() => useCreateIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() =>
+      create.result.current.mutate({ kind: "login", name: "github", enabled: true, config: {}, secrets: {} }),
+    );
+
+    await waitFor(() => expect(previewStale(client)).toBe(true));
+  });
+
+  it("after a login delete, including one that found the row already gone", async () => {
+    bffFetchMock.mockResolvedValueOnce(undefined);
+    const deleted = clientWithSignInList();
+    const del = renderHook(() => useDeleteIntegration(), { wrapper: wrapperFor(deleted) });
+    act(() => del.result.current.mutate({ kind: "login", name: "google" }));
+    await waitFor(() => expect(previewStale(deleted)).toBe(true));
+
+    bffFetchMock.mockRejectedValueOnce(new BffError(404, "not found"));
+    const gone = clientWithSignInList();
+    const del404 = renderHook(() => useDeleteIntegration(), { wrapper: wrapperFor(gone) });
+    act(() => del404.result.current.mutate({ kind: "login", name: "google" }));
+    await waitFor(() => expect(previewStale(gone)).toBe(true));
+  });
+
+  /**
+   * The backend rebuilds its provider snapshot in a background loop after the
+   * write has answered, so the first re-read can see the old list. One more
+   * after `PROVIDER_RELOAD_FOLLOW_UP_MS` catches the rebuild.
+   */
+  it("reads the list once more after the backend's provider rebuild", async () => {
+    bffFetchMock.mockResolvedValue({});
+    const client = clientWithSignInList();
+    const toggle = renderHook(() => useToggleIntegration(), { wrapper: wrapperFor(client) });
+
+    act(() => toggle.result.current.mutate({ ref: { kind: "login", name: "google" }, enabled: false }));
+    await waitFor(() => expect(previewStale(client)).toBe(true));
+
+    // As if the immediate refetch had landed with the pre-rebuild list.
+    client.setQueryData(signInMethodsKey(), SIGN_IN);
+    expect(previewStale(client)).toBe(false);
+
+    await waitFor(() => expect(previewStale(client)).toBe(true), {
+      timeout: PROVIDER_RELOAD_FOLLOW_UP_MS + 1000,
+    });
   });
 });

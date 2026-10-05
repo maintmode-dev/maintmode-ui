@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { bffFetch } from "@/features/_shared/api/bff-fetch";
 import { meKey } from "@/features/_shared/queries/use-me-query";
@@ -8,6 +8,51 @@ import { toSignInMethod, type SignInMethod } from "@/domain/auth/sign-in-method"
 
 export function signInMethodsKey() {
   return ["sign-in-methods"] as const;
+}
+
+/**
+ * How long after a sign-in PROVIDER change to read `/login`'s list once more.
+ *
+ * The two halves of that list are refreshed differently on the backend:
+ *
+ * - Built-in methods are read from the database on every request
+ *   (`providers_list.go` → `offeredBuiltIns` → `authSettings.List`), so the
+ *   list is current as soon as the PATCH has answered. No delay needed.
+ * - Providers come from an in-memory snapshot that a background loop rebuilds.
+ *   A committed registry write only SIGNALS that loop
+ *   (`authmethod/reloader.go`, `OnIntegrationChanged` → `signal()`), and the
+ *   rebuild runs in its own goroutine after the write's response has gone out.
+ *   A refetch fired on success usually beats it and reads the old list.
+ *
+ * The rebuild reads the registry and touches no network, so it normally
+ * finishes in milliseconds; this margin covers a slow one. If it is missed
+ * anyway, the backend's own 30-second tick converges, and the next read shows it.
+ */
+export const PROVIDER_RELOAD_FOLLOW_UP_MS = 1500;
+
+/**
+ * Marks `/login`'s list stale after a write that changes what it offers, so the
+ * admin lockout warning (and the profile's linking card) re-read it.
+ *
+ * Called by the write hooks themselves — the built-in method toggle and the
+ * login-provider writes — rather than by a page, so every screen that performs
+ * such a write keeps the list honest without knowing it exists.
+ *
+ * `providerChanged` adds ONE delayed re-read for the asynchronous provider
+ * snapshot (see `PROVIDER_RELOAD_FOLLOW_UP_MS`). The immediate one stays: it is
+ * what makes a built-in change show at once, and for a provider it is right
+ * whenever the rebuild was quick.
+ */
+export function refreshSignInMethods(
+  queryClient: QueryClient,
+  { providerChanged = false }: { providerChanged?: boolean } = {},
+): void {
+  void queryClient.invalidateQueries({ queryKey: signInMethodsKey() });
+  if (providerChanged) {
+    setTimeout(() => {
+      void queryClient.invalidateQueries({ queryKey: signInMethodsKey() });
+    }, PROVIDER_RELOAD_FOLLOW_UP_MS);
+  }
 }
 
 /**

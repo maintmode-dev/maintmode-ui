@@ -30,6 +30,7 @@ const SLACK_CONFIGURED: Integration = {
   enabled: true,
   config: { api_url: "https://slack.com/api/" },
   secrets_set: { bot_token: true },
+  provisioned: false,
   created_at: "2026-07-01T00:00:00Z",
   updated_at: "2026-07-09T00:00:00Z",
   updated_by: "admin@maintmode",
@@ -42,6 +43,7 @@ const EMAIL_CONFIGURED = (tls_policy: string): Integration => ({
   enabled: true,
   config: { host: "smtp.example.com", from: "noc@example.com", tls_policy },
   secrets_set: { password: true },
+  provisioned: false,
   created_at: "2026-07-01T00:00:00Z",
   updated_at: "2026-07-09T00:00:00Z",
   updated_by: "admin@maintmode",
@@ -73,7 +75,7 @@ const secretInput = () => document.getElementById("integration-secret-bot_token"
 describe("IntegrationDialog", () => {
   it("edit mode renders the stored secret as a locked Configured plate, never an input", () => {
     renderDialog({ integration: SLACK_CONFIGURED });
-    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.getByText("Stored")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Replace" })).toBeTruthy();
     expect(secretInput()).toBeNull();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
@@ -586,6 +588,7 @@ describe("sign-in provider kinds", () => {
         redirect_uri: "https://maintmode.example.com/auth/callback",
       },
       secrets_set: { client_secret: true },
+      provisioned: false,
       created_at: "2026-07-01T10:00:00Z",
       updated_at: "2026-07-02T14:21:00Z",
     };
@@ -599,7 +602,7 @@ describe("sign-in provider kinds", () => {
     );
 
     // Stored and untouched: the secret stands in for itself.
-    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.getByText("Stored")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText(/Client ID/), { target: { value: "a-different-id" } });
 
@@ -624,6 +627,7 @@ describe("sign-in provider kinds", () => {
         redirect_uri: "https://maintmode.example.com/auth/callback",
       },
       secrets_set: { client_secret: true },
+      provisioned: false,
       created_at: "2026-07-01T10:00:00Z",
       updated_at: "2026-07-02T14:21:00Z",
     };
@@ -641,7 +645,7 @@ describe("sign-in provider kinds", () => {
     });
 
     expect(screen.queryByText(/no longer works/i)).toBeNull();
-    expect(screen.getByText("Configured")).toBeTruthy();
+    expect(screen.getByText("Stored")).toBeTruthy();
   });
 
   it("shows no notification-transport copy", () => {
@@ -697,6 +701,7 @@ describe("sign-in status in the edit dialog", () => {
     config: { issuer_url: "https://accounts.google.com" },
     secrets_set: { client_secret: true },
     health: "ok",
+    provisioned: false,
     created_at: "2026-07-01T10:00:00Z",
     updated_at: "2026-07-02T14:21:00Z",
   };

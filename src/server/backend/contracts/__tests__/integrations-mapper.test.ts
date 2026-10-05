@@ -51,6 +51,7 @@ describe("mapIntegration", () => {
       config: { api_url: "", timeout: "10s" },
       secrets_set: { bot_token: true },
       health: undefined,
+      provisioned: false,
       created_at: "2026-07-01T10:00:00Z",
       created_by: "Ann Miller",
       updated_at: "2026-07-02T14:21:00Z",
@@ -119,6 +120,10 @@ describe("mapIntegration", () => {
     );
   });
 
+  it("carries provisioned through", () => {
+    expect(mapIntegration({ ...GOOGLE_DTO, provisioned: true })?.provisioned).toBe(true);
+  });
+
   it("normalizes null config and secrets_set to empty objects", () => {
     const result = mapIntegration({ ...SLACK_DTO, config: null, secrets_set: null });
     expect(result?.config).toEqual({});
@@ -142,6 +147,7 @@ describe("mapIntegration", () => {
       config: {},
       secrets_set: {},
       health: undefined,
+      provisioned: false,
       created_at: "",
       created_by: undefined,
       updated_at: "",

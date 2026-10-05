@@ -7,6 +7,7 @@ import { Input } from "@/shared/ui/shadcn/input";
 import { Label } from "@/shared/ui/shadcn/label";
 
 import { flowErrorMessage } from "@/features/auth/otp-sign-in-flow";
+import { isRouterNavigation } from "@/features/auth/router-navigation";
 
 /**
  * Email + password sign-in (RUK-288).
@@ -25,9 +26,11 @@ export interface PasswordSignInFormProps {
   submit: (email: string, password: string) => Promise<{ error?: string }>;
   /** Opens the reset flow. Absent when the deployment has no reset endpoint. */
   onForgotPassword?: () => void;
+  /** Focus the email field on mount — set when the user just opened this form. */
+  autoFocus?: boolean;
 }
 
-export function PasswordSignInForm({ label, submit, onForgotPassword }: PasswordSignInFormProps) {
+export function PasswordSignInForm({ label, submit, onForgotPassword, autoFocus }: PasswordSignInFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | undefined>();
@@ -40,47 +43,71 @@ export function PasswordSignInForm({ label, submit, onForgotPassword }: Password
 
     setPending(true);
     setError(undefined);
-    const result = await submit(trimmed, password);
-    setPending(false);
-    if (result.error) setError(result.error);
+    try {
+      const result = await submit(trimmed, password);
+      setPending(false);
+      if (result.error) setError(result.error);
+    } catch (error) {
+      // A SUCCESSFUL sign-in lands here too (see `isRouterNavigation`): the
+      // form stays on "Signing in…" until the page goes.
+      if (isRouterNavigation(error)) return;
+      // Anything else must not leave the button on "Signing in…" for good: the
+      // form would be a dead end with nothing to say. It reads as the generic
+      // failure — what failed is not the user's to fix.
+      setPending(false);
+      setError("unexpected");
+    }
   }
 
   return (
-    <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
-      <Label htmlFor="password-email">Email</Label>
-      <Input
-        id="password-email"
-        name="email"
-        type="email"
-        // `username` rather than `email` so password managers file and fill this
-        // as the identity half of a credential pair.
-        autoComplete="username"
-        placeholder="you@example.com"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        aria-describedby={error ? "password-error" : undefined}
-      />
-      <Label htmlFor="password-password">{label}</Label>
-      <Input
-        id="password-password"
-        name="password"
-        type="password"
-        autoComplete="current-password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        aria-describedby={error ? "password-error" : undefined}
-      />
+    // Label-to-field 6px, field-to-field 12px: the grouping is what tells the
+    // eye which label belongs to which input without a card around them.
+    <form className="flex flex-col gap-3" onSubmit={onSubmit}>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="password-email">Email</Label>
+        <Input
+          className="h-10"
+          id="password-email"
+          name="email"
+          autoFocus={autoFocus}
+          type="email"
+          // `username` rather than `email` so password managers file and fill this
+          // as the identity half of a credential pair.
+          autoComplete="username"
+          placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-describedby={error ? "password-error" : undefined}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="password-password">{label}</Label>
+        <Input
+          className="h-10"
+          id="password-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          aria-describedby={error ? "password-error" : undefined}
+        />
+      </div>
       {error ? (
         <p id="password-error" role="alert" className="text-xs text-[var(--destructive-fg)]">
           {flowErrorMessage(error)}
         </p>
       ) : null}
-      <Button type="submit" disabled={!email.trim() || !password || pending}>
+      <Button size="lg" type="submit" disabled={!email.trim() || !password || pending}>
         {pending ? "Signing in…" : "Sign in"}
       </Button>
       {onForgotPassword ? (
-        <button type="button" className="caption underline self-start" onClick={onForgotPassword}>
+        <button
+          type="button"
+          className="caption self-center underline-offset-4 hover:text-fg-muted hover:underline"
+          onClick={onForgotPassword}
+        >
           Forgot password?
         </button>
       ) : null}

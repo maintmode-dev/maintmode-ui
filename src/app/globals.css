@@ -5,6 +5,17 @@
    `src/shared/ui/**`. Make the project source root explicit. */
 @source "../**/*.{ts,tsx}";
 
+/* `dark:` follows the app's theme, not the OS. Tailwind's default `dark:` is
+   `@media (prefers-color-scheme: dark)`, but the theme here is chosen in-app
+   and written to `<html data-theme>` (see `src/app/theme-provider.tsx`; the
+   server renders `data-theme="dark"`, the head script swaps in the stored
+   choice before paint). With the media query, the shadcn primitives' `dark:`
+   styles applied on a dark OS even with the light theme picked, and never
+   applied in our (default) dark theme on a light OS. There is no "system"
+   option today; if one is added it must resolve to a concrete `data-theme`
+   value, and this variant keeps working unchanged. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 /* ============================================================================
    MaintMode — Colors & Type
    Source of truth for these tokens is the frozen calendar design snapshot.
@@ -152,6 +163,25 @@
   --accent-soft: rgba(110, 123, 255, 0.14);
   --accent-soft-2: rgba(110, 123, 255, 0.06);
   --accent-fg: #c7ccff;
+  /* Text and icons ON a filled accent surface (primary button, checked
+     checkbox, text selection in inputs). White in both themes, as the design
+     snapshots' `.btn--primary { color: #fff }`; deliberately not `--fg-strong`,
+     which flips to near-black in the light theme (3.99:1 on #5760e5, below AA)
+     and is off-white here. Not overridden under [data-theme="light"].
+     Pairs with `--accent-solid` (below), not `--accent`: 4.99:1 light,
+     4.89:1 dark. On the dark `--accent` #6e7bff white would be 3.54:1. */
+  --fg-on-accent: #ffffff;
+  /* Filled accent surfaces — primary button, checked checkbox, switch track,
+     selected calendar day. Split from `--accent` (2026-09-30, see
+     maintmode-docs/SPEC-color-calibration.md): the dark `--accent` #6e7bff is
+     also TEXT (links, `text-brand`) at 4.90:1 on `--bg`, and darkening it to
+     carry white text would drop those links to 3.54:1. So text keeps
+     `--accent`, fills get this one. White on each: rest 4.89:1, hover
+     5.95:1, pressed 7.45:1 — hover darker, pressed darker still, the same
+     direction as the light theme's `--accent-hover`/`--accent-pressed`. */
+  --accent-solid: #5762e6;
+  --accent-solid-hover: #4a54d6;
+  --accent-solid-pressed: #3d46be;
 
   /* Focus ring */
   --focus-ring: 0 0 0 2px var(--bg-elev-1), 0 0 0 4px var(--accent);
@@ -258,6 +288,11 @@
   --accent-soft: rgba(87, 96, 229, 0.1);
   --accent-soft-2: rgba(87, 96, 229, 0.04);
   --accent-fg: #3e47c2;
+  /* Light accent already carries white text (4.99:1), so the fills reuse it.
+     White on hover 7.11:1, pressed 8.89:1. */
+  --accent-solid: var(--accent);
+  --accent-solid-hover: var(--accent-hover);
+  --accent-solid-pressed: var(--accent-pressed);
 
   --status-draft-fg: #52525b;
   --status-draft-bg: #f4f4f5;
@@ -469,8 +504,8 @@
      stays visible once the global focus ring is suppressed there (see below).
      Both themes resolve it through `--bg-elev-4`, which each already flips. */
   --popover-item-active: var(--bg-elev-4);
-  --primary: var(--accent);
-  --primary-foreground: var(--fg-strong);
+  --primary: var(--accent-solid);
+  --primary-foreground: var(--fg-on-accent);
   --secondary: var(--bg-elev-2);
   --secondary-foreground: var(--fg);
   --muted: var(--bg-elev-2);
@@ -493,6 +528,21 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* Tailwind v4's preflight leaves `border-color` at `currentColor`, so a bare
+   `border` (shadcn's outline button, dialog, popover, alert, menu panels…) drew
+   in the TEXT colour — near-black on light, near-white on dark. This is the
+   v3-compatible default the v4 upgrade guide recommends, pointed at our token.
+   In `@layer base` so every `border-*` colour utility still wins over it. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--border);
+  }
 }
 
 html {

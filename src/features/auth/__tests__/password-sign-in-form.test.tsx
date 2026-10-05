@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { redirect } from "next/navigation";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PasswordSignInForm } from "@/features/auth/password-sign-in-form";
@@ -72,5 +73,51 @@ describe("password sign-in form", () => {
 
     expect(screen.getByLabelText("Email").getAttribute("type")).toBe("email");
     expect(screen.getByLabelText("Password").getAttribute("type")).toBe("password");
+  });
+});
+
+/**
+ * A rejected action left the button on "Signing in…" with no message — the
+ * form had no way out short of a reload.
+ */
+describe("when the action itself fails", () => {
+  it("comes back from Signing in… and says something went wrong", async () => {
+    setup(
+      vi.fn(async () => Promise.reject(new Error("An unexpected response was received from the server."))),
+    );
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@example.test" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Something went wrong. Try again.");
+    expect(screen.getByRole("button", { name: "Sign in" }).hasAttribute("disabled")).toBe(false);
+  });
+});
+
+/**
+ * A successful sign-in redirects, and Next rejects the action's promise with a
+ * redirect error while it navigates. Treated as a failure, that flashed
+ * "Something went wrong" over every successful sign-in.
+ */
+describe("when the action redirects", () => {
+  it("shows no error and stays on Signing in… while the page leaves", async () => {
+    let redirectError: unknown;
+    try {
+      redirect("/");
+    } catch (error) {
+      redirectError = error;
+    }
+    setup(vi.fn(async () => Promise.reject(redirectError)));
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "admin@example.test" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "hunter2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await screen.findByRole("button", { name: "Signing in…" });
+    // Let the rejection settle before asserting the absence.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("button", { name: "Signing in…" })).toBeTruthy();
   });
 });

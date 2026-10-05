@@ -11,6 +11,7 @@ import type {
   TestIntegrationInput,
   UpdateIntegrationInput,
 } from "@/domain/admin/integration";
+import { refreshSignInMethods } from "@/features/settings/queries/use-sign-in-methods";
 
 export function integrationsKey() {
   return ["integrations"] as const;
@@ -58,9 +59,24 @@ function invalidate(queryClient: ReturnType<typeof useQueryClient>) {
 }
 
 /**
+ * A login row changed on the server, so what `/login` offers may have too.
+ *
+ * Called on the outcomes where the backend's state DID change (a write that
+ * succeeded, a delete that found the row already gone) and only for the
+ * `login` category — a transport never appears on the sign-in page. A refused
+ * write changed nothing and refreshes nothing.
+ */
+function refreshSignInPageAfter(queryClient: ReturnType<typeof useQueryClient>, kind: IntegrationCategory) {
+  if (kind !== "login") return;
+  refreshSignInMethods(queryClient, { providerChanged: true });
+}
+
+/**
  * Create an integration. 409 = the pair already exists (someone configured it
- * concurrently) — surfaced as a specific toast; the list refetch flips the
- * row to Configured so the next open lands in edit mode.
+ * concurrently, or the server's config file declared it) — surfaced as a
+ * specific toast; the list refetch flips the row to Configured, or to
+ * read-only when the config file owns it. The toast states the fact and no
+ * longer advises editing: the row that exists may not be editable.
  *
  * Note where the label comes from in each branch: success reads the RESPONSE,
  * every failure reads the VARIABLES, because a 409 has no body to read. Fixing
@@ -75,13 +91,14 @@ export function useCreateIntegration() {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, { kind }) => {
       toast.success(`${data.name} integration connected`);
       invalidate(queryClient);
+      refreshSignInPageAfter(queryClient, kind);
     },
     onError: (error: unknown, { name }) => {
-      if (error instanceof BffError && error.status === 409) {
-        toast.error(`${name} is already set up. Edit the existing connection instead.`);
+      if (isConflict(error)) {
+        toast.error(`${name} is already set up.`);
         invalidate(queryClient);
         return;
       }
@@ -92,6 +109,19 @@ export function useCreateIntegration() {
       toast.error(`Couldn't connect ${name}. Try again.`);
     },
   });
+}
+
+/**
+ * Whether a write was refused with 409 — on this surface, most likely because
+ * the row is declared in the server's config file (backend `87da097`).
+ *
+ * "Most likely", which is why callers show `error.message` rather than a
+ * reason of their own: DELETE has a second 409 under the same `conflict` code
+ * (linked accounts arrived mid-delete; retrying succeeds), and the backend's
+ * text is right about both where a classifier would be right about one.
+ */
+export function isConflict(error: unknown): error is BffError {
+  return error instanceof BffError && error.status === 409;
 }
 
 /** Update config/enabled/secrets. Untouched secrets never leave the client. */
@@ -109,11 +139,19 @@ export function useUpdateIntegration() {
         method: "PATCH",
         body: JSON.stringify(body),
       }),
-    onSuccess: (data) => {
+    onSuccess: (data, { ref }) => {
       toast.success(`${data.name} integration updated`);
       invalidate(queryClient);
+      refreshSignInPageAfter(queryClient, ref.kind);
     },
     onError: (error: unknown, { ref }) => {
+      if (isConflict(error)) {
+        toast.error(`Couldn't save ${ref.name}: ${error.message}`);
+        // The list learns the row is read-only, and the open dialog, which
+        // re-branches on that flag, turns into the view that explains it.
+        invalidate(queryClient);
+        return;
+      }
       if (error instanceof BffError && error.status === 400) {
         toast.error(`Couldn't save ${ref.name}: ${error.message}`);
         return;
@@ -142,6 +180,7 @@ export function useDeleteIntegration() {
     onSuccess: (_data, ref) => {
       toast.success(`${ref.name} integration deleted`);
       invalidate(queryClient);
+      refreshSignInPageAfter(queryClient, ref.kind);
     },
     onError: (error: unknown, ref) => {
       if (error instanceof BffError && error.status === 404) {
@@ -149,6 +188,12 @@ export function useDeleteIntegration() {
         // stale, and saying "couldn't delete" about a row that no longer
         // exists sends the operator looking for a problem that is not there.
         toast.success(`${ref.name} integration deleted`);
+        invalidate(queryClient);
+        refreshSignInPageAfter(queryClient, ref.kind);
+        return;
+      }
+      if (isConflict(error)) {
+        toast.error(`Couldn't delete ${ref.name}: ${error.message}`);
         invalidate(queryClient);
         return;
       }
@@ -191,14 +236,25 @@ export function useToggleIntegration() {
       );
       return { previousEnabled };
     },
-    onError: (_error, { ref }, context) => {
+    // The sign-in page's list, not this one: it holds no optimistic state, so
+    // refreshing it per toggle cannot clobber another row's in-flight flip,
+    // unlike the registry refetch that `onSettled` defers.
+    onSuccess: (_data, { ref }) => refreshSignInPageAfter(queryClient, ref.kind),
+    // No invalidate here, 409 included: `onSettled` reconciles once the last
+    // toggle in flight settles, and refetching earlier would overwrite other
+    // rows' optimistic flips. The rollback still restores this one.
+    onError: (error, { ref }, context) => {
       if (context?.previousEnabled !== undefined) {
         const previousEnabled = context.previousEnabled;
         queryClient.setQueryData<Integration[]>(integrationsKey(), (list) =>
           (list ?? []).map((i) => (isSameRow(i, ref) ? { ...i, enabled: previousEnabled } : i)),
         );
       }
-      toast.error(`Couldn't toggle ${ref.name}. Try again.`);
+      toast.error(
+        isConflict(error)
+          ? `Couldn't toggle ${ref.name}: ${error.message}`
+          : `Couldn't toggle ${ref.name}. Try again.`,
+      );
     },
     onSettled: () => {
       // The settling mutation is still counted, hence > 1 for "others pending".

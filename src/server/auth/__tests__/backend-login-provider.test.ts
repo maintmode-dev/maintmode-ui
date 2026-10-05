@@ -50,5 +50,31 @@ describe("AC-10 — backend-login is wired into the signIn callback", () => {
     expect(authorizeBody).not.toContain("verifyOtpCode");
     expect(authorizeBody).not.toContain("loginWithPassword");
     expect(authorizeBody).not.toContain("fetchBackendMe");
+    // Accepting an invitation spends it: one exchange, in the callback.
+    expect(authorizeBody).not.toContain("acceptInvitationWithPassword");
+    expect(authorizeBody).not.toContain("loginWithBreakGlass");
+  });
+
+  it("accepts the break-glass kind on a password alone, before the email read", () => {
+    const authorizeStart = source.indexOf("async authorize(credentials)");
+    const emailRead = source.indexOf("const email =", authorizeStart);
+    const breakGlassBranch = source.indexOf('if (kind === "break-glass")', authorizeStart);
+
+    // Before the email read: break-glass carries no email, and the
+    // `if (!email) return null` below would refuse every attempt.
+    expect(breakGlassBranch).toBeGreaterThan(-1);
+    expect(breakGlassBranch).toBeLessThan(emailRead);
+  });
+
+  it("accepts the invite kind on token and password alone, with no email", () => {
+    const authorizeStart = source.indexOf("async authorize(credentials)");
+    const emailRead = source.indexOf("const email =", authorizeStart);
+    const inviteBranch = source.indexOf('if (kind === "invite")', authorizeStart);
+
+    // Before the email read: the invite kind carries no email, and the
+    // `if (!email) return null` below would refuse every invitation.
+    expect(inviteBranch).toBeGreaterThan(-1);
+    expect(inviteBranch).toBeLessThan(emailRead);
+    expect(source).toContain("credentials: { kind: {}, email: {}, code: {}, password: {}, invitation: {} }");
   });
 });
