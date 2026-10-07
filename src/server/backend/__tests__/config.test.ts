@@ -45,13 +45,22 @@ describe("resolveBackendUrl", () => {
     expect(() => resolveBackendUrl("http://nginx:9000/auth", "")).toThrow(/non-empty/);
   });
 
-  it("rejects paths that escape the base origin via .. traversal", () => {
-    // `new URL("../../etc", "http://h/auth/")` yields http://h/etc — same origin
-    // but escapes the prefix. The same-origin guard would still pass; the
-    // SSRF guard is about cross-origin escapes. We document the limitation:
-    // path-prefix escape inside the same origin is allowed by design (callers
-    // know which prefix they target).
-    const url = resolveBackendUrl("http://nginx:9000/auth", "../maintmode/api/v1/resources");
-    expect(url.origin).toBe("http://nginx:9000");
+  // L-3 (security review 2026-10-07). `encodeURIComponent("..")` is `..`, so a
+  // route parameter could walk the request onto a neighbouring backend route.
+  it.each([
+    "../maintmode/api/v1/resources",
+    "/api/v1/resources/../users",
+    "/api/v1/resources/./x",
+    "/api/v1/resources/%2e%2e/users",
+    "/api/v1/resources/.%2E/users",
+    "/api/v1/resources/..",
+  ])("rejects the dot segment in %s", (path) => {
+    expect(() => resolveBackendUrl("http://nginx:9000/auth", path)).toThrow(/dot segments/);
+  });
+
+  it("allows dots inside a segment and in the query", () => {
+    const url = resolveBackendUrl("http://nginx:9000/auth", "/api/v1/files/report.v2..csv?q=../x");
+    expect(url.pathname).toBe("/auth/api/v1/files/report.v2..csv");
+    expect(url.searchParams.get("q")).toBe("../x");
   });
 });
