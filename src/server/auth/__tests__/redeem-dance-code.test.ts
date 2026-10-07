@@ -72,7 +72,7 @@ describe("redeemOAuthDanceCode", () => {
 
   /**
    * Both tokens are required, matching `exchangeGoogleIdToken` and
-   * `acceptInvitation`. A pair missing the refresh token would sign the user in
+   * `acceptInvitationWithPassword`. A pair missing the refresh token would sign the user in
    * and then kill the session at the first rotation, minutes later and far from
    * here — the worst place for this to surface.
    */
