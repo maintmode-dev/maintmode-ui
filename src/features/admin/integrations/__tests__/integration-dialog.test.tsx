@@ -655,48 +655,6 @@ describe("sign-in provider kinds", () => {
   });
 });
 
-/**
- * S2 (security review 2026-10-07): the backend refuses to send a stored SMTP
- * password to a changed host unless the request re-enters or clears it. The
- * password is OPTIONAL, so the required-field gate alone let an empty draft
- * through — omitted from the PATCH as "keep stored", which is the refused case.
- */
-describe("a stored SMTP password after its destination changes", () => {
-  function changeHost() {
-    renderDialog({ name: "email", integration: EMAIL_CONFIGURED("") });
-    fireEvent.change(screen.getByLabelText(/SMTP host/), { target: { value: "smtp.attacker.test" } });
-  }
-  const save = () => screen.getByRole("button", { name: /Save changes/ });
-
-  it("blocks Save until the password is entered again", () => {
-    changeHost();
-
-    expect(screen.getByText(/no longer works/i)).toBeTruthy();
-    expect(save().hasAttribute("disabled")).toBe(true);
-
-    fireEvent.change(screen.getByLabelText(/^Password/), { target: { value: "relay-password" } });
-    expect(save().hasAttribute("disabled")).toBe(false);
-  });
-
-  it("lets the password be cleared instead", () => {
-    changeHost();
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-
-    expect(screen.getByText(/Will be cleared on save/)).toBeTruthy();
-    expect(save().hasAttribute("disabled")).toBe(false);
-  });
-
-  it("blocks Save again after Undo puts the stored password back", () => {
-    changeHost();
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
-
-    expect(save().hasAttribute("disabled")).toBe(true);
-  });
-});
-
 describe("transport status copy is preserved verbatim", () => {
   function renderSlack() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

@@ -28,23 +28,6 @@ const INTEGRATION_KIND_META = Object.fromEntries(ALL_META_KEYS.map((k) => [k, ki
  * (`tlsPolicy` in notifytransport/email/client.go). The label said "server
  * decides", and an operator whose relay lacks STARTTLS went looking at the relay.
  */
-/**
- * S2 (security review 2026-10-07). The backend refuses to change where a stored
- * notify secret is sent unless the secret travels in the same request. The
- * field lists are the backend's (fix/integration-secret-destination), asserted
- * as literals so a rename on either side fails here.
- */
-describe("notify secrets rebind on the fields that decide where they go", () => {
-  it.each([
-    ["slack", "bot_token", ["api_url"]],
-    ["telegram", "bot_token", ["api_url"]],
-    ["email", "password", ["host", "port", "username", "tls_policy"]],
-  ] as const)("%s %s rebinds on %j", (name, key, fields) => {
-    const secret = INTEGRATION_KIND_META[name].secrets.find((s) => s.key === key);
-    expect(secret?.rebindsOn).toEqual(fields);
-  });
-});
-
 describe("email TLS policy — Default says what it does", () => {
   const field = kindMeta("email")?.configFields.find((f: ConfigFieldMeta) => f.name === "tls_policy");
 

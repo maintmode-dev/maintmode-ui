@@ -162,10 +162,6 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, Integra
         clearable: false,
         placeholder: "xoxb-…",
         help: "OAuth token of your Slack app's bot user.",
-        // Changing where the token is sent needs the token again in the same
-        // request (security review S2): otherwise an admin could point a
-        // stored token at a host they control and read it off the wire.
-        rebindsOn: ["api_url"],
       },
     ],
   },
@@ -201,8 +197,6 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, Integra
         clearable: false,
         placeholder: "123456:ABC-…",
         help: "Token from @BotFather.",
-        // See Slack above (S2).
-        rebindsOn: ["api_url"],
       },
     ],
   },
@@ -270,9 +264,6 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, Integra
         clearable: true,
         placeholder: "••••••••",
         help: "SMTP password. Clear it to use an unauthenticated relay.",
-        // Every field that decides where, and how, the password is presented
-        // (S2). Clearing it alongside the change is accepted too.
-        rebindsOn: ["host", "port", "username", "tls_policy"],
       },
     ],
   },

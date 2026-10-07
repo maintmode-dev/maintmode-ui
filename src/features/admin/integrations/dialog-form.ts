@@ -384,23 +384,6 @@ export function secretsInvalidatedBy(
   return out;
 }
 
-/**
- * Whether a rebound secret is still neither re-entered nor cleared.
- *
- * `hasMissingRequired` covers a REQUIRED secret, but an optional one (the SMTP
- * password) left empty in `editing` is omitted from the PATCH — "keep stored" —
- * which is exactly what the backend refuses once a bound field changed. And
- * Undo from `cleared` returns to `locked`, which keeps it too. Either way the
- * save would earn a 400, so it is blocked here instead.
- */
-export function hasUnsuppliedRebound(rebound: string[], secrets: Record<string, SecretFieldState>): boolean {
-  return rebound.some((key) => {
-    const state = secrets[key];
-    if (!state || state.mode === "cleared") return false;
-    return state.mode === "locked" || state.value.trim() === "";
-  });
-}
-
 /** The one issuer whose provider reports a hosted domain. */
 const GOOGLE_ISSUER = "https://accounts.google.com";
 
