@@ -18,7 +18,8 @@ function joinNameEmail(name?: string, email?: string): string | undefined {
  * Per-action expanded detail, driven by the structured `metadata` payload:
  * login → IP / User agent / Session (+ Failure reason on `login.failed`);
  * logout → Session / Kind; `maintenance.*` / `maintenance_step.*` → Maintenance
- * title + a `changes` diff; role/block events → Target + a role diff
+ * title + a `changes` diff; `integration.*` → Integration (`kind/name`) + a
+ * `changes` diff; role/block events → Target + a role diff
  * (added/removed) or the assigned role set. Falls back to the one-line `details`
  * summary + timestamp when no metadata is present.
  *
@@ -43,6 +44,10 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
   } else if (event.action === "logout.success") {
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
     if (m?.logout_kind) rows.push({ label: "Kind", value: m.logout_kind });
+  } else if (event.action.startsWith("integration")) {
+    // Which integration (`kind/name`, the REST identity) + what the update moved.
+    if (event.entity_id) rows.push({ label: "Integration", value: event.entity_id });
+    if (m?.changes?.length) rows.push({ label: "Changes", value: <ChangeDiff changes={m.changes} /> });
   } else if (event.action.startsWith("maintenance")) {
     // Maintenance / step lifecycle — title snapshot + per-field diff on update.
     if (m?.maint_title) rows.push({ label: "Maintenance", value: m.maint_title });
@@ -95,18 +100,29 @@ function RoleDiff({ roles, sign }: { roles: string[]; sign?: "+" | "−" }) {
   );
 }
 
-/** Per-field before/after diff for `maintenance.updated` — `field: old → new`. */
+/**
+ * Per-field before/after diff — `field: old → new`. A `secrets.<key>` entry with
+ * neither side reads "secret changed": the backend records THAT a secret was
+ * replaced or cleared, never its value.
+ */
 function ChangeDiff({ changes }: { changes: AuditFieldChange[] }) {
   return (
     <span className="flex flex-col gap-1">
-      {changes.map((c, i) => (
-        <span key={`${c.field}-${i}`} className="inline-flex flex-wrap items-center gap-1">
-          <span className="text-fg-dim">{c.field ?? "—"}:</span>
-          <span className="text-destructive-fg line-through">{c.old || "∅"}</span>
-          <span className="text-fg-dim">→</span>
-          <span className="text-[var(--status-completed-fg)]">{c.new || "∅"}</span>
-        </span>
-      ))}
+      {changes.map((c, i) =>
+        c.field?.startsWith("secrets.") && c.old === undefined && c.new === undefined ? (
+          <span key={`${c.field}-${i}`} className="inline-flex flex-wrap items-center gap-1">
+            <span className="text-fg-dim">{c.field.slice("secrets.".length)}:</span>
+            <span>secret changed</span>
+          </span>
+        ) : (
+          <span key={`${c.field}-${i}`} className="inline-flex flex-wrap items-center gap-1">
+            <span className="text-fg-dim">{c.field ?? "—"}:</span>
+            <span className="text-destructive-fg line-through">{c.old || "∅"}</span>
+            <span className="text-fg-dim">→</span>
+            <span className="text-[var(--status-completed-fg)]">{c.new || "∅"}</span>
+          </span>
+        ),
+      )}
     </span>
   );
 }

@@ -1,0 +1,45 @@
+{
+  "_masked": "Transcribed, not recorded (see the manifest). Ids, the actor's address and timestamps use the same placeholders as audit-log.json; every other value is what backend b4a9e73 renders for these three actions.",
+  "logs": [
+    {
+      "id": "<uuid-1>",
+      "action": "integration.created",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "integration",
+      "entity_id": "slack/default",
+      "details": "integration \"slack\"/\"default\" created (enabled=true) by <email-1>",
+      "created_at": "<ts-1>"
+    },
+    {
+      "id": "<uuid-3>",
+      "action": "integration.updated",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "integration",
+      "entity_id": "slack/default",
+      "details": "integration \"slack\"/\"default\" updated (enabled=false) by <email-1>",
+      "created_at": "<ts-2>",
+      "metadata": {
+        "changes": [
+          { "field": "enabled", "old": "true", "new": "false" },
+          { "field": "api_url", "old": "https://slack.com/api/", "new": "https://hooks.example.test/" },
+          { "field": "timeout", "new": "10s" },
+          { "field": "secrets.bot_token" }
+        ]
+      }
+    },
+    {
+      "id": "<uuid-4>",
+      "action": "integration.deleted",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "entity_type": "integration",
+      "entity_id": "slack/default",
+      "details": "integration \"slack\"/\"default\" deleted by <email-1>",
+      "created_at": "<ts-3>"
+    }
+  ],
+  "total": 3,
+  "facets": { "all": 3, "auth": 0, "roles": 0, "block": 0, "maintenance": 0, "integration": 3 }
+}
