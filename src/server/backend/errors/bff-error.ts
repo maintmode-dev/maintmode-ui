@@ -91,8 +91,13 @@ export function normalizeRouteError(error: unknown): NormalizedRouteError {
 
   if (error instanceof BackendRequestError) {
     const body = parseBackendErrorBody(error.responseBody);
+    // A non-JSON body on a 5xx is not a message written for the user: it is a
+    // panic, a stack trace or a proxy's error page, and goes to the browser
+    // whole (security review 2026-10-07, I-3). The backend's own JSON errors
+    // still pass through.
+    const message = body.unstructured && error.status >= 500 ? undefined : body.message;
     return {
-      error: body.message ?? defaultMessageForStatus(error.status),
+      error: message ?? defaultMessageForStatus(error.status),
       code: body.code ?? defaultCodeForStatus(error.status),
       hint: body.hint ?? defaultHintForStatus(error.status),
       fieldErrors: body.fieldErrors,
@@ -131,6 +136,8 @@ export function normalizeRouteError(error: unknown): NormalizedRouteError {
 }
 
 type ParsedBackendError = {
+  /** The body was not a JSON object; `message` is the raw text. */
+  unstructured?: boolean;
   code?: string;
   message?: string;
   hint?: string;
@@ -145,7 +152,7 @@ function parseBackendErrorBody(responseBody: string): ParsedBackendError {
   try {
     const parsed = JSON.parse(responseBody) as unknown;
     if (!parsed || typeof parsed !== "object") {
-      return { message: responseBody };
+      return { message: responseBody, unstructured: true };
     }
 
     const record = parsed as Record<string, unknown>;
@@ -158,7 +165,7 @@ function parseBackendErrorBody(responseBody: string): ParsedBackendError {
       fieldErrors,
     };
   } catch {
-    return { message: responseBody };
+    return { message: responseBody, unstructured: true };
   }
 }
 
