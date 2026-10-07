@@ -15,9 +15,9 @@ import { safeNext } from "@/server/auth/safe-next";
  * only place the destination can live. Without it, a deep link into a protected
  * page would silently land on `/` after sign-in.
  *
- * httpOnly, lax, secure, fifteen minutes (see `MAX_AGE_SECONDS`), single-use. `sameSite: "lax"` is load-bearing — the
- * return trip is a top-level GET navigation from another origin, which Lax
- * permits and Strict would drop.
+ * httpOnly, lax, secure, fifteen minutes (see `MAX_AGE_SECONDS`), single-use.
+ * `sameSite: "lax"` is load-bearing — the return trip is a top-level GET
+ * navigation from another origin, which Lax permits and Strict would drop.
  *
  * `read` and `clear` are SEPARATE functions and reading does not clear. A helper
  * with a hidden write is correct once and surprising forever; the caller clears
@@ -56,8 +56,8 @@ export async function setOAuthNext(next: string): Promise<void> {
 /**
  * Returns a destination that is always safe to redirect to — `/` when the cookie
  * is empty or holds something `safeNext` rejects — or `null` when there is no
- * cookie at all, meaning this browser did not start a dance in the last ten
- * minutes.
+ * cookie at all, meaning this browser did not start a dance in the last
+ * fifteen minutes.
  *
  * Sanitized on READ as well as on write. The value spends the dance in the
  * browser, which is exactly the place a stored value stops being ours; trusting
@@ -69,7 +69,7 @@ export async function readOAuthNext(): Promise<string | null> {
   if (!cookie) {
     return null;
   }
-  return cookie.value ? safeNext(cookie.value) : "/";
+  return safeNext(cookie.value);
 }
 
 export async function clearOAuthNext(): Promise<void> {

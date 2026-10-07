@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   // the other control characters a URL parser strips (security review
   // 2026-10-07, L-2). Its `/` fallback becomes `/login` here, where it was
   // headed anyway once the session is gone.
-  const sanitized = nextParam ? safeNext(nextParam) : "/";
+  const sanitized = safeNext(nextParam ?? "");
   const target = sanitized === "/" ? "/login" : sanitized;
   // Relative on purpose. Behind a proxy, standalone Next builds `request.url`
   // from the address it listens on (http://0.0.0.0:3000), so resolving the
