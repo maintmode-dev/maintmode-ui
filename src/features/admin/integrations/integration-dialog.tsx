@@ -32,6 +32,7 @@ import {
   buildConfig,
   buildDrafts,
   hasMissingRequired,
+  hasUnsuppliedRebound,
   hostedDomainNotice,
   secretsInvalidatedBy,
   validateUrlFields,
@@ -244,7 +245,10 @@ function IntegrationDialogBody({
   // keep insisting.
   const rebound = useMemo(() => reboundBy(config), [reboundBy, config]);
 
-  const missingRequired = useMemo(() => hasMissingRequired(meta, config, secrets), [meta, config, secrets]);
+  const missingRequired = useMemo(
+    () => hasMissingRequired(meta, config, secrets) || hasUnsuppliedRebound(rebound, secrets),
+    [meta, config, secrets, rebound],
+  );
   const fieldVerdicts = useMemo(() => validateUrlFields(meta, config), [meta, config]);
   const hasBlockingField = useMemo(
     () => Object.values(fieldVerdicts).some((v) => v.block !== undefined),
@@ -740,6 +744,20 @@ function SecretField({
             onClick={() => onModeChange("locked")}
           >
             Keep current
+          </Button>
+        ) : null}
+        {state.mode === "editing" && rebound && secret.clearable ? (
+          // An optional secret may also be dropped: clearing it together with
+          // the change is a request the backend accepts, and the only way out
+          // for an operator who no longer has the value.
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled}
+            className="shrink-0"
+            onClick={() => onModeChange("cleared")}
+          >
+            Clear
           </Button>
         ) : null}
       </div>
