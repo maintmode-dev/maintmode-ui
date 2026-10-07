@@ -59,16 +59,19 @@ const HOSTED_DOMAINS = {
   help: "Separate with commas or spaces.",
 } satisfies ConfigFieldMeta;
 
-const REDIRECT_URI = {
-  name: "redirect_uri",
-  label: "Redirect URI",
-  // Required by the backend, which refuses a half-configured provider at the
-  // edge rather than at someone's first sign-in attempt.
-  optional: false,
-  url: true,
-  placeholder: "https://maintmode.example.com/auth/callback",
-  help: "Must match the callback registered with the provider.",
-} satisfies ConfigFieldMeta;
+// The callback is the backend's, not this app's: the OAuth dance runs there
+// (RUK-292), and the provider name is a path segment, so each kind gets its own.
+const redirectUri = (provider: LoginIntegrationName) =>
+  ({
+    name: "redirect_uri",
+    label: "Redirect URI",
+    // Required by the backend, which refuses a half-configured provider at the
+    // edge rather than at someone's first sign-in attempt.
+    optional: false,
+    url: true,
+    placeholder: `https://maintmode.example.com/auth/api/v1/login/oauth/${provider}/callback`,
+    help: "Must match the callback registered with the provider.",
+  }) satisfies ConfigFieldMeta;
 
 const SCOPES = {
   name: "scopes",
@@ -108,7 +111,7 @@ export const LOGIN_KIND_META: Record<LoginIntegrationName, IntegrationKindMeta> 
         help: "Set by this deployment.",
       },
       { name: "client_id", label: "Client ID", optional: false },
-      REDIRECT_URI,
+      redirectUri("google"),
       SCOPES,
       {
         ...HOSTED_DOMAINS,
@@ -150,7 +153,7 @@ export const LOGIN_KIND_META: Record<LoginIntegrationName, IntegrationKindMeta> 
         help: "Discovery base — the provider serves /.well-known/openid-configuration under it.",
       },
       { name: "client_id", label: "Client ID", optional: false },
-      REDIRECT_URI,
+      redirectUri("custom"),
       SCOPES,
       HOSTED_DOMAINS,
     ],
@@ -181,7 +184,7 @@ export const LOGIN_KIND_META: Record<LoginIntegrationName, IntegrationKindMeta> 
         help: "Set by this deployment.",
       },
       { name: "client_id", label: "Client ID", optional: false },
-      REDIRECT_URI,
+      redirectUri("github"),
       {
         name: "authorize_url",
         label: "Authorization URL",
