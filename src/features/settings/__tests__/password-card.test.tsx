@@ -178,6 +178,34 @@ describe("failures the user must be able to act on", () => {
   });
 });
 
+describe("M5 — a first password needs a recent sign-in", () => {
+  it("says why in place and offers to sign in again, back to this form", async () => {
+    bffFetch.mockRejectedValue(
+      new BffError(403, "Sign in again to set a password", "REAUTHENTICATION_REQUIRED"),
+    );
+    renderCard(false);
+    fill("New password", LONG_ENOUGH);
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+    const button = await screen.findByRole("button", { name: "Sign in again" });
+    expect(screen.getByRole("alert").textContent).toMatch(/recent sign-in/i);
+    const form = button.closest("form")!;
+    expect(form.getAttribute("method")).toBe("post");
+    expect(form.getAttribute("action")).toBe("/api/auth/logout?next=%2Fset-password");
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("does not offer it for any other 403", async () => {
+    bffFetch.mockRejectedValue(new BffError(403, "Forbidden", "FORBIDDEN"));
+    renderCard(false);
+    fill("New password", LONG_ENOUGH);
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Sign in again" })).toBeNull();
+  });
+});
+
 describe("the form follows password_set when it changes under the card", () => {
   // Found against a live backend, invisible to every test that mounts fresh.
   // `password_set` flips to `true` the moment a password is set, and this card

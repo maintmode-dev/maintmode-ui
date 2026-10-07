@@ -34,6 +34,8 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [error, setError] = useState<string | undefined>();
+  /** The backend wants a fresh sign-in before a FIRST password (M5). */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
 
   /**
    * A `password_set` that disagrees with reality is possible: the backend
@@ -84,6 +86,7 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
       return;
     }
     setError(undefined);
+    setNeedsSignIn(false);
 
     change.mutate(
       { ...(asChange ? { current_password: current } : {}), new_password: next },
@@ -99,6 +102,15 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
             return;
           }
 
+          if (mutationError.status === 403 && mutationError.code === "REAUTHENTICATION_REQUIRED") {
+            // Nothing was changed. Said in place with the way out next to it:
+            // a toast would vanish, and the user has to leave this page to fix it.
+            setError(
+              "For your security, setting a first password needs a recent sign-in. Sign in again, then set it.",
+            );
+            setNeedsSignIn(true);
+            return;
+          }
           if (mutationError.status === 422) {
             setError("That current password isn't right.");
             return;
@@ -127,65 +139,78 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
   };
 
   return (
-    <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
-      {asChange ? (
-        <>
-          <Label htmlFor="current-password">Current password</Label>
-          <Input
-            id="current-password"
-            name="current-password"
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-          />
-        </>
-      ) : null}
+    <>
+      <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
+        {asChange ? (
+          <>
+            <Label htmlFor="current-password">Current password</Label>
+            <Input
+              id="current-password"
+              name="current-password"
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+            />
+          </>
+        ) : null}
 
-      <Label htmlFor="new-password">New password</Label>
-      {/* Show/hide rather than a confirm field (UX-3): the new password is typed
+        <Label htmlFor="new-password">New password</Label>
+        {/* Show/hide rather than a confirm field (UX-3): the new password is typed
           once with nothing to compare it against. */}
-      <PasswordInput
-        id="new-password"
-        name="new-password"
-        autoComplete="new-password"
-        value={next}
-        onChange={(e) => setNext(e.target.value)}
-        aria-describedby="new-password-hint"
-      />
-      {/*
-       * "Characters" rather than bytes. The policy is 12 BYTES, which is not a
-       * unit to show an operator; the ASCII worst case can only under-promise,
-       * so a non-ASCII password shorter than the hint is still accepted.
-       */}
-      <p id="new-password-hint" className="caption">
-        {/* "Within minutes", not "now" (NOTE-2): the backend revokes the other
+        <PasswordInput
+          id="new-password"
+          name="new-password"
+          autoComplete="new-password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          aria-describedby="new-password-hint"
+        />
+        {/*
+         * "Characters" rather than bytes. The policy is 12 BYTES, which is not a
+         * unit to show an operator; the ASCII worst case can only under-promise,
+         * so a non-ASCII password shorter than the hint is still accepted.
+         */}
+        <p id="new-password-hint" className="caption">
+          {/* "Within minutes", not "now" (NOTE-2): the backend revokes the other
             devices' refresh tokens at once, but an access token already issued
             stays valid until it expires. No number: that lifetime is backend
             configuration, and a figure here would go stale silently. */}
-        At least 12 characters. {asChange ? "Changing it signs your other devices out within minutes." : null}
-      </p>
-
-      {error ? (
-        <p role="alert" className="text-xs text-[var(--destructive-fg)]">
-          {error}
+          At least 12 characters.{" "}
+          {asChange ? "Changing it signs your other devices out within minutes." : null}
         </p>
-      ) : null}
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={change.isPending || !next || (asChange && !current)}>
-          {change.isPending ? "Saving…" : asChange ? "Change password" : "Set password"}
-        </Button>
-        {!asChange ? (
-          // The page is the same form on its own, for someone who came here to
-          // do this one thing. It is this card's only entry point. Said as
-          // "this form" (UX-12): "Open on its own page" left people asking
-          // what would open.
-          <a href="/set-password" className="caption underline">
-            Open this form on a separate page
-          </a>
+        {error ? (
+          <p role="alert" className="text-xs text-[var(--destructive-fg)]">
+            {error}
+          </p>
         ) : null}
-      </div>
-    </form>
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={change.isPending || !next || (asChange && !current)}>
+            {change.isPending ? "Saving…" : asChange ? "Change password" : "Set password"}
+          </Button>
+          {!asChange ? (
+            // The page is the same form on its own, for someone who came here to
+            // do this one thing. It is this card's only entry point. Said as
+            // "this form" (UX-12): "Open on its own page" left people asking
+            // what would open.
+            <a href="/set-password" className="caption underline">
+              Open this form on a separate page
+            </a>
+          ) : null}
+        </div>
+      </form>
+      {needsSignIn ? (
+        // Its own form, outside the one above: forms do not nest. A native POST,
+        // as on the settings page — the logout route answers with a redirect,
+        // and `next` brings the user back to this form once signed in again.
+        <form action="/api/auth/logout?next=%2Fset-password" method="post" className="mt-2.5">
+          <Button type="submit" variant="outline" size="sm">
+            Sign in again
+          </Button>
+        </form>
+      ) : null}
+    </>
   );
 }
