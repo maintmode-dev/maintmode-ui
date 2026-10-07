@@ -28,6 +28,9 @@ const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
   "maintenance_step.started": { label: "Step started", token: "--status-in_progress-fg" },
   "maintenance_step.completed": { label: "Step completed", token: "--status-completed-fg" },
   "maintenance_step.canceled": { label: "Step canceled", token: "--conflict-fg" },
+  "integration.created": { label: "Integration created", token: "--status-planned-fg" },
+  "integration.updated": { label: "Integration updated", token: "--status-planned-fg" },
+  "integration.deleted": { label: "Integration deleted", token: "--conflict-fg" },
 };
 
 /** Humanised action label, e.g. `login.success` → `Login success`. */
@@ -74,6 +77,19 @@ const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditA
     "maintenance_step.canceled",
   ]),
 };
+
+/**
+ * Actions shown under `All` only, ON PURPOSE. A category chip for integrations
+ * is a product decision (docs/contract-gaps.md, "deliberately left open") and the
+ * chips are a frozen decision; the rows themselves must not wait for it — before
+ * they were modelled, the route dropped them. Named here so an action missing
+ * from every category by accident still fails the partition test.
+ */
+export const ALL_ONLY_ACTIONS: ReadonlySet<AuditAction> = new Set<AuditAction>([
+  "integration.created",
+  "integration.updated",
+  "integration.deleted",
+]);
 
 /** Whether an action belongs to the given category (`all` matches everything). */
 export function auditActionInCategory(action: AuditAction, category: AuditCategory): boolean {

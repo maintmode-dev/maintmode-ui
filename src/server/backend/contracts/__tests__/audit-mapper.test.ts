@@ -21,6 +21,9 @@ describe("mapAuditAction", () => {
       "maintenance_step.started",
       "maintenance_step.completed",
       "maintenance_step.canceled",
+      "integration.created",
+      "integration.updated",
+      "integration.deleted",
     ]) {
       expect(mapAuditAction(action)).toBe(action);
     }
@@ -135,6 +138,31 @@ describe("mapAuditLog", () => {
         { field: "description", old: undefined, new: "Added" },
       ],
     });
+  });
+
+  // S2 rework (backend b4a9e73): `integration.updated` names a replaced or
+  // cleared secret with NEITHER side — the value is never recorded. The no-op
+  // filter above must not eat it.
+  it("keeps a secret-changed flag on an integration update, and its config diff", () => {
+    const event = mapAuditLog({
+      id: "a-2",
+      action: "integration.updated",
+      entity_type: "integration",
+      entity_id: "notify/slack",
+      metadata: {
+        changes: [
+          { field: "api_url", old: "https://a.test", new: "https://b.test" },
+          { field: "enabled", old: "true", new: "false" },
+          { field: "secrets.bot_token" },
+          { field: "timeout", old: "", new: "" },
+        ],
+      },
+    });
+    expect(event?.metadata?.changes).toEqual([
+      { field: "api_url", old: "https://a.test", new: "https://b.test" },
+      { field: "enabled", old: "true", new: "false" },
+      { field: "secrets.bot_token", old: undefined, new: undefined },
+    ]);
   });
 
   it("keeps title-only maintenance metadata (no changes)", () => {

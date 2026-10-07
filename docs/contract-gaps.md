@@ -145,7 +145,8 @@ backend has already computed never reaches the operator.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
 | ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                              | —               |
 | `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                                     | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —               |
-| 8 audit actions          | the backend declares 23 audit actions; `AUDIT_ACTIONS` declares 15                                                     | the same `mapAuditAction` hole — see the section below                                                                                                                         | RUK-297 (found) |
+| 5 audit actions          | the backend declares 23 audit actions; `AUDIT_ACTIONS` declares 18                                                     | the same `mapAuditAction` hole — see the section below                                                                                                                         | RUK-297 (found) |
+| collection-change flags  | `maintenance.updated` names a supplied `steps`/`resources`/`notify_targets` as `{field}` with no `old`/`new`           | `mapChanges` ([`audit-mapper.ts`](../src/server/backend/contracts/audit-mapper.ts)) reads a change with neither side as a no-op and drops it                                   | —               |
 
 **`prune-*` is the most serious entry in this file.** The other discrepancies
 mean "a field did not arrive"; this one means **"a row did not arrive"**. In a
@@ -164,18 +165,20 @@ than lose them to a hole in the whitelist. Right now the assertion lets only
 
 **The `prune-*` row is the visible half of a wider gap, measured under RUK-297.**
 The backend declares 23 audit actions; `AUDIT_ACTIONS`
-([`audit-log.ts`](../src/domain/audit/audit-log.ts)) declares 15. Diffing the two
-sets leaves **eight** the screen drops silently, through the same
+([`audit-log.ts`](../src/domain/audit/audit-log.ts)) declares 18. Diffing the two
+sets leaves **five** the screen drops silently, through the same
 `mapAuditAction` hole:
 
-`auth_method.toggled`, `integration.created`, `integration.updated`,
-`integration.deleted`, `password.changed`, `password.reset`, `provider.linked`,
+`auth_method.toggled`, `password.changed`, `password.reset`, `provider.linked`,
 `user.tags_changed`.
 
-Three of those — `integration.*` — are written by the existing
-`/admin/integrations` screen, so **this is a loss happening in production now**,
-not one waiting on a merge. `auth_method.toggled` is the eighth case rather than
-a new defect; it was simply the one that made someone count.
+There were eight. `integration.created/updated/deleted` were added on
+2026-10-08 for the security review's S2 rework, where `integration.updated`
+became the record of a notify secret's destination moving — a record the screen
+was dropping whole. They show under **All** only (`ALL_ONLY_ACTIONS` in
+[`audit-presentation.ts`](../src/domain/audit/audit-presentation.ts)): the chip
+is still the open product decision described below. `auth_method.toggled` was
+the case that made someone count.
 
 **Not fixed here, deliberately.** RUK-297 built the screen that emits
 `auth_method.toggled`, and repairing the enum in that change would be exactly the
@@ -197,8 +200,11 @@ would make the existing assertion in
 [`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts)
 speak up about the loss already under way.
 
-**This row has no executable assertion.** The registry's checks compare rows
-against recorded fixtures, and none of these actions appears in `audit-log.json`
+**The remaining five have no executable assertion.** (`integration.*` now does:
+`audit-log-integration.json` and the "integration rows" block of
+[`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts).)
+The registry's checks compare rows against recorded fixtures, and none of the
+five appears in `audit-log.json`
 — see _Unproven captures_ below for the same limitation elsewhere. It will
 acquire one the day a fixture carries any of the eight: that assertion's
 whitelist admits only `prune-*`, so it will fail and name the action itself.
@@ -213,11 +219,22 @@ could not exist in principle. The field is now declared and the assertion in
 removed again.
 
 **What is deliberately left open:** there is no visible "Integration" tab. The
-counter reaches the domain, but `AuditCategory` (`audit-presentation.ts:49`) does
-not know about it, and `CATEGORY_ACTIONS` needs integration actions that
-`AUDIT_ACTIONS` does not have yet. That is a product decision rather than a
-mapping fix — recorded instead of done quietly. The "counter only" assertion
-inverts when the tab ships.
+counter reaches the domain and `AUDIT_ACTIONS` now has the integration actions,
+but `AuditCategory` does not know about a tab for them — they are listed in
+`ALL_ONLY_ACTIONS` instead. That is a product decision rather than a mapping fix
+— recorded instead of done quietly. The "counter only" assertion inverts when
+the tab ships.
+
+**Collection-change flags on `maintenance.updated`.** The backend records a
+supplied `steps`, `resources` or `notify_targets` as a change with no `old`/`new`
+(`addCollection` in `internal/services/maint/update_maint.go`) — a "changed"
+flag, the same convention `integration.updated` uses for `secrets.<key>`.
+`mapChanges` drops a change with neither side as a no-op, and its comment calls
+these "no-op entries for untouched fields", so the audit row of a maintenance
+whose steps were replaced says nothing about the steps. Found 2026-10-08 while
+keeping the `secrets.<key>` flag (which is now exempt); not fixed here, because
+whether "supplied" should read as "changed" on screen is a decision for the
+owner, not a drive-by.
 
 ---
 

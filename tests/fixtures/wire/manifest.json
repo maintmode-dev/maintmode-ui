@@ -261,6 +261,15 @@
       "why": "GAP-2 (v0.2.0-rc): the profile's Connect button follows this link as a top-level navigation. The BFF turns the relative link_url into an absolute URL on the auth origin and refuses anything that is not a path, so the shape is what the card and its contract test are pinned to.",
       "handEdited": true,
       "handEditedReason": "NOT RECORDABLE with scripts/refresh-fixtures.mjs: it issues GET only, and this is a POST that mints a single-use secret. The shape is transcribed from the backend's wire model (internal/app/api/public/auth/connect_provider.go, mintLinkTicket: link_url = \"/api/v1/login/oauth/\" + provider + \"/start?link=\" + ticket; models ConnectProviderDanceResponse{LinkURL json:\"link_url\"}) at maintmode main 8288093, and the ticket is masked as <link-ticket> (see _masked in the file). Re-verify when the backend changes mintLinkTicket."
+    },
+    "audit-log-integration": {
+      "url": "http://localhost:9000/auth/api/v1/audit/log?action=integration.created,integration.updated,integration.deleted",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-10-08",
+      "why": "Security review S2 rework: instead of demanding a notify secret when its destination changes, the backend records the change on integration.updated (metadata.changes, with a secret named as `secrets.<key>` and no value). The audit route used to drop every integration.* row as an unknown action (docs/contract-gaps.md, RUK-297), so this pins both that the rows arrive and that a secret flag with neither side survives the mapper's no-op filter.",
+      "handEdited": true,
+      "handEditedReason": "NOT RECORDABLE yet: metadata.changes on integration.updated ships on the backend commit b4a9e73 (branch fix/integration-audit-diff), not deployed to the :9000 stand, which runs main. Transcribed from that commit: action/entity values from internal/audit/integration_action.go (entity_id = kind/name, details format) and its render test; the change list from internal/services/integration/audit_changes.go (enabled first, config fields sorted, an added key with no old side, secrets by name only); field omission from the omitempty tags in internal/app/api/public/audit/models/logs.go. Re-record once the commit is deployed."
     }
   },
   "gateway": "http://localhost:9000"

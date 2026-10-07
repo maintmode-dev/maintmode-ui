@@ -224,6 +224,43 @@ describe("GET /api/audit — response pass-through", () => {
   });
 });
 
+/**
+ * Security review S2 rework (backend b4a9e73). With no secret re-entry demanded
+ * when a notify destination changes, `integration.updated` is the record of who
+ * moved it, from where, to where — and these rows used to be dropped whole as
+ * unknown actions. Separate, transcribed fixture: see its manifest entry.
+ */
+describe("GET /api/audit — integration rows", () => {
+  const integrationWire = readWireFixture<AuditLogResponseDto>("audit-log-integration.json");
+
+  async function integrationEvents() {
+    backendRequest.mockResolvedValueOnce(integrationWire);
+    const body = await (await GET(new Request("http://localhost/api/audit?limit=20"))).json();
+    return body.events as { action: string; entity_id?: string; metadata?: { changes?: unknown[] } }[];
+  }
+
+  it("reaches the client instead of being dropped as an unknown action", async () => {
+    const events = await integrationEvents();
+
+    expect(events.map((e) => e.action)).toEqual([
+      "integration.created",
+      "integration.updated",
+      "integration.deleted",
+    ]);
+  });
+
+  it("carries the update's diff, including a secret named with no value", async () => {
+    const updated = (await integrationEvents()).find((e) => e.action === "integration.updated");
+
+    expect(updated?.metadata?.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "api_url", old: expect.any(String), new: expect.any(String) }),
+        { field: "secrets.bot_token" },
+      ]),
+    );
+  });
+});
+
 describe("GET /api/audit — errors must not degrade into an empty history", () => {
   it("answers with an error status when the backend fails", async () => {
     // An empty audit log tells an operator "nothing ever happened" — the single
