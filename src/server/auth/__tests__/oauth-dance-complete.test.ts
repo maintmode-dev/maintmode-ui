@@ -161,6 +161,35 @@ describe("completeOAuthDanceAction", () => {
     expect(signIn).not.toHaveBeenCalled();
   });
 
+  /**
+   * The proof check must sit AFTER the session branch and the backend-error
+   * branch. A link comes back with no destination cookie (the profile's connect
+   * route never sets one), and a backend error is worth its own message even
+   * when the cookie has expired; moving the check up would turn both into the
+   * generic handoff failure.
+   */
+  it("still sends a completed link to the profile without the destination cookie", async () => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+
+    expect(await landsOn(form({ linked: "1" }))).toBe("/settings/profile?linked=1");
+  });
+
+  it("still sends a failed link to the profile without the destination cookie", async () => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+
+    expect(await landsOn(form({ error: "link_conflict" }))).toBe(
+      "/settings/profile?link_error=link_conflict",
+    );
+  });
+
+  it("still maps a backend error without the destination cookie", async () => {
+    readOAuthNext.mockResolvedValue(null);
+
+    expect(await landsOn(form({ error: "email_mismatch" }))).toBe("/login?code=email_mismatch");
+  });
+
   it("redeems the code with the stored destination", async () => {
     readOAuthNext.mockResolvedValue("/calendar?view=week");
     signIn.mockImplementation(() => {
@@ -180,7 +209,7 @@ describe("completeOAuthDanceAction", () => {
     expect(outcome).toBe("THROWN:ok");
   });
 
-  it("falls back to / when no destination was stored", async () => {
+  it("redeems with / when the stored destination is empty or rejected", async () => {
     readOAuthNext.mockResolvedValue("/");
     signIn.mockResolvedValue(undefined);
 

@@ -15,9 +15,7 @@ import { safeNext } from "@/server/auth/safe-next";
  * only place the destination can live. Without it, a deep link into a protected
  * page would silently land on `/` after sign-in.
  *
- * Same attributes and lifetime as the invitation cookie this app used to keep
- * (removed once the backend took over invitation handling): httpOnly, lax,
- * secure, ten minutes, single-use. `sameSite: "lax"` is load-bearing — the
+ * httpOnly, lax, secure, fifteen minutes (see `MAX_AGE_SECONDS`), single-use. `sameSite: "lax"` is load-bearing — the
  * return trip is a top-level GET navigation from another origin, which Lax
  * permits and Strict would drop.
  *
@@ -36,8 +34,18 @@ import { safeNext } from "@/server/auth/safe-next";
  */
 export const OAUTH_NEXT_COOKIE = "__Host-mm.oauth_next";
 
-const MAX_AGE_SECONDS = 10 * 60; // 10 min — one dance, matching the invitation cookie.
+/**
+ * 15 min: the backend's dance state lives `auth.oauth_dance_state_ttl` (10 min by
+ * default) from a moment slightly AFTER this cookie is set, and the receiver
+ * still has a redirect, a render and a submit to go after the callback. Since
+ * the cookie is also the receiver's proof (M-1), a cookie shorter than the
+ * dance turns a slow but valid sign-in into a refusal. Raise it with that TTL.
+ */
+const MAX_AGE_SECONDS = 15 * 60;
 
+// `Secure` everywhere, as `__Host-` requires. Chrome and Firefox accept that on
+// http://localhost; Safari does not, so OAuth sign-in in local dev needs one of
+// the former (as OTP already did).
 const COOKIE_ATTRIBUTES = { httpOnly: true, sameSite: "lax", secure: true, path: "/" } as const;
 
 export async function setOAuthNext(next: string): Promise<void> {

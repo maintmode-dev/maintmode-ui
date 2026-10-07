@@ -43,7 +43,7 @@ describe("oauth-next-cookie", () => {
       // `maxAge` included: it is the attribute whose entire purpose is
       // outliving the provider round-trip. A shortened value degrades every
       // deep link to `/` while every other assertion here still passes.
-      expect.objectContaining({ httpOnly: true, sameSite: "lax", path: "/", maxAge: 600 }),
+      expect.objectContaining({ httpOnly: true, sameSite: "lax", path: "/", maxAge: 900 }),
     );
   });
 
@@ -130,13 +130,19 @@ describe("oauth-next-cookie", () => {
     expect(store.delete).not.toHaveBeenCalled();
   });
 
-  it("clears the cookie by name", async () => {
+  // Read through Next's real cookie serializer, not the mock's arguments: a
+  // browser ignores a delete of a `__Host-` cookie whose `Set-Cookie` lacks
+  // `Secure`, and the proof would outlive its dance.
+  it("clears the cookie with a delete the browser will apply", async () => {
     await clearOAuthNext();
 
-    // With the attributes it was written with: a browser ignores a delete of a
-    // `__Host-` cookie that lacks `Secure`, and the binding would outlive its use.
-    expect(store.delete).toHaveBeenCalledWith(
-      expect.objectContaining({ name: OAUTH_NEXT_COOKIE, secure: true, path: "/" }),
-    );
+    const { ResponseCookies } = await import("next/dist/compiled/@edge-runtime/cookies");
+    const headers = new Headers();
+    new ResponseCookies(headers).delete(store.delete.mock.calls[0]?.[0]);
+    const header = headers.get("set-cookie") ?? "";
+    expect(header).toMatch(/^__Host-mm\.oauth_next=;/);
+    expect(header).toContain("Secure");
+    expect(header).toContain("Path=/");
+    expect(header).toMatch(/Expires=Thu, 01 Jan 1970/);
   });
 });

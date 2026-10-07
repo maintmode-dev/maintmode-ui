@@ -231,7 +231,11 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   // typed next would land there. `startOAuthDanceAction` always writes the
   // destination cookie, so its absence means the dance began somewhere else.
   //
-  // This narrows the window to "victim started a dance in the last ten minutes";
+  // One cookie per browser, so two dances started in parallel tabs collide: the
+  // first to finish clears it and the second is refused. Accepted — rare, and
+  // the person simply signs in again.
+  //
+  // This narrows the window to "victim started a dance in the last fifteen minutes";
   // closing it needs the code bound to the browser on the backend (backend L1).
   if (stored === null) {
     redirectToLoginError(AUTH_ERROR_CODES.oauthHandoffFailed);
