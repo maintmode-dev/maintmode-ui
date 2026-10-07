@@ -23,12 +23,19 @@ export async function register(): Promise<void> {
   }
 }
 
-/** Errors thrown while handling a request (render, route handlers, etc.). */
+/**
+ * Errors thrown while handling a request (render, route handlers, etc.).
+ *
+ * `request.path` includes the query string, and some of ours are credentials:
+ * `/accept-invite?token=` is a seven-day invitation bearer, the OAuth receiver
+ * carries a one-time `?code=`. Logged without it, so a render error does not
+ * ship them to the log store (security review 2026-10-07, I-2).
+ */
 export const onRequestError: Instrumentation.onRequestError = (err, request, context) => {
   logError({
     level: "ERROR",
     msg: "unhandled request error",
-    path: request.path,
+    path: request.path.split(/[?#]/, 1)[0],
     method: request.method,
     route: context.routePath,
     err: serializeError(err),
