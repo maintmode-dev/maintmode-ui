@@ -115,23 +115,3 @@ function parseBoolean(value: string | undefined): boolean {
   const normalized = value.trim().toLowerCase();
   return normalized === "true" || normalized === "1" || normalized === "yes";
 }
-
-/**
- * Returns true when a relative URI is safe to redirect a user back to after login.
- * Rejects absolute URLs, protocol-relative URLs, and any path containing backslashes.
- */
-export function isSafeOriginalUri(value: string | null | undefined): value is string {
-  if (!value) {
-    return false;
-  }
-  if (!value.startsWith("/")) {
-    return false;
-  }
-  if (value.startsWith("//") || value.startsWith("/\\")) {
-    return false;
-  }
-  if (value.includes("\\")) {
-    return false;
-  }
-  return true;
-}
