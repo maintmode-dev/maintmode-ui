@@ -32,6 +32,31 @@ vi.mock("@/shared/config/auth-config", () => ({
   parseMaintmodeAuthConfig: () => ({ authSecret: SECRET }),
 }));
 
+// Counts session-cookie decodes that have settled. A request's path from
+// "cookie decoded" to "joined or started a refresh" is synchronous, so once a
+// `vi.waitFor` (a macrotask) sees the count, every request counted has already
+// claimed its place in the in-flight map. That replaces a fixed sleep, which
+// under a loaded full-suite run let the requests arrive in the opposite order.
+const decodes = vi.hoisted(() => ({ settled: 0 }));
+vi.mock("next-auth/jwt", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next-auth/jwt")>();
+  return {
+    ...actual,
+    decode: async (...args: Parameters<typeof actual.decode>) => {
+      try {
+        return await actual.decode(...args);
+      } finally {
+        decodes.settled += 1;
+      }
+    },
+  };
+});
+
+/** Resolves once `count` requests have decoded their cookie and reached the refresh. */
+async function requestsReachedRefresh(count: number): Promise<void> {
+  await vi.waitFor(() => expect(decodes.settled).toBe(count));
+}
+
 const refreshBackendToken = vi.fn<(refreshToken: string) => Promise<BackendTokenPair>>();
 vi.mock("@/server/auth/backend-token-exchange", () => ({
   refreshBackendToken: (refreshToken: string) => refreshBackendToken(refreshToken),
@@ -68,6 +93,7 @@ async function cookiePayload(jar: Jar) {
 
 beforeEach(() => {
   refreshBackendToken.mockReset();
+  decodes.settled = 0;
 });
 
 describe("session refresh never crosses users", () => {
@@ -86,8 +112,8 @@ describe("session refresh never crosses users", () => {
     const sessionA = requestJar.run(jarA, () => readActiveSession());
     await vi.waitFor(() => expect(pending.has("refresh-a")).toBe(true));
     const sessionB = requestJar.run(jarB, () => readActiveSession());
-    // Give B time to reach the refresh while A's is still pending.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // B reaches the refresh while A's is still pending.
+    await requestsReachedRefresh(2);
 
     pending
       .get("refresh-a")!
@@ -115,9 +141,8 @@ describe("session refresh never crosses users", () => {
 
     const one = requestJar.run(first, () => forceSessionRefresh());
     const two = requestJar.run(second, () => forceSessionRefresh());
-    await vi.waitFor(() => expect(refreshBackendToken).toHaveBeenCalled());
-    // Let the second request finish decoding its cookie and join the refresh.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Both requests have joined the one refresh before it settles.
+    await requestsReachedRefresh(2);
     d.resolve({ access_token: "access-a-new", refresh_token: "refresh-a-2", expires_in: 900 });
     await Promise.all([one, two]);
 
@@ -154,10 +179,12 @@ describe("session refresh never crosses users", () => {
     const jarA = await jarFor("user-a", "refresh-shared");
     const jarB = await jarFor("user-b", "refresh-shared");
 
+    // A's refresh is in flight before B shows up; started together, either one
+    // could decode first and the test would be asserting a coin toss.
     const sessionA = requestJar.run(jarA, () => forceSessionRefresh());
+    await requestsReachedRefresh(1);
     const sessionB = requestJar.run(jarB, () => forceSessionRefresh());
-    await vi.waitFor(() => expect(refreshBackendToken).toHaveBeenCalled());
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await requestsReachedRefresh(2);
     d.resolve({ access_token: "access-a-new", refresh_token: "refresh-a-2", expires_in: 900 });
 
     const [a, b] = await Promise.all([sessionA, sessionB]);
@@ -177,5 +204,69 @@ describe("session refresh never crosses users", () => {
     // A settled failure must not stay cached as the answer for that token.
     expect(refreshBackendToken).toHaveBeenCalledTimes(2);
     expect(retried).toMatchObject({ accessToken: "a2" });
+  });
+
+  // The clear happens in each caller's own request context. Run once inside the
+  // shared promise — the shape the process-wide slot had — it lands only on the
+  // response of whichever request started the refresh, and the others keep a
+  // cookie holding a refresh token the backend has already spent.
+  it.each([
+    ["the backend rejects the refresh", () => Promise.reject(new Error("401"))],
+    [
+      "the backend answers without a usable expiry",
+      () => Promise.resolve({ access_token: "access-a-new", refresh_token: "refresh-a-2", expires_in: 0 }),
+    ],
+  ])("ends the session in every request sharing a refresh when %s", async (_case, outcome) => {
+    const d = deferred<void>();
+    refreshBackendToken.mockImplementation(() => d.promise.then(outcome));
+    const first = await jarFor("user-a", "refresh-a");
+    const second = await jarFor("user-a", "refresh-a");
+
+    const one = requestJar.run(first, () => forceSessionRefresh());
+    const two = requestJar.run(second, () => forceSessionRefresh());
+    await requestsReachedRefresh(2);
+    d.resolve();
+
+    expect(await Promise.all([one, two])).toEqual([null, null]);
+    expect(refreshBackendToken).toHaveBeenCalledTimes(1);
+    expect(first.get(COOKIE)).toBe("");
+    expect(second.get(COOKIE)).toBe("");
+  });
+
+  // A slot left behind after success is never reclaimed — the map grows by one
+  // entry per refresh for the life of the process — and a later request still
+  // holding that token would be handed the stale pair instead of the backend's
+  // answer.
+  it("releases the in-flight slot after a successful refresh too", async () => {
+    refreshBackendToken
+      .mockResolvedValueOnce({ access_token: "a2", refresh_token: "r2", expires_in: 900 })
+      .mockResolvedValueOnce({ access_token: "a3", refresh_token: "r3", expires_in: 900 });
+
+    await requestJar.run(await jarFor("user-a", "refresh-a"), () => forceSessionRefresh());
+    const later = await requestJar.run(await jarFor("user-a", "refresh-a"), () => forceSessionRefresh());
+
+    expect(refreshBackendToken).toHaveBeenCalledTimes(2);
+    expect(later).toMatchObject({ accessToken: "a3" });
+  });
+});
+
+describe("readActiveSession refreshes only near expiry", () => {
+  it("refreshes an access token inside the one-minute leeway", async () => {
+    refreshBackendToken.mockResolvedValue({ access_token: "a2", refresh_token: "r2", expires_in: 900 });
+    const jar = await jarFor("user-a", "refresh-a", Date.now() + 30_000);
+
+    const session = await requestJar.run(jar, () => readActiveSession());
+
+    expect(refreshBackendToken).toHaveBeenCalledWith("refresh-a");
+    expect(session).toMatchObject({ accessToken: "a2" });
+  });
+
+  it("returns a token with time left as it is, spending nothing", async () => {
+    const jar = await jarFor("user-a", "refresh-a", Date.now() + 5 * 60_000);
+
+    const session = await requestJar.run(jar, () => readActiveSession());
+
+    expect(refreshBackendToken).not.toHaveBeenCalled();
+    expect(session).toMatchObject({ accessToken: "access-user-a-old", refreshToken: "refresh-a" });
   });
 });

@@ -93,6 +93,24 @@ describe("oauth-next-cookie", () => {
     await expect(readOAuthNext()).resolves.toBeNull();
   });
 
+  /**
+   * Since M-1 an absent cookie is a refusal, so a read under any other name than
+   * the one written — the old `mm.oauth_next`, say — turns every OAuth sign-in
+   * into `oauth_handoff_failed`. The other tests here answer `get` whatever name
+   * it is asked for, so only a store that honours the name can see that.
+   */
+  it("reads and clears the cookie under the name it was written with", async () => {
+    await setOAuthNext("/calendar");
+    const [writtenName, writtenValue] = store.set.mock.calls[0];
+    store.get.mockImplementation((name: string) =>
+      name === writtenName ? { name, value: writtenValue } : undefined,
+    );
+
+    await expect(readOAuthNext()).resolves.toBe("/calendar");
+    await clearOAuthNext();
+    expect(store.delete.mock.calls[0][0]).toMatchObject({ name: writtenName });
+  });
+
   it("falls back to / when the cookie is present but empty", async () => {
     store.get.mockReturnValue({ value: "" });
 
