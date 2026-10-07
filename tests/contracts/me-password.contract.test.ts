@@ -155,6 +155,25 @@ describe("me/password — a backend error stays an error", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "SESSION_STALE" });
   });
 
+  // M5: a FIRST password needs a recent sign-in. A 403 that is anything else
+  // stays an outage, so a backend 403 never reads as this by accident.
+  it("asks for a fresh sign-in when the backend requires reauthentication", async () => {
+    backendAnswers(403, '{"code":"reauthentication_required","message":"sign in again to set a password"}');
+
+    const response = await POST(post({ new_password: "a-long-enough-password" }));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ code: "REAUTHENTICATION_REQUIRED" });
+  });
+
+  it("keeps any other 403 an outage", async () => {
+    backendAnswers(403, '{"code":"forbidden"}');
+
+    const response = await POST(post({ new_password: "a-long-enough-password" }));
+
+    expect(response.status).toBe(503);
+  });
+
   it("surfaces the backend's message field on a 400, not its envelope", async () => {
     backendAnswers(
       400,

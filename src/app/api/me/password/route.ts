@@ -99,6 +99,13 @@ export async function POST(request: Request) {
         { error: "Your session expired before the change was saved", code: "SESSION_STALE" },
         { status: 409 },
       );
+    case "reauthentication-required":
+      // 403, not 401: a 401 makes `bffFetch` navigate to /login with no word
+      // said, and here the user should read why before signing in again.
+      return NextResponse.json(
+        { error: "Sign in again to set a password", code: "REAUTHENTICATION_REQUIRED" },
+        { status: 403 },
+      );
     case "rejected":
       // The backend's own message, passed through as an opaque string. Never
       // parsed: its three 400s share one code and differ only in prose.

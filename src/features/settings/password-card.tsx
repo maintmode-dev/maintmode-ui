@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
@@ -24,6 +24,9 @@ import { Label } from "@/shared/ui/shadcn/label";
  *                offered, because guessing either form makes every save a 400.
  */
 
+/** Long enough to read one sentence before the page changes. */
+const SIGN_IN_AGAIN_DELAY_MS = 1500;
+
 export interface PasswordCardProps {
   /** `me.password_set`. `undefined` is "unknown", never "false". */
   passwordSet: boolean | undefined;
@@ -34,6 +37,22 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [error, setError] = useState<string | undefined>();
+  /** The backend wants a fresh sign-in before a FIRST password (M5). */
+  const [needsSignIn, setNeedsSignIn] = useState(false);
+  const signOutForm = useRef<HTMLFormElement>(null);
+
+  /**
+   * M5: a first password needs a session that started minutes ago, so for
+   * anyone who signed in earlier this is the ordinary path, not a failure. The
+   * user is taken through it rather than handed a button: signed out, then
+   * `/login?next=/set-password`, then back to this form. The pause is only so
+   * the message is read before the page changes under them.
+   */
+  useEffect(() => {
+    if (!needsSignIn) return;
+    const timer = window.setTimeout(() => signOutForm.current?.submit(), SIGN_IN_AGAIN_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [needsSignIn]);
 
   /**
    * A `password_set` that disagrees with reality is possible: the backend
@@ -84,6 +103,7 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
       return;
     }
     setError(undefined);
+    setNeedsSignIn(false);
 
     change.mutate(
       { ...(asChange ? { current_password: current } : {}), new_password: next },
@@ -99,6 +119,13 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
             return;
           }
 
+          if (mutationError.status === 403 && mutationError.code === "REAUTHENTICATION_REQUIRED") {
+            // Nothing was changed. Said in place, then acted on — see the
+            // effect above.
+            setError("You need to sign in again to set a password. Taking you to sign-in…");
+            setNeedsSignIn(true);
+            return;
+          }
           if (mutationError.status === 422) {
             setError("That current password isn't right.");
             return;
@@ -127,65 +154,75 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
   };
 
   return (
-    <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
-      {asChange ? (
-        <>
-          <Label htmlFor="current-password">Current password</Label>
-          <Input
-            id="current-password"
-            name="current-password"
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(e) => setCurrent(e.target.value)}
-          />
-        </>
-      ) : null}
+    <>
+      <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
+        {asChange ? (
+          <>
+            <Label htmlFor="current-password">Current password</Label>
+            <Input
+              id="current-password"
+              name="current-password"
+              type="password"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+            />
+          </>
+        ) : null}
 
-      <Label htmlFor="new-password">New password</Label>
-      {/* Show/hide rather than a confirm field (UX-3): the new password is typed
+        <Label htmlFor="new-password">New password</Label>
+        {/* Show/hide rather than a confirm field (UX-3): the new password is typed
           once with nothing to compare it against. */}
-      <PasswordInput
-        id="new-password"
-        name="new-password"
-        autoComplete="new-password"
-        value={next}
-        onChange={(e) => setNext(e.target.value)}
-        aria-describedby="new-password-hint"
-      />
-      {/*
-       * "Characters" rather than bytes. The policy is 12 BYTES, which is not a
-       * unit to show an operator; the ASCII worst case can only under-promise,
-       * so a non-ASCII password shorter than the hint is still accepted.
-       */}
-      <p id="new-password-hint" className="caption">
-        {/* "Within minutes", not "now" (NOTE-2): the backend revokes the other
+        <PasswordInput
+          id="new-password"
+          name="new-password"
+          autoComplete="new-password"
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          aria-describedby="new-password-hint"
+        />
+        {/*
+         * "Characters" rather than bytes. The policy is 12 BYTES, which is not a
+         * unit to show an operator; the ASCII worst case can only under-promise,
+         * so a non-ASCII password shorter than the hint is still accepted.
+         */}
+        <p id="new-password-hint" className="caption">
+          {/* "Within minutes", not "now" (NOTE-2): the backend revokes the other
             devices' refresh tokens at once, but an access token already issued
             stays valid until it expires. No number: that lifetime is backend
             configuration, and a figure here would go stale silently. */}
-        At least 12 characters. {asChange ? "Changing it signs your other devices out within minutes." : null}
-      </p>
-
-      {error ? (
-        <p role="alert" className="text-xs text-[var(--destructive-fg)]">
-          {error}
+          At least 12 characters.{" "}
+          {asChange ? "Changing it signs your other devices out within minutes." : null}
         </p>
-      ) : null}
 
-      <div className="flex items-center gap-3">
-        <Button type="submit" disabled={change.isPending || !next || (asChange && !current)}>
-          {change.isPending ? "Saving…" : asChange ? "Change password" : "Set password"}
-        </Button>
-        {!asChange ? (
-          // The page is the same form on its own, for someone who came here to
-          // do this one thing. It is this card's only entry point. Said as
-          // "this form" (UX-12): "Open on its own page" left people asking
-          // what would open.
-          <a href="/set-password" className="caption underline">
-            Open this form on a separate page
-          </a>
+        {error ? (
+          <p role="alert" className="text-xs text-[var(--destructive-fg)]">
+            {error}
+          </p>
         ) : null}
-      </div>
-    </form>
+
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={change.isPending || !next || (asChange && !current)}>
+            {change.isPending ? "Saving…" : asChange ? "Change password" : "Set password"}
+          </Button>
+          {!asChange ? (
+            // The page is the same form on its own, for someone who came here to
+            // do this one thing. It is this card's only entry point. Said as
+            // "this form" (UX-12): "Open on its own page" left people asking
+            // what would open.
+            <a href="/set-password" className="caption underline">
+              Open this form on a separate page
+            </a>
+          ) : null}
+        </div>
+      </form>
+      {needsSignIn ? (
+        // Its own form, outside the one above: forms do not nest. A native POST,
+        // as on the settings page: the logout route checks Origin and answers
+        // with a redirect, and `next` brings the user back to this form once
+        // signed in again. Submitted by the effect, not by the user.
+        <form ref={signOutForm} action="/api/auth/logout?next=%2Fset-password" method="post" hidden />
+      ) : null}
+    </>
   );
 }

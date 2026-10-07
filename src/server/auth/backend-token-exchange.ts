@@ -273,6 +273,12 @@ export type ChangePasswordOutcome =
   | { ok: false; kind: "session-stale" }
   /** A 400: the wrong shape for this account's state, or a policy violation. */
   | { ok: false; kind: "rejected"; message: string }
+  /**
+   * A FIRST password needs a recent sign-in: the session must have started
+   * within the last few minutes (security review M5), so a stolen session
+   * cannot be turned into a permanent password. Nothing was changed.
+   */
+  | { ok: false; kind: "reauthentication-required" }
   | { ok: false; kind: "unavailable" };
 
 /**
@@ -345,6 +351,15 @@ export async function changeBackendPassword(args: {
             kind: "rejected",
             message: parsed?.message ?? "That password wasn't accepted.",
           };
+        }
+        if (response.status === 403) {
+          // Branching on the code, not the status: a 403 is otherwise an
+          // unexpected answer here and stays "unavailable". The code is a
+          // literal agreed with the backend (M5).
+          const parsed = safeJsonParse<{ code?: string }>(body);
+          if (parsed?.code === "reauthentication_required") {
+            return { ok: false, kind: "reauthentication-required" };
+          }
         }
         return { ok: false, kind: "unavailable" };
       },
