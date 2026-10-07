@@ -47,15 +47,19 @@ describe("oauth-next-cookie", () => {
     );
   });
 
-  it("marks the cookie secure only in production", async () => {
-    vi.stubEnv("NODE_ENV", "production");
-    await setOAuthNext("/");
-    expect(store.set.mock.calls[0][2]).toMatchObject({ secure: true });
+  /**
+   * M-1 (security review 2026-10-07). The cookie is also the receiver's proof
+   * that THIS browser started the dance, so a sibling subdomain must not be able
+   * to plant it: `__Host-` forbids a `Domain`, and requires `Secure` in every
+   * environment — a browser drops a `__Host-` cookie set without it.
+   */
+  it("is a __Host- cookie, secure in every environment", async () => {
+    expect(OAUTH_NEXT_COOKIE.startsWith("__Host-")).toBe(true);
 
-    store.set.mockReset();
     vi.stubEnv("NODE_ENV", "development");
     await setOAuthNext("/");
-    expect(store.set.mock.calls[0][2]).toMatchObject({ secure: false });
+    expect(store.set.mock.calls[0][2]).toMatchObject({ secure: true, path: "/" });
+    expect(store.set.mock.calls[0][2]).not.toHaveProperty("domain");
   });
 
   it("sanitizes on write", async () => {
@@ -81,8 +85,16 @@ describe("oauth-next-cookie", () => {
     await expect(readOAuthNext()).resolves.toBe(expected);
   });
 
-  it("falls back to / when the cookie is absent", async () => {
+  // Absent and empty are different answers: absent means this browser did not
+  // start a dance, and the receiver refuses to redeem a code on it.
+  it("reports an absent cookie as null, not as /", async () => {
     store.get.mockReturnValue(undefined);
+
+    await expect(readOAuthNext()).resolves.toBeNull();
+  });
+
+  it("falls back to / when the cookie is present but empty", async () => {
+    store.get.mockReturnValue({ value: "" });
 
     await expect(readOAuthNext()).resolves.toBe("/");
   });
@@ -103,6 +115,10 @@ describe("oauth-next-cookie", () => {
   it("clears the cookie by name", async () => {
     await clearOAuthNext();
 
-    expect(store.delete).toHaveBeenCalledWith(OAUTH_NEXT_COOKIE);
+    // With the attributes it was written with: a browser ignores a delete of a
+    // `__Host-` cookie that lacks `Secure`, and the binding would outlive its use.
+    expect(store.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ name: OAUTH_NEXT_COOKIE, secure: true, path: "/" }),
+    );
   });
 });

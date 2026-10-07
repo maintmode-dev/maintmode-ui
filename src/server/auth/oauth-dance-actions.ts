@@ -171,7 +171,8 @@ function mapDanceError(code: string): AuthErrorCode {
  * consumer of this module, matching `built-in-sign-in-actions.ts`.
  */
 export async function completeOAuthDanceAction(formData: FormData): Promise<void> {
-  const destination = await readOAuthNext();
+  const stored = await readOAuthNext();
+  const destination = stored ?? "/";
   await clearOAuthNext();
 
   // Refuse to redeem into a browser that already holds a session.
@@ -220,6 +221,19 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   if (!code) {
     // Someone opened the receiver directly, or the backend redirected with
     // neither parameter. Nothing to redeem.
+    redirectToLoginError(AUTH_ERROR_CODES.oauthHandoffFailed);
+  }
+
+  // Refuse a code this browser did not ask for (login CSRF, security review
+  // 2026-10-07 M-1). The session check above protects a signed-in victim; this
+  // one protects a signed-out one, who would otherwise be signed into whatever
+  // account minted the code in the link they were sent — and everything they
+  // typed next would land there. `startOAuthDanceAction` always writes the
+  // destination cookie, so its absence means the dance began somewhere else.
+  //
+  // This narrows the window to "victim started a dance in the last ten minutes";
+  // closing it needs the code bound to the browser on the backend (backend L1).
+  if (stored === null) {
     redirectToLoginError(AUTH_ERROR_CODES.oauthHandoffFailed);
   }
 
