@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
@@ -24,6 +24,9 @@ import { Label } from "@/shared/ui/shadcn/label";
  *                offered, because guessing either form makes every save a 400.
  */
 
+/** Long enough to read one sentence before the page changes. */
+const SIGN_IN_AGAIN_DELAY_MS = 1500;
+
 export interface PasswordCardProps {
   /** `me.password_set`. `undefined` is "unknown", never "false". */
   passwordSet: boolean | undefined;
@@ -36,6 +39,20 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
   const [error, setError] = useState<string | undefined>();
   /** The backend wants a fresh sign-in before a FIRST password (M5). */
   const [needsSignIn, setNeedsSignIn] = useState(false);
+  const signOutForm = useRef<HTMLFormElement>(null);
+
+  /**
+   * M5: a first password needs a session that started minutes ago, so for
+   * anyone who signed in earlier this is the ordinary path, not a failure. The
+   * user is taken through it rather than handed a button: signed out, then
+   * `/login?next=/set-password`, then back to this form. The pause is only so
+   * the message is read before the page changes under them.
+   */
+  useEffect(() => {
+    if (!needsSignIn) return;
+    const timer = window.setTimeout(() => signOutForm.current?.submit(), SIGN_IN_AGAIN_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [needsSignIn]);
 
   /**
    * A `password_set` that disagrees with reality is possible: the backend
@@ -103,11 +120,9 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
           }
 
           if (mutationError.status === 403 && mutationError.code === "REAUTHENTICATION_REQUIRED") {
-            // Nothing was changed. Said in place with the way out next to it:
-            // a toast would vanish, and the user has to leave this page to fix it.
-            setError(
-              "For your security, setting a first password needs a recent sign-in. Sign in again, then set it.",
-            );
+            // Nothing was changed. Said in place, then acted on — see the
+            // effect above.
+            setError("You need to sign in again to set a password. Taking you to sign-in…");
             setNeedsSignIn(true);
             return;
           }
@@ -203,13 +218,10 @@ export function PasswordCard({ passwordSet }: PasswordCardProps) {
       </form>
       {needsSignIn ? (
         // Its own form, outside the one above: forms do not nest. A native POST,
-        // as on the settings page — the logout route answers with a redirect,
-        // and `next` brings the user back to this form once signed in again.
-        <form action="/api/auth/logout?next=%2Fset-password" method="post" className="mt-2.5">
-          <Button type="submit" variant="outline" size="sm">
-            Sign in again
-          </Button>
-        </form>
+        // as on the settings page: the logout route checks Origin and answers
+        // with a redirect, and `next` brings the user back to this form once
+        // signed in again. Submitted by the effect, not by the user.
+        <form ref={signOutForm} action="/api/auth/logout?next=%2Fset-password" method="post" hidden />
       ) : null}
     </>
   );
