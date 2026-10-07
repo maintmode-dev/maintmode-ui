@@ -7,6 +7,7 @@ import {
   hasMissingRequired,
   hostedDomainNotice,
   normalizeIssuer,
+  hasUnsuppliedRebound,
   secretsInvalidatedBy,
   validateUrlFields,
 } from "../dialog-form";
@@ -680,5 +681,23 @@ describe("hostedDomainNotice", () => {
   /** Applicability is computed, so it must survive the same spellings. */
   it("recognises the Google issuer with a trailing slash", () => {
     expect(hostedDomainNotice(`${GOOGLE}/`, "")).toMatch(/any Google account/i);
+  });
+});
+
+describe("hasUnsuppliedRebound", () => {
+  it("blocks a rebound secret that is locked or left empty", () => {
+    expect(hasUnsuppliedRebound(["password"], { password: { mode: "locked", value: "" } })).toBe(true);
+    expect(hasUnsuppliedRebound(["password"], { password: { mode: "editing", value: "  " } })).toBe(true);
+  });
+
+  it("lets a rebound secret through once re-entered or cleared", () => {
+    expect(hasUnsuppliedRebound(["password"], { password: { mode: "editing", value: "s3cret" } })).toBe(
+      false,
+    );
+    expect(hasUnsuppliedRebound(["password"], { password: { mode: "cleared", value: "" } })).toBe(false);
+  });
+
+  it("ignores secrets that are not rebound", () => {
+    expect(hasUnsuppliedRebound([], { password: { mode: "locked", value: "" } })).toBe(false);
   });
 });
