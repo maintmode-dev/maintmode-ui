@@ -39,8 +39,12 @@ export async function POST(request: Request) {
   await signOut({ redirect: false });
   await clearActiveSession();
 
-  const requestUrl = new URL(request.url);
-  const nextParam = requestUrl.searchParams.get("next");
+  const nextParam = new URL(request.url).searchParams.get("next");
   const target = isSafeOriginalUri(nextParam) ? nextParam : "/login";
-  return NextResponse.redirect(new URL(target, requestUrl), { status: 302 });
+  // Relative on purpose. Behind a proxy, standalone Next builds `request.url`
+  // from the address it listens on (http://0.0.0.0:3000), so resolving the
+  // target against it sent the browser there. The browser resolves a relative
+  // Location against the URL it actually used; `isSafeOriginalUri` keeps the
+  // target a same-origin path.
+  return new NextResponse(null, { status: 302, headers: { location: target } });
 }
