@@ -148,6 +148,19 @@ describe("completeOAuthDanceAction", () => {
     expect(await landsOn(form({}))).toBe("/login?code=oauth_handoff_failed");
   });
 
+  /**
+   * Login CSRF on a signed-out browser (security review 2026-10-07, M-1). The
+   * receiver submits itself, so a link carrying someone else's fresh code would
+   * sign whoever opens it into that account. Only a browser that started the
+   * dance here holds the destination cookie.
+   */
+  it("refuses a code when this browser never started a dance", async () => {
+    readOAuthNext.mockResolvedValue(null);
+
+    expect(await landsOn(form({ code: "attacker-code" }))).toBe("/login?code=oauth_handoff_failed");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
   it("redeems the code with the stored destination", async () => {
     readOAuthNext.mockResolvedValue("/calendar?view=week");
     signIn.mockImplementation(() => {
