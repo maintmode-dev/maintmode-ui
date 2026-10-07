@@ -50,10 +50,11 @@ export class OAuthDanceError extends Error {
 export async function runDanceRedemption(
   account: { maintmodeTokens?: BackendTokenPair; maintmodeUser?: AuthSessionUser },
   code: string,
+  bindingProof: string,
 ): Promise<true> {
   let tokens: BackendTokenPair;
   try {
-    tokens = await redeemOAuthDanceCode(code);
+    tokens = await redeemOAuthDanceCode(code, bindingProof);
   } catch (error) {
     // Logged, not surfaced. A spent code and a shared-bucket rate limit are
     // indistinguishable to the user and must stay that way, but an operator

@@ -41,6 +41,12 @@ vi.mock("@/server/backend/security/csrf", () => ({
   isSameOriginRequest: (request: Request) => isSameOriginRequest(request),
 }));
 
+// The binding cookie is written through `cookies()`, which needs a request
+// scope this test does not have; what the contract cares about is that a fresh
+// binding is minted and lands on the link.
+const mintOAuthBinding = vi.fn(async () => "BINDING-HASH");
+vi.mock("@/server/auth/oauth-binding-cookie", () => ({ mintOAuthBinding: () => mintOAuthBinding() }));
+
 const list = await import("@/app/api/sign-in-methods/route");
 const connect = await import("@/app/api/me/providers/[provider]/connect/route");
 const item = await import("@/app/api/me/providers/[provider]/route");
@@ -126,9 +132,20 @@ describe("POST /api/me/providers/{p}/connect — starting a link", () => {
     const response = await connect.POST(post(), params("github"));
 
     expect(response.status).toBe(200);
+    // Backend M1: the link carries this browser's binding next to its ticket,
+    // so the link code it yields completes only from here.
     expect(await response.json()).toEqual({
-      url: "https://maintmode.example/auth/api/v1/login/oauth/github/start?link=<link-ticket>",
+      url: "https://maintmode.example/auth/api/v1/login/oauth/github/start?link=<link-ticket>&binding=BINDING-HASH",
     });
+  });
+
+  it("mints no binding for a link it refuses to hand out", async () => {
+    mintOAuthBinding.mockClear();
+    authedRequest.mockResolvedValueOnce({ link_url: "//evil.example/start?link=t" });
+
+    await connect.POST(post(), params("github"));
+
+    expect(mintOAuthBinding).not.toHaveBeenCalled();
   });
 
   it.each([

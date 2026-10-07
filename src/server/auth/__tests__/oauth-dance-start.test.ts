@@ -19,6 +19,12 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
 // Mocked so this file exercises the redirect without loading the auth runtime.
 vi.mock("@/server/auth/auth-config", () => ({ signIn: vi.fn() }));
 vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+const mintOAuthBinding = vi.fn(async () => "BINDING-HASH");
+vi.mock("@/server/auth/oauth-binding-cookie", () => ({
+  mintOAuthBinding: () => mintOAuthBinding(),
+  readOAuthBindingProof: vi.fn(),
+  clearOAuthBinding: vi.fn(),
+}));
 
 const { startOAuthDanceAction } = await import("@/server/auth/oauth-dance-actions");
 
@@ -43,6 +49,7 @@ describe("startOAuthDanceAction", () => {
     // exception, not the common path.
     readActiveSession.mockReset().mockResolvedValue(null);
     redirect.mockClear();
+    mintOAuthBinding.mockClear();
     for (const [k, v] of Object.entries(ENV)) vi.stubEnv(k, v);
   });
 
@@ -61,7 +68,27 @@ describe("startOAuthDanceAction", () => {
     // Literal, not composed from the same pieces the code uses: an expectation
     // built the way the implementation builds it passes under any mutation of
     // the join.
-    expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start");
+    expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start?binding=BINDING-HASH");
+  });
+
+  /**
+   * M-1 / backend L1: the backend refuses a /start with no binding, and only
+   * the browser holding the matching nonce can redeem what the dance yields.
+   * Minted fresh for every dance, the HASH on the URL.
+   */
+  it("mints a binding for every dance and puts it on the URL", async () => {
+    const target = await run("google", "/calendar");
+
+    expect(mintOAuthBinding).toHaveBeenCalledTimes(1);
+    expect(new URL(target).searchParams.get("binding")).toBe("BINDING-HASH");
+  });
+
+  it("mints nothing for a browser it refuses", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "u" } });
+
+    await run("google");
+
+    expect(mintOAuthBinding).not.toHaveBeenCalled();
   });
 
   it("stashes the destination before redirecting", async () => {
@@ -114,7 +141,9 @@ describe("startOAuthDanceAction", () => {
   it("carries the invitation when one is given", async () => {
     const target = await run("google", undefined, "inv-token-1");
 
-    expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start?invitation=inv-token-1");
+    expect(target).toBe(
+      "http://localhost:9000/auth/api/v1/login/oauth/google/start?binding=BINDING-HASH&invitation=inv-token-1",
+    );
     // The invited person lands on `/`, NOT back on `/accept-invite`.
     //
     // By the time they return the backend has claimed the invitation inside the
@@ -137,7 +166,7 @@ describe("startOAuthDanceAction", () => {
   ])("omits the parameter entirely for %s", async (_case, invitation) => {
     const target = await run("google", undefined, invitation);
 
-    expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start");
+    expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start?binding=BINDING-HASH");
   });
 
   /**
@@ -147,11 +176,14 @@ describe("startOAuthDanceAction", () => {
   it.each([
     ["ampersand", "a&b=c", "a%26b%3Dc"],
     ["hash", "a#b", "a%23b"],
-    ["space", "a b", "a%20b"],
+    ["space", "a b", "a+b"],
   ])("encodes %s in the invitation", async (_case, raw, encoded) => {
     const target = await run("google", undefined, raw);
 
-    expect(target).toBe(`http://localhost:9000/auth/api/v1/login/oauth/google/start?invitation=${encoded}`);
+    expect(target).toBe(
+      `http://localhost:9000/auth/api/v1/login/oauth/google/start?binding=BINDING-HASH&invitation=${encoded}`,
+    );
+    expect(new URL(target).searchParams.get("invitation")).toBe(raw);
   });
 
   /**

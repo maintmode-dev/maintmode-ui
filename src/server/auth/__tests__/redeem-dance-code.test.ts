@@ -37,18 +37,20 @@ describe("redeemOAuthDanceCode", () => {
   it("posts the code to the dance exchange endpoint", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { access_token: "at", refresh_token: "rt" }));
 
-    await redeemOAuthDanceCode("one-time-code");
+    await redeemOAuthDanceCode("one-time-code", "binding-nonce");
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(String(url)).toBe("http://backend.test/auth/api/v1/login/oauth/code/exchange");
     expect(init?.method).toBe("POST");
-    expect(JSON.parse(String(init?.body))).toEqual({ code: "one-time-code" });
+    // `binding_proof` is the backend's field name (L1): without it the backend
+    // answers the same 401 as for a bad code.
+    expect(JSON.parse(String(init?.body))).toEqual({ code: "one-time-code", binding_proof: "binding-nonce" });
   });
 
   it("returns the token pair", async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { access_token: "at-1", refresh_token: "rt-1" }));
 
-    const pair = await redeemOAuthDanceCode("code");
+    const pair = await redeemOAuthDanceCode("code", "nonce");
 
     expect(pair.access_token).toBe("at-1");
     expect(pair.refresh_token).toBe("rt-1");
@@ -64,7 +66,7 @@ describe("redeemOAuthDanceCode", () => {
   it.each([401, 429, 500])("raises a BackendAuthError carrying status %i", async (status) => {
     fetchMock.mockResolvedValue(jsonResponse(status, { code: "unauthorized" }));
 
-    const error = await redeemOAuthDanceCode("code").catch((e: unknown) => e);
+    const error = await redeemOAuthDanceCode("code", "nonce").catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(BackendAuthError);
     expect((error as BackendAuthError).status).toBe(status);
@@ -83,6 +85,6 @@ describe("redeemOAuthDanceCode", () => {
   ])("rejects a 200 with %s", async (_case, body) => {
     fetchMock.mockResolvedValue(jsonResponse(200, body));
 
-    await expect(redeemOAuthDanceCode("code")).rejects.toBeInstanceOf(BackendAuthError);
+    await expect(redeemOAuthDanceCode("code", "nonce")).rejects.toBeInstanceOf(BackendAuthError);
   });
 });
