@@ -57,6 +57,8 @@ describe("resolveBackendUrl", () => {
     "/api/v1/integrations/smtp/..\\..\\users",
     "/api/v1/resources/.\t./users",
     "/api/v1/resources/.\n./users",
+    "/api/v1/resources/..\u001f",
+    "/api/v1/resources/.. ",
   ])("rejects the dot segment in %s", (path) => {
     expect(() => resolveBackendUrl("http://nginx:9000/auth", path)).toThrow(/dot segments/);
   });

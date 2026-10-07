@@ -6,6 +6,7 @@ import { decode, encode } from "next-auth/jwt";
 import { parseMaintmodeAuthConfig, type MaintmodeAuthConfig } from "@/shared/config/auth-config";
 import { refreshBackendToken } from "@/server/auth/backend-token-exchange";
 import type { AuthSessionUser, BackendTokenPair } from "@/server/auth/contracts";
+import { logError } from "@/server/observability/error-log";
 
 const REFRESH_LEEWAY_MS = 60_000;
 const SESSION_COOKIE_NAMES = [
@@ -201,9 +202,18 @@ async function refreshAndPersist(
 function refreshOnce(refreshToken: string, userId: string): Promise<BackendTokenPair> {
   const existing = inFlightRefreshes.get(refreshToken);
   if (existing) {
-    return existing.userId === userId
-      ? existing.pair
-      : Promise.reject(new Error("refresh token already in flight for another user"));
+    if (existing.userId === userId) {
+      return existing.pair;
+    }
+    // Logged because it is never legitimate: one refresh token inside two
+    // users' sealed cookies means a leaked AUTH_SECRET or a bug here. Neither
+    // the token nor the ids are written — the event alone is the signal.
+    logError({
+      level: "ERROR",
+      msg: "refresh token presented by two different users",
+      err: "refused cross-user refresh",
+    });
+    return Promise.reject(new Error("refresh token already in flight for another user"));
   }
   const pair = refreshBackendToken(refreshToken).finally(() => {
     inFlightRefreshes.delete(refreshToken);

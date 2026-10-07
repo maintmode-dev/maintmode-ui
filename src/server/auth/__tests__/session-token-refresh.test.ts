@@ -173,7 +173,34 @@ describe("session refresh never crosses users", () => {
     expect(await cookiePayload(jarB)).toMatchObject({ refreshToken: "refresh-b-2" });
   });
 
+  it("fails one user's refresh without touching another's still in flight", async () => {
+    const pending = new Map<string, ReturnType<typeof deferred<BackendTokenPair>>>();
+    refreshBackendToken.mockImplementation((rt) => {
+      const d = deferred<BackendTokenPair>();
+      pending.set(rt, d);
+      return d.promise;
+    });
+    const jarA = await jarFor("user-a", "refresh-a");
+    const jarB = await jarFor("user-b", "refresh-b");
+
+    const sessionA = requestJar.run(jarA, () => forceSessionRefresh());
+    const sessionB = requestJar.run(jarB, () => forceSessionRefresh());
+    await requestsReachedRefresh(2);
+    await vi.waitFor(() => expect(pending.size).toBe(2));
+
+    pending.get("refresh-a")!.reject(new Error("401"));
+    expect(await sessionA).toBeNull();
+    expect(jarA.get(COOKIE)).toBe("");
+    pending
+      .get("refresh-b")!
+      .resolve({ access_token: "access-b-new", refresh_token: "refresh-b-2", expires_in: 900 });
+
+    expect(await sessionB).toMatchObject({ accessToken: "access-b-new", user: { id: "user-b" } });
+    expect(await cookiePayload(jarB)).toMatchObject({ refreshToken: "refresh-b-2" });
+  });
+
   it("refuses a refresh token that is already being refreshed for another user", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const d = deferred<BackendTokenPair>();
     refreshBackendToken.mockReturnValue(d.promise);
     const jarA = await jarFor("user-a", "refresh-shared");
@@ -192,6 +219,11 @@ describe("session refresh never crosses users", () => {
     expect(a).toMatchObject({ user: { id: "user-a" } });
     expect(b).toBeNull();
     expect(jarB.get(COOKIE)).toBe("");
+    // Never legitimate, so it is logged — without the token or either user.
+    const lines = log.mock.calls.map(([line]) => String(line));
+    expect(lines.some((line) => line.includes("refresh token presented by two different users"))).toBe(true);
+    expect(lines.join("\n")).not.toMatch(/refresh-shared|user-a|user-b/);
+    log.mockRestore();
   });
 
   it("lets the next refresh of the same token through once the previous one settled", async () => {
@@ -259,6 +291,24 @@ describe("readActiveSession refreshes only near expiry", () => {
 
     expect(refreshBackendToken).toHaveBeenCalledWith("refresh-a");
     expect(session).toMatchObject({ accessToken: "a2" });
+  });
+
+  // The new expiry is what the leeway check reads next time. In milliseconds:
+  // read as seconds, a 15-minute token looks expired at once and every request
+  // spends the refresh token again.
+  it("persists an expiry expires_in seconds ahead, so the next read spends nothing", async () => {
+    refreshBackendToken.mockResolvedValue({ access_token: "a2", refresh_token: "r2", expires_in: 900 });
+    const jar = await jarFor("user-a", "refresh-a");
+    const before = Date.now();
+
+    await requestJar.run(jar, () => readActiveSession());
+    const stored = await cookiePayload(jar);
+    const again = await requestJar.run(jar, () => readActiveSession());
+
+    expect(stored!.accessTokenExpiresAt).toBeGreaterThanOrEqual(before + 900_000);
+    expect(stored!.accessTokenExpiresAt).toBeLessThanOrEqual(Date.now() + 900_000);
+    expect(refreshBackendToken).toHaveBeenCalledTimes(1);
+    expect(again).toMatchObject({ accessToken: "a2" });
   });
 
   it("returns a token with time left as it is, spending nothing", async () => {

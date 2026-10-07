@@ -28,6 +28,34 @@ describe("safeNext", () => {
     expect(safeNext("//evil.test/foo")).toBe("/");
   });
 
+  // Dot segments collapse during parsing, so the leading `//` only exists in
+  // the RESULT. A single pass of safeNext must already be safe: the logout
+  // route redirects to its output directly.
+  it.each([
+    "/..//evil.test/x",
+    "/.//evil.test",
+    "/%2e%2e//evil.test",
+    "/a/..//evil.test",
+    "/a/b/../..//evil.test",
+  ])("rejects %s, which parses to a protocol-relative path", (value) => {
+    expect(safeNext(value)).toBe("/");
+  });
+
+  // One pass must be final: a second pass changing the answer means the first
+  // returned something it would itself reject.
+  it.each([
+    "/",
+    "/calendar?view=week#d",
+    "/..//evil.test",
+    "/%2e%2e//evil.test",
+    "/a/./b/../c",
+    "/%2F%2Fevil.test",
+    "//evil.test",
+    "/\\evil.test",
+  ])("is idempotent for %s", (value) => {
+    expect(safeNext(safeNext(value))).toBe(safeNext(value));
+  });
+
   it("rejects /\\... which browsers may normalise to //", () => {
     expect(safeNext("/\\evil.test")).toBe("/");
   });

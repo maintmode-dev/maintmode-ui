@@ -168,6 +168,16 @@ describe("completeOAuthDanceAction", () => {
    * when the cookie has expired; moving the check up would turn both into the
    * generic handoff failure.
    */
+  // The attack against a signed-in victim, or simply a tab older than the
+  // cookie: refused by the session branch, and it must still land somewhere.
+  it("sends a signed-in browser with a code but no destination cookie to /", async () => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    expect(await landsOn(form({ code: "attacker-code" }))).toBe("/");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
   it("still sends a completed link to the profile without the destination cookie", async () => {
     readOAuthNext.mockResolvedValue(null);
     readActiveSession.mockResolvedValue({ user: { id: "me" } });

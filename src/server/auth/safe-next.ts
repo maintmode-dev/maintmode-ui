@@ -19,6 +19,9 @@
  *     have caught the TAB case on its own, which is why both are kept rather
  *     than one replacing the other.
  *
+ * The result is checked for a leading `//` once more after layer 2, since
+ * collapsing dot segments can produce one (`/..//evil.test`).
+ *
  * Anything failing either layer returns the safe fallback `/`.
  */
 const PROBE_ORIGIN = "https://safe-next.invalid";
@@ -45,7 +48,12 @@ export function safeNext(pathnameAndSearch: string): string {
     }
     // Rebuilt from the parsed parts rather than returned as received, so the
     // caller redirects to what a parser actually saw.
-    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
+    const rebuilt = `${resolved.pathname}${resolved.search}${resolved.hash}`;
+    // Checked again AFTER parsing: dot segments collapse, so `/..//evil.test`
+    // resolves to the path `//evil.test` on the probe origin — same-origin
+    // there, protocol-relative in a browser's `Location`. The input-side `//`
+    // check above never sees it (security release review 2026-10-07).
+    return rebuilt.startsWith("//") ? "/" : rebuilt;
   } catch {
     return "/";
   }

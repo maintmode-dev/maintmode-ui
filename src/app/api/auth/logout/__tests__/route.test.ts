@@ -53,6 +53,12 @@ describe.each([
     expect(response.headers.get("location")).toBe("/login");
   });
 
+  it("falls back to /login for a ?next= that parses to a protocol-relative path", async () => {
+    const response = await POST(post(`${path}?next=${encodeURIComponent("/..//evil.example/x")}`));
+
+    expect(response.headers.get("location")).toBe("/login");
+  });
+
   it("falls back to /login for an off-site ?next=", async () => {
     const response = await POST(post(`${path}?next=${encodeURIComponent("//evil.example/x")}`));
 

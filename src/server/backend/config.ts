@@ -54,9 +54,13 @@ export function resolveBackendUrl(baseUrl: string, path: string): URL {
 const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
 
 function hasDotSegment(path: string): boolean {
-  // Read the path the way the WHATWG parser will: it strips TAB/LF/CR before
-  // parsing and, for http(s), treats `\` as a separator. Splitting on `/` alone
-  // let `..\..` or `.<TAB>.` through for a path built without encoding.
-  const pathname = path.replace(/[\t\n\r]/g, "").split(/[?#]/, 1)[0];
+  // Read the path the way the WHATWG parser will: it trims leading and trailing
+  // C0 controls and spaces, strips TAB/LF/CR anywhere, and for http(s) treats
+  // `\` as a separator. Splitting on `/` alone let `..\..`, `.<TAB>.` or a
+  // trailing `..<US>` through for a path built without encoding.
+  const pathname = path
+    .replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "")
+    .replace(/[\t\n\r]/g, "")
+    .split(/[?#]/, 1)[0];
   return pathname.split(/[\/\\]/).some((segment) => DOT_SEGMENT.test(segment));
 }
