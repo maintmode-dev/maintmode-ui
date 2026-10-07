@@ -219,14 +219,20 @@ export async function loginWithBreakGlass(password: string): Promise<BackendToke
  * carries the status either way, which is what lets the caller log the two apart
  * while telling the user the same thing.
  */
-export async function redeemOAuthDanceCode(code: string): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(DANCE_CODE_EXCHANGE_PATH, { code }, (parsed) =>
-    // BOTH tokens, matching every other call that mints a session. Accepting a
-    // pair with no refresh token signs the user in and then kills the session at
-    // the first rotation — the `jwt` callback has nothing to rotate with and
-    // marks it `RefreshAccessTokenError`. That lands minutes later, mid-work,
-    // and points nowhere near this function.
-    Boolean(parsed?.access_token && parsed?.refresh_token),
+export async function redeemOAuthDanceCode(code: string, bindingProof: string): Promise<BackendTokenPair> {
+  // `binding_proof` is the nonce from this browser's binding cookie
+  // (`oauth-binding-cookie.ts`). Without the right one the backend answers the
+  // same 401 as for a bad code, and burns the code either way.
+  return postBackendJson<BackendTokenPair>(
+    DANCE_CODE_EXCHANGE_PATH,
+    { code, binding_proof: bindingProof },
+    (parsed) =>
+      // BOTH tokens, matching every other call that mints a session. Accepting a
+      // pair with no refresh token signs the user in and then kills the session at
+      // the first rotation — the `jwt` callback has nothing to rotate with and
+      // marks it `RefreshAccessTokenError`. That lands minutes later, mid-work,
+      // and points nowhere near this function.
+      Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 

@@ -39,9 +39,9 @@ describe("runDanceRedemption", () => {
     fetchBackendMe.mockResolvedValue(ME);
     const account: Record<string, unknown> = {};
 
-    await expect(runDanceRedemption(account, "one-time")).resolves.toBe(true);
+    await expect(runDanceRedemption(account, "one-time", "nonce")).resolves.toBe(true);
 
-    expect(redeemOAuthDanceCode).toHaveBeenCalledWith("one-time");
+    expect(redeemOAuthDanceCode).toHaveBeenCalledWith("one-time", "nonce");
     expect(account.maintmodeTokens).toEqual(PAIR);
     // Field by field, as literals. The session's id, email and roles are what
     // every downstream gate reads; asserting the object as a whole against a
@@ -58,7 +58,7 @@ describe("runDanceRedemption", () => {
     redeemOAuthDanceCode.mockResolvedValue(PAIR);
     fetchBackendMe.mockResolvedValue(ME);
 
-    await runDanceRedemption({}, "one-time");
+    await runDanceRedemption({}, "one-time", "nonce");
 
     expect(fetchBackendMe).toHaveBeenCalledWith("at-1");
   });
@@ -72,7 +72,7 @@ describe("runDanceRedemption", () => {
   it("reports a failed redemption as a handoff failure", async () => {
     redeemOAuthDanceCode.mockRejectedValue(new Error("401"));
 
-    const error = await runDanceRedemption({}, "spent").catch((e: unknown) => e);
+    const error = await runDanceRedemption({}, "spent", "nonce").catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(OAuthDanceError);
     expect((error as InstanceType<typeof OAuthDanceError>).code).toBe("oauth_handoff_failed");
@@ -83,7 +83,7 @@ describe("runDanceRedemption", () => {
     redeemOAuthDanceCode.mockResolvedValue(PAIR);
     fetchBackendMe.mockRejectedValue(new Error("500"));
 
-    const error = await runDanceRedemption({}, "one-time").catch((e: unknown) => e);
+    const error = await runDanceRedemption({}, "one-time", "nonce").catch((e: unknown) => e);
 
     expect((error as InstanceType<typeof OAuthDanceError>).code).toBe("identity_lookup_failed");
   });
@@ -93,7 +93,7 @@ describe("runDanceRedemption", () => {
     fetchBackendMe.mockRejectedValue(new Error("500"));
     const account: Record<string, unknown> = {};
 
-    await runDanceRedemption(account, "one-time").catch(() => {});
+    await runDanceRedemption(account, "one-time", "nonce").catch(() => {});
 
     // A session must never be half-established: tokens without an identity is
     // exactly the state the `jwt` callback cannot enrich.

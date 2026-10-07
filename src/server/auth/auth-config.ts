@@ -137,18 +137,24 @@ providers.push(
   Credentials({
     id: OAUTH_DANCE_PROVIDER_ID,
     name: "OAuth dance",
-    credentials: { code: {} },
+    credentials: { code: {}, proof: {} },
     /**
      * Shape validation ONLY — no network call, deliberately. The code is
      * single-use with a 60-second life, and redeeming here as well as in the
      * `signIn` callback would spend it twice for one sign-in.
+     *
+     * `proof` is the binding nonce, read from this browser's cookie by
+     * `completeOAuthDanceAction` — never from the receiver's form. Without one
+     * there is nothing to redeem with, so it fails here rather than spending
+     * the code on a request the backend must refuse.
      */
     async authorize(credentials) {
       const code = typeof credentials?.code === "string" ? credentials.code.trim() : "";
-      if (!code) {
+      const proof = typeof credentials?.proof === "string" ? credentials.proof : "";
+      if (!code || !proof) {
         return null;
       }
-      return { id: OAUTH_DANCE_PROVIDER_ID, danceCode: code };
+      return { id: OAUTH_DANCE_PROVIDER_ID, danceCode: code, danceProof: proof };
     },
   }),
 );
@@ -220,11 +226,12 @@ export const config = {
       }
       if (account.provider === OAUTH_DANCE_PROVIDER_ID) {
         const code = typeof user?.danceCode === "string" ? user.danceCode : "";
-        if (!code) {
+        const proof = typeof user?.danceProof === "string" ? user.danceProof : "";
+        if (!code || !proof) {
           throw new BackendExchangeError(AUTH_ERROR_CODES.oauthHandoffFailed);
         }
         try {
-          return await runDanceRedemption(account, code);
+          return await runDanceRedemption(account, code, proof);
         } catch (error) {
           // `oauth-dance-redemption.ts` deliberately does not import NextAuth,
           // so its failures arrive as a plain error and are rewrapped here —

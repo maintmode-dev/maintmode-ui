@@ -47,11 +47,20 @@ describe("oauth-dance is wired into the signIn callback", () => {
     expect(source).toMatch(/user\?\.danceCode/);
   });
 
+  it("carries the binding proof the same way, from the action's credentials to the redemption", () => {
+    // M-1 / backend L1. A rename on one side redeems with an empty proof, which
+    // the backend answers like a dead code — and burns the code.
+    expect(actions).toMatch(/signIn\("oauth-dance", \{ code, proof,/);
+    expect(source).toMatch(/credentials\?\.proof/);
+    expect(source).toMatch(/danceProof:\s*proof/);
+    expect(source).toMatch(/user\?\.danceProof/);
+  });
+
   it("refuses an empty code before it reaches the backend", () => {
     // Without the guard an empty `danceCode` is redeemed and answered 401,
     // which is indistinguishable from an expired code — so the operator log the
     // change added points at the wrong cause.
-    expect(source).toMatch(/if \(!code\) \{[\s\S]*?throw new BackendExchangeError/);
+    expect(source).toMatch(/if \(!code \|\| !proof\) \{[\s\S]*?throw new BackendExchangeError/);
   });
 
   it("redeems in the callback, not in authorize", () => {
@@ -69,7 +78,7 @@ describe("oauth-dance is wired into the signIn callback", () => {
     // The stage split itself is covered behaviorally in
     // `oauth-dance-redemption.test.ts`. What this file still owns is the
     // wiring: that the callback calls into that module at all.
-    expect(source).toContain("runDanceRedemption(account, code)");
+    expect(source).toContain("runDanceRedemption(account, code, proof)");
     expect(source).toContain("OAuthDanceError");
   });
 });
