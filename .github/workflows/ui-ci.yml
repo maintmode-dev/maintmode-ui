@@ -103,6 +103,25 @@ jobs:
       # reachable through a route's synchronous import graph.
       - run: npm run test:bundle
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Reads package-lock.json against the advisory database; no install
+      # needed. The RUNTIME tree only (`--omit=dev`): that is what ships in the
+      # image, and the dev tree carries advisories (eslint-config-next's glob
+      # chain, @vitest/mocker) whose only fix is a breaking downgrade — auditing
+      # it would keep this job red and teach everyone to ignore it.
+      #
+      # It can turn red with no change in the PR: an advisory published
+      # against an existing dependency is exactly what it is here to catch
+      # (next 16.3.6 was clean on 2026-10-07 and had six highs the next day).
+      - run: npm audit --omit=dev --audit-level=moderate
+
   image:
     name: Build image (ui)
     runs-on: ubuntu-latest
@@ -113,6 +132,8 @@ jobs:
       - contracts
       - unit
       - build
+      # No image with a known runtime advisory in it.
+      - audit
     permissions:
       contents: read
       packages: write
