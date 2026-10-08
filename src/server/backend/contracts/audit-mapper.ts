@@ -4,17 +4,20 @@
  * never sees the `apiauthmodels.AuditLog` wire shape.
  *
  * Reconciliation handled here:
- *  - action  : whitelisted against the dotted `AuditAction` enum; unknown wire
- *              values are dropped (entry skipped) so the UI never renders an
- *              unmapped action label.
+ *  - action  : carried through as the wire value. A known action renders with
+ *              its label and colour; an unknown one renders as a neutral row
+ *              labelled with the raw value. It is NOT dropped: until RUK-297 an
+ *              allowlist here discarded every row the enum had not heard of, and
+ *              five real security events never reached the screen. Nothing is
+ *              filtered by action, on purpose: an allowlist (or a denylist)
+ *              here is a place for records to disappear silently.
  *  - details : carried through as a free-text string (NOT a JSON object).
  *  - actor   : carried through; absent/blank yields `undefined`.
  */
 
-import { AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import type {
-  AuditAction,
   AuditEvent,
+  AuditEventAction,
   AuditFacets,
   AuditFieldChange,
   AuditMetadata,
@@ -28,13 +31,13 @@ import type {
   AuditLogResponseDto,
 } from "./maintmode-dto";
 
-// Whitelist derived from the domain tuple — single source of truth, so a new
-// wire action can never be silently accepted without also being a known enum.
-const KNOWN_ACTIONS = new Set<AuditAction>(AUDIT_ACTIONS);
-
-/** Whitelist the wire action against the domain enum; unknown/missing → undefined. */
-export function mapAuditAction(action: string | undefined): AuditAction | undefined {
-  return action && KNOWN_ACTIONS.has(action as AuditAction) ? (action as AuditAction) : undefined;
+/**
+ * The wire action, trimmed; `undefined` only when there is none. Known or not is
+ * the presentation layer's question (`isKnownAuditAction`), not a reason to lose
+ * the row here.
+ */
+export function mapAuditAction(action: string | undefined): AuditEventAction | undefined {
+  return trimmed(action);
 }
 
 function trimmed(value: string | undefined): string | undefined {
@@ -96,8 +99,9 @@ function mapAuditMetadata(dto: AuditLogMetadataDto | undefined): AuditMetadata |
 
 /**
  * `apiauthmodels.AuditLog` → domain `AuditEvent`, or `null` when the entry
- * carries no id or an unmappable action (filtered out by the caller). Keeping
- * the guard here means the route never leaks half-formed rows to the table.
+ * carries no id or no action — filtered out by the caller. An action the UI
+ * does not model is NOT a reason to return `null`. Keeping the guard here means
+ * the route never leaks half-formed rows to the table.
  */
 export function mapAuditLog(dto: AuditLogDto): AuditEvent | null {
   const action = mapAuditAction(dto.action);
@@ -129,8 +133,8 @@ function mapAuditFacets(dto: AuditLogResponseDto["facets"]): AuditFacets {
 
 /**
  * `GET /api/v1/audit/log` envelope → domain `AuditPage` (`{ events, total,
- * facets }`). Unmappable rows are dropped; `total`/`facets` come straight from
- * the server (it does the filtering + counting now).
+ * facets }`). Rows `mapAuditLog` rejects are dropped; `total`/`facets` come
+ * straight from the server (it does the filtering + counting now).
  */
 export function mapAuditLogResponse(dto: AuditLogResponseDto): AuditPage {
   const events = (dto.logs ?? []).map(mapAuditLog).filter((e): e is AuditEvent => e !== null);

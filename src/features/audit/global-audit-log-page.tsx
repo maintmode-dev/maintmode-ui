@@ -15,12 +15,13 @@ import { AuditError } from "@/shared/ui/states";
 import { formatDate, formatRelative, formatUtc } from "@/shared/ui/lib/format";
 import { cn } from "@/shared/ui/lib/cn";
 
-import { type AuditAction, type AuditEvent, auditActorHandle } from "@/domain/audit/audit-log";
+import { type AuditEvent, type AuditEventAction, auditActorHandle } from "@/domain/audit/audit-log";
 import {
   AUDIT_CATEGORIES,
   type AuditCategory,
   auditActionDotToken,
   auditActionLabel,
+  isSignInShaped,
 } from "@/domain/audit/audit-presentation";
 
 // Type-only: erased at compile time, so it does not put the picker's chunk back
@@ -377,7 +378,7 @@ function AuditRow({ event }: { event: AuditEvent }) {
   );
 }
 
-function ActionCell({ action }: { action: AuditAction }) {
+function ActionCell({ action }: { action: AuditEventAction }) {
   // Dot and label share the action's colour (per the mockup) — one token drives
   // both so they never drift apart.
   const color = `var(${auditActionDotToken(action)})`;
@@ -402,15 +403,18 @@ function ActorCell({ event }: { event: AuditEvent }) {
 }
 
 /**
- * Target cell — for role/block events the affected user (display name or
- * email); for maintenance events the maintenance title; for login events the
- * IP; otherwise the entity type or em-dash.
+ * Target cell — for role/block/tag events the affected user (display name or
+ * email); for maintenance events the maintenance title; for sign-in and
+ * credential events the IP; for a sign-in method toggle the method; otherwise
+ * the entity type or em-dash.
  */
 function TargetCell({ event }: { event: AuditEvent }) {
   const m = event.metadata;
   let value: string | undefined;
-  if (event.action === "login.success" || event.action === "login.failed") {
+  if (isSignInShaped(event.action)) {
     value = m?.ip;
+  } else if (event.action === "auth_method.toggled") {
+    value = event.entity_id;
   } else if (event.action === "logout.success") {
     value = undefined;
   } else if (event.action.startsWith("maintenance")) {

@@ -4,36 +4,18 @@ import { mapAuditAction, mapAuditLog, mapAuditLogResponse } from "@/server/backe
 import type { AuditLogResponseDto } from "@/server/backend/contracts/maintmode-dto";
 
 describe("mapAuditAction", () => {
-  it("passes through every dotted AuditAction enum value", () => {
-    for (const action of [
-      "login.success",
-      "login.failed",
-      "logout.success",
-      "roles.changed",
-      "user.blocked",
-      "user.unblocked",
-      "maintenance.created",
-      "maintenance.updated",
-      "maintenance.approved",
-      "maintenance.started",
-      "maintenance.completed",
-      "maintenance.canceled",
-      "maintenance_step.started",
-      "maintenance_step.completed",
-      "maintenance_step.canceled",
-      "integration.created",
-      "integration.updated",
-      "integration.deleted",
-    ]) {
-      expect(mapAuditAction(action)).toBe(action);
-    }
+  it("passes a wire action through as-is, known or not", () => {
+    // No allowlist here any more (RUK-297): an allowlist is what made five real
+    // security events vanish between the wire and the screen.
+    expect(mapAuditAction("login.success")).toBe("login.success");
+    expect(mapAuditAction("password.changed")).toBe("password.changed");
+    expect(mapAuditAction("something.new")).toBe("something.new");
+    expect(mapAuditAction("  user.tags_changed  ")).toBe("user.tags_changed");
   });
 
-  it("returns undefined for unknown or missing actions", () => {
-    // The pre-RUK-182 flat scheme is no longer accepted.
-    expect(mapAuditAction("login_success")).toBeUndefined();
-    expect(mapAuditAction("assigned")).toBeUndefined();
+  it("returns undefined only when there is no action at all", () => {
     expect(mapAuditAction("")).toBeUndefined();
+    expect(mapAuditAction("   ")).toBeUndefined();
     expect(mapAuditAction(undefined)).toBeUndefined();
   });
 });
@@ -61,11 +43,23 @@ describe("mapAuditLog", () => {
     });
   });
 
-  it("drops rows with no id or an unmapped action", () => {
+  it("drops rows with no id or no action", () => {
     expect(mapAuditLog({ action: "roles.changed" })).toBeNull();
-    // The pre-RUK-182 flat enum value is no longer mappable.
-    expect(mapAuditLog({ id: "a-1", action: "assigned" })).toBeNull();
     expect(mapAuditLog({ id: "a-1" })).toBeNull();
+    expect(mapAuditLog({ id: "a-1", action: "  " })).toBeNull();
+  });
+
+  it("keeps a row whose action the UI does not model, with its payload intact", () => {
+    // Rendered as a neutral row under "All" — never dropped.
+    expect(
+      mapAuditLog({ id: "a-1", action: "something.new", actor: "a@b.test", details: "it happened" }),
+    ).toEqual({
+      id: "a-1",
+      action: "something.new",
+      actor: "a@b.test",
+      details: "it happened",
+      created_at: "",
+    });
   });
 
   it("normalizes blank optional strings to undefined", () => {
@@ -191,7 +185,7 @@ describe("mapAuditLog", () => {
 });
 
 describe("mapAuditLogResponse", () => {
-  it("maps the logs array and filters out unmappable rows", () => {
+  it("maps the logs array, keeping unknown actions and dropping id-less rows", () => {
     const dto: AuditLogResponseDto = {
       logs: [
         { id: "a-1", action: "roles.changed" },
@@ -199,16 +193,16 @@ describe("mapAuditLogResponse", () => {
         { action: "user.blocked" },
         { id: "a-3", action: "user.blocked" },
       ],
-      total: 2,
-      facets: { all: 2, auth: 0, roles: 1, block: 1, maintenance: 0 },
+      total: 3,
+      facets: { all: 3, auth: 0, roles: 1, block: 1, maintenance: 0 },
     };
     const page = mapAuditLogResponse(dto);
-    expect(page.events.map((e) => e.id)).toEqual(["a-1", "a-3"]);
-    expect(page.total).toBe(2);
+    expect(page.events.map((e) => e.id)).toEqual(["a-1", "a-2", "a-3"]);
+    expect(page.total).toBe(3);
     // `integration` is zero-filled here on purpose: the DTO above omits it, and
     // the mapper must still produce the full domain shape. The backend does send
     // it (RUK-254 found it being dropped before the field was declared).
-    expect(page.facets).toEqual({ all: 2, auth: 0, roles: 1, block: 1, maintenance: 0, integration: 0 });
+    expect(page.facets).toEqual({ all: 3, auth: 0, roles: 1, block: 1, maintenance: 0, integration: 0 });
   });
 
   it("falls back to the row count when total is absent", () => {
