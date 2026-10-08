@@ -51,11 +51,11 @@ describe("the invitation page starts the dance with the invitation", () => {
     );
   });
 
-  it("reads the session with auth(), never the cookie-writing reader", () => {
+  it("reads the session with readSessionUser(), never the cookie-writing reader", () => {
     // `readActiveSession()` writes on near-expiry refresh, which a page render
     // may not do — it would 500 only inside the rotation window. Comments are
     // stripped above, so this is about the call, not about naming the symbol.
-    expect(page).toContain("await auth()");
+    expect(page).toContain("await readSessionUser()");
     expect(page).not.toMatch(/readActiveSession\s*\(/);
   });
 
@@ -69,8 +69,8 @@ describe("the invitation page starts the dance with the invitation", () => {
    * Source-text, and narrower than the property it defends — worth naming so the
    * failure is legible.
    *
-   * What matters behaviourally is that a session carrying
-   * `RefreshAccessTokenError` STILL suppresses the button: the page's predicate
+   * What matters behaviourally is that a session whose refresh token has
+   * quietly died STILL suppresses the button: the page's predicate
    * is deliberately broader than the action's, so the page never offers a click
    * the action would refuse. This project has no harness that renders a server
    * component, so that decision is guarded by matching the expression rather
@@ -79,7 +79,7 @@ describe("the invitation page starts the dance with the invitation", () => {
    * loosening it, because the narrowing it warns against fails the same way.
    */
   it("derives the signed-in identity from the session", () => {
-    expect(page).toMatch(/signedInAs\s*=\s*session\?\.user\?\.email/);
+    expect(page).toMatch(/signedInAs\s*=\s*sessionUser\?\.email/);
     expect(page).toMatch(/signedInAs=\{signedInAs\}/);
   });
 

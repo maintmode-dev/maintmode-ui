@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { signOut } from "@/server/auth/auth-config";
 import { revokeAllBackendSessions } from "@/server/auth/backend-token-exchange";
 import { clearActiveSession, readActiveSession } from "@/server/auth/session-token";
 import { safeNext } from "@/server/auth/safe-next";
@@ -8,7 +7,7 @@ import { isSameOriginRequest } from "@/server/backend/security/csrf";
 
 /**
  * Signs the account out on ALL devices: revokes every refresh token via
- * `POST /api/v1/logout/all`, then clears this browser's NextAuth jwt +
+ * `POST /api/v1/logout/all`, then clears this browser's session cookie +
  * active-session cookies and redirects to /login.
  *
  * Unlike `/api/auth/logout` (this device only), the backend revoke is what
@@ -36,7 +35,6 @@ export async function POST(request: Request) {
     }
   }
 
-  await signOut({ redirect: false });
   await clearActiveSession();
 
   const nextParam = new URL(request.url).searchParams.get("next");

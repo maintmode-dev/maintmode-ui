@@ -3,22 +3,19 @@
 import { redirect } from "next/navigation";
 
 import { isPasswordWithinPolicy } from "@/domain/auth/sign-in-method";
-import { signIn } from "@/server/auth/auth-config";
 import { requestOtpCode } from "@/server/auth/backend-token-exchange";
 import { bindWithinReissueCooldown, putBindingToSleep, setOtpBinding } from "@/server/auth/otp-nonce-cookie";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
-import { isNextRedirect } from "@/server/auth/next-redirect";
 import { safeNext } from "@/server/auth/safe-next";
+import { signInWithBackendLogin } from "@/server/auth/sign-in";
 import { readActiveSession } from "@/server/auth/session-token";
 
 /**
  * Server actions behind the built-in sign-in methods (RUK-288).
  *
- * These are actions rather than BFF routes for two reasons. No route in this
- * app writes a cookie — the public `accept-invite` page sets its own via
- * `cookies()`, which is the established pattern — and NextAuth's `signIn` must
- * be called from the server so it attaches the CSRF token itself; a bare POST
- * to the callback endpoint fails with `MissingCSRF`.
+ * These are actions rather than BFF routes: the session cookie is written with
+ * `cookies()`, which is the established pattern, and Next checks an action's
+ * Origin itself, so a cross-site form cannot sign anyone in.
  */
 
 export interface SignInActionResult {
@@ -83,9 +80,8 @@ export async function requestOtpAction(email: string): Promise<SignInActionResul
 /**
  * Step two, and the password form: establish the session.
  *
- * Both failure kinds arrive here as one thrown `CredentialsSignin` — NextAuth's
- * server-action path rethrows rather than building a `?code=` redirect — so the
- * split between them is made here, not by NextAuth:
+ * Both failure kinds arrive here as one thrown `SignInError`, so the split
+ * between them is made here:
  *
  * - a lost binding leaves step two entirely, because the flow is genuinely over
  *   and re-rendering the code input would invite the user to retype a code that
@@ -105,24 +101,15 @@ export async function credentialsSignInAction(
   const redirectTo = input.next ? safeNext(input.next) : "/";
 
   try {
-    await signIn("backend-login", {
+    await signInWithBackendLogin({
       kind: input.kind,
       email: input.email,
       code: input.kind === "otp" ? input.code : "",
       password: input.kind === "password" ? input.password : "",
-      redirectTo,
     });
-    return {};
   } catch (error) {
-    // A successful sign-in redirects by THROWING (NEXT_REDIRECT), so the happy
-    // path arrives in this catch too and must be rethrown.
-    if (isNextRedirect(error)) {
-      throw error;
-    }
-
-    // Read structurally rather than via `instanceof AuthError`: importing
-    // `next-auth` here would pull its runtime into every consumer of this
-    // module, and the only thing needed is the code the callback attached.
+    // Read structurally: the code `SignInError` carries, or nothing for an
+    // unexpected failure, which maps to the flow's uniform answer below.
     const code =
       typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
 
@@ -143,6 +130,7 @@ export async function credentialsSignInAction(
     }
     return { error: AUTH_ERROR_CODES.otpVerificationFailed };
   }
+  redirect(redirectTo);
 }
 
 /**
@@ -156,7 +144,7 @@ export async function changeEmailAction(): Promise<void> {
 
 /**
  * The codes the accept-with-password form knows how to word. Anything else
- * reaching the catch below — a NextAuth code this path never produces — reads as
+ * reaching the catch below — a code this path never produces — reads as
  * the generic failure rather than leaking an unworded string to the client.
  */
 const INVITE_ACCEPT_ERRORS: ReadonlySet<string> = new Set([
@@ -177,7 +165,7 @@ const INVITE_ACCEPT_ERRORS: ReadonlySet<string> = new Set([
  * invitation in the same transaction that creates the account — so a click from
  * someone already signed in (an admin checking the link) would spend it on the
  * wrong browser. `readActiveSession()` because an action may write the cookie
- * its refresh rotates; the page uses `auth()` for the same reason it does there.
+ * its refresh rotates; the page uses `readSessionUser()` for the same reason it does there.
  *
  * Exported, so callable by action id with any token — which grants nothing the
  * public backend endpoint does not: the token is the credential either way. The
@@ -200,22 +188,17 @@ export async function acceptInvitationWithPasswordAction(input: {
   }
 
   try {
-    await signIn("backend-login", {
+    await signInWithBackendLogin({
       kind: "invite",
       invitation: input.invitationToken,
       password: input.password,
-      redirectTo: "/",
     });
-    return {};
   } catch (error) {
-    // Success arrives here too: `signIn` redirects by throwing NEXT_REDIRECT.
-    if (isNextRedirect(error)) {
-      throw error;
-    }
     const code =
       typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
     return { error: INVITE_ACCEPT_ERRORS.has(code) ? code : AUTH_ERROR_CODES.inviteAcceptFailed };
   }
+  redirect("/");
 }
 
 /**
@@ -235,13 +218,8 @@ export async function breakGlassSignInAction(password: string): Promise<SignInAc
     return { error: AUTH_ERROR_CODES.invalidCredentials };
   }
   try {
-    await signIn("backend-login", { kind: "break-glass", password, redirectTo: "/" });
-    return {};
+    await signInWithBackendLogin({ kind: "break-glass", password });
   } catch (error) {
-    // Success arrives here too: `signIn` redirects by throwing NEXT_REDIRECT.
-    if (isNextRedirect(error)) {
-      throw error;
-    }
     // The password WAS accepted when only the profile failed to load — saying
     // it was wrong would send the administrator after the wrong problem.
     const code =
@@ -251,4 +229,5 @@ export async function breakGlassSignInAction(password: string): Promise<SignInAc
     }
     return { error: AUTH_ERROR_CODES.invalidCredentials };
   }
+  redirect("/");
 }

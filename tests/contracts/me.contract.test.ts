@@ -26,13 +26,10 @@ vi.mock("@/server/backend/client/authenticated-backend-request", () => ({
   authenticatedBackendRequest: (opts: { path: string; method: string }) => backendRequest(opts),
 }));
 
-// `GET /api/me` signs the browser out on a backend 404, so both of these are
-// pulled into the module graph. Stubbed to keep the route a pure transport test
-// — a real `signOut` would reach for NextAuth's request context, which does not
-// exist here.
-const signOut = vi.fn();
+// `GET /api/me` signs the browser out on a backend 404. Stubbed to keep the
+// route a pure transport test — a real cookie write needs a request context,
+// which does not exist here.
 const clearActiveSession = vi.fn();
-vi.mock("@/server/auth/auth-config", () => ({ signOut: () => signOut() }));
 vi.mock("@/server/auth/session-token", () => ({ clearActiveSession: () => clearActiveSession() }));
 
 const { GET } = await import("@/app/api/me/route");
@@ -40,7 +37,6 @@ const { BackendRequestError } = await import("@/server/backend/errors/backend-re
 
 // The backend mock resets itself (see `_harness`); these two are this file's own.
 beforeEach(() => {
-  signOut.mockClear();
   clearActiveSession.mockClear();
 });
 
@@ -146,7 +142,6 @@ describe("GET /api/me — errors must not degrade into an anonymous-looking user
 
     expect(response.status).toBe(401);
     expect(body.code).toBe("AUTH_REQUIRED");
-    expect(signOut).toHaveBeenCalledTimes(1);
     expect(clearActiveSession).toHaveBeenCalledTimes(1);
   });
 });

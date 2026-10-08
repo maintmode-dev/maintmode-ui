@@ -15,7 +15,6 @@ const bindWithinReissueCooldown = vi.fn();
 const putBindingToSleep = vi.fn();
 const recordRefusedCode = vi.fn();
 const clearAllBindings = vi.fn();
-const signOut = vi.fn();
 const clearActiveSession = vi.fn();
 
 vi.mock("@/server/auth/backend-token-exchange", () => ({
@@ -39,7 +38,6 @@ vi.mock("@/server/auth/otp-nonce-cookie", async (importOriginal) => {
   };
 });
 
-vi.mock("@/server/auth/auth-config", () => ({ signOut: (...args: unknown[]) => signOut(...args) }));
 vi.mock("@/server/auth/session-token", () => ({ clearActiveSession: () => clearActiveSession() }));
 
 /** A backend failure as `postBackendJson` throws it. */
@@ -149,7 +147,6 @@ describe("confirming a reset", () => {
       newPassword: "a-long-enough-password",
     });
 
-    expect(signOut).toHaveBeenCalledWith({ redirect: false });
     expect(clearActiveSession).toHaveBeenCalled();
     // One code serves both flows on the backend: the sign-in binding may hold
     // the code just spent, so both go.
@@ -161,7 +158,7 @@ describe("confirming a reset", () => {
   // user is left believing their password is unchanged when it is not.
   it("still confirms when the teardown throws", async () => {
     confirmPasswordReset.mockResolvedValue(undefined);
-    signOut.mockRejectedValueOnce(new Error("cookie store unavailable"));
+    clearActiveSession.mockRejectedValueOnce(new Error("cookie store unavailable"));
 
     const result = await confirmPasswordResetAction({
       email: "op@example.test",
@@ -313,7 +310,7 @@ describe("confirming a reset", () => {
   // raw refresh response — a token pair. Logging the object would serialize it.
   it("never logs credential material when the teardown fails", async () => {
     confirmPasswordReset.mockResolvedValue(undefined);
-    signOut.mockRejectedValueOnce(
+    clearActiveSession.mockRejectedValueOnce(
       Object.assign(new Error("refresh failed"), {
         status: 401,
         responseBody: '{"access_token":"at_SECRET","refresh_token":"rt_SECRET"}',

@@ -16,8 +16,8 @@ export const metadata: Metadata = {
  * The destination is fixed rather than read from `?next=`: this page is reached
  * by typing its address, never by a redirect that would have one to carry, so
  * accepting a query-supplied destination would add an open parameter for
- * nothing. The action signs in through NextAuth's `backend-login` provider
- * (`kind: "break-glass"`), so the CSRF token and the uniform refusal come with
+ * nothing. The action signs in through `signInWithBackendLogin`
+ * (`kind: "break-glass"`), so the Origin check and the uniform refusal come with
  * it.
  */
 export default function Page() {

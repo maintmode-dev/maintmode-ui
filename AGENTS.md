@@ -40,7 +40,7 @@
 - Browser-owned modules under `src/features/**`, `src/shared/ui/**`, and `src/app/providers.tsx` must not import `src/server/**`.
 - Production modules must not import `src/shared/testing/**` or `tests/**`.
 - `src/app/api/**` may import `src/server/backend/**`, `src/server/auth/**`, `src/domain/**`, and `src/shared/config/**`.
-- `src/server/auth/**` and `next-auth` may only be imported from `src/server/**`, `src/app/api/**`, `src/proxy.ts` (Next.js 16 auth-gate convention, formerly `middleware.ts`), and other server components.
+- `src/server/auth/**` may only be imported from `src/server/**`, `src/app/api/**`, `src/proxy.ts` (Next.js 16 auth-gate convention, formerly `middleware.ts`), and other server components.
 - Domain modules must not import React, Next.js, route handlers, or styling primitives.
 - Avoid broad barrel exports until a module has a stable public API.
 
@@ -101,9 +101,10 @@ in a test. See `docs/contract-gaps.md`.
 
 ## Auth Boundary
 
-- Browser must never receive `access_token` or `refresh_token`. Tokens stay inside the NextAuth jwt cookie and are read only via `src/server/auth/session-token.ts` from server-only code.
+- Browser must never receive `access_token` or `refresh_token`. Tokens stay inside the encrypted session cookie (`src/server/auth/session-cookie.ts`) and are read only via `src/server/auth/session-token.ts` from server-only code.
+- There is no auth library. Sign-in is `src/server/auth/sign-in.ts` (exchange with the backend, then `establishSession`); pages and `proxy.ts` read who is signed in with `readSessionUser*` and never refresh; only the BFF rotates tokens (`readActiveSession`). Do not add a second refresh path.
 - BFF route handlers under `src/app/api/**` (other than `src/app/api/auth/**`) must use `authenticatedBackendRequest` from `src/server/backend/client/authenticated-backend-request.ts` instead of `backendRequest` directly.
 - A backend `401` must be normalized to `{ status: 401, code: "AUTH_REQUIRED" }`; the browser fetcher then redirects to `/login?next=<current path>`.
-- **This app is not an OAuth client** (RUK-292). The dance runs on the backend, which holds the client secret; the provider button redirects the browser to `{MAINTMODE_AUTH_PUBLIC_BASE_URL}/api/v1/login/oauth/{provider}/start` and the receiver at `/auth/oauth/callback` trades the one-time code it comes back with for a token pair. There is no `clientId`/`clientSecret` in NextAuth and no provider `id_token` on this side. Do not reintroduce one.
+- **This app is not an OAuth client** (RUK-292). The dance runs on the backend, which holds the client secret; the provider button redirects the browser to `{MAINTMODE_AUTH_PUBLIC_BASE_URL}/api/v1/login/oauth/{provider}/start` and the receiver at `/auth/oauth/callback` trades the one-time code it comes back with for a token pair. There is no `clientId`/`clientSecret` and no provider `id_token` on this side. Do not reintroduce one.
 - `MAINTMODE_AUTH_PUBLIC_BASE_URL` is the browser-facing origin of the auth backend, including any gateway prefix. It is **not** interchangeable with `MAINTMODE_AUTH_API_BASE_URL`, which is server-to-server and resolves to a container name in the dev and local deployments.
 - `exchangeGoogleIdToken` and `/api/v1/login/oauth/exchange/google` still exist, with exactly one caller: the dev-only bypass provider. They are not a live sign-in path.

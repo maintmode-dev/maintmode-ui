@@ -40,9 +40,8 @@ const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
  *
  * `testRoles` (dev-only) seeds the `X-Test-Roles` header so a freshly created
  * dev user gets the given roles (comma-separated, e.g. `admin,editor`). The
- * only caller that passes it is the dev-bypass branch of the NextAuth `signIn`
- * callback, which is registered solely under `devAuthBypassEnabled` (off in
- * production) — so the header can never ship in a prod build. We only send it
+ * only caller that passes it is `signInWithDevBypass`, which refuses to run
+ * unless `devAuthBypassEnabled` (off in production) — so the header can never ship in a prod build. We only send it
  * when the value is non-empty. The header is deliberately absent from the
  * public swagger, so it is added here in the fetch layer by hand.
  */

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { ThemeInitScript } from "./theme-provider";
 import { TzInitScript } from "@/features/_shared/timezone/timezone-provider";
-import { DEV_BYPASS_ENABLED } from "@/server/auth/auth-config";
+import { DEV_BYPASS_ENABLED } from "@/server/auth/dev-bypass";
 import { devLoginAsAction } from "@/server/auth/auth-actions";
 import "./globals.css";
 

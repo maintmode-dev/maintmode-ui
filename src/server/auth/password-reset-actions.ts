@@ -1,6 +1,5 @@
 "use server";
 
-import { signOut } from "@/server/auth/auth-config";
 import { confirmPasswordReset, requestPasswordResetCode } from "@/server/auth/backend-token-exchange";
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import {
@@ -171,10 +170,9 @@ export async function confirmPasswordResetAction(args: {
   await clearAllBindings();
 
   try {
-    // Without this the NextAuth cookie outlives the backend session: `proxy.ts`
+    // Without this the session cookie outlives the backend session: `proxy.ts`
     // still reads a session, `/login` bounces the user to `/`, and every
     // request 401s on a dead token.
-    await signOut({ redirect: false });
     await clearActiveSession();
   } catch (error) {
     // Status only, like the two log lines above. Logging the error OBJECT here

@@ -23,7 +23,7 @@ pre-1.0; there are no maintained backport branches.
 
 This app is a **BFF** (backend-for-frontend). It is the OAuth client, and it
 holds the only copy of the Google client secret. Backend access and refresh
-tokens live server-side in the httpOnly NextAuth session cookie and are read
+tokens live server-side in the encrypted httpOnly session cookie and are read
 only from server-only code (`src/server/auth/session-token.ts`). **The browser
 never sees them.**
 

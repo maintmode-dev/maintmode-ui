@@ -15,9 +15,9 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
   clearOAuthNext: () => clearOAuthNext(),
   readOAuthNext: vi.fn(),
 }));
-// The module also holds the receiver action, which imports NextAuth's `signIn`.
-// Mocked so this file exercises the redirect without loading the auth runtime.
-vi.mock("@/server/auth/auth-config", () => ({ signIn: vi.fn() }));
+// The module also holds the receiver action, which signs in. Mocked so this
+// file exercises the redirect without loading the session layer.
+vi.mock("@/server/auth/sign-in", () => ({ signInWithDanceCode: vi.fn() }));
 vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
 const mintOAuthBinding = vi.fn(async () => "BINDING-HASH");
 vi.mock("@/server/auth/oauth-binding-cookie", () => ({

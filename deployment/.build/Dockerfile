@@ -2,7 +2,7 @@
 
 # maintmode-ui — Next.js (App Router + BFF) production image.
 #
-# This is NOT a static site: src/app/api/** route handlers, NextAuth v5, and
+# This is NOT a static site: src/app/api/** route handlers, the session layer, and
 # the server-only BFF in src/server/** require a Node runtime. We build the
 # standalone output (next.config.ts -> output: "standalone") and ship it on a
 # minimal slim base. Runtime configuration is supplied via --env-file at
@@ -30,9 +30,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Next collects page data for the API routes at build time, which initializes
-# the NextAuth/auth-config module and triggers its env validation (AUTH_SECRET,
-# Google client id/secret). These are NOT baked into the image — they are
+# Next collects page data for the API routes at build time, which loads the
+# auth modules and triggers their env validation (`parseMaintmodeAuthConfig`).
+# These are NOT baked into the image — they are
 # placeholder values that exist only for the duration of `next build`. The real
 # runtime values come from --env-file at `docker run` time. AUTH_SECRET must be
 # >= 32 chars, and both URLs must be valid http(s) URLs to pass validation —

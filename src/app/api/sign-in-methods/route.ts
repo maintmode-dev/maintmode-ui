@@ -18,7 +18,8 @@ import { routeErrorResponse } from "@/server/backend/errors/bff-error";
  * stay a failure rather than degrade into an empty list the card would read as
  * "nothing to connect".
  *
- * Not under `/api/auth/*`: that prefix is NextAuth's catch-all.
+ * Not under `/api/auth/*`: that prefix was Auth.js's catch-all, and is kept
+ * for the session's own routes (logout, dev-login).
  */
 export async function GET() {
   try {

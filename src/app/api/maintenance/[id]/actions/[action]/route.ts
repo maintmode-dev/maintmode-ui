@@ -20,7 +20,7 @@ const MAX_BODY_BYTES = 16 * 1024;
  *   cancel   → POST /api/v1/maintenances/{id}/cancel
  *
  * Security: same-origin CSRF check (defense-in-depth on top of the
- * SameSite=Lax NextAuth cookie). The body is forwarded as-is — the caller
+ * SameSite=Lax session cookie). The body is forwarded as-is — the caller
  * sends the backend-shaped payload directly: `approve` →
  * `{ observed_maint_revision, conflicts_snapshot }` (`apimodels.ApproveDraftMaintRequest`),
  * `cancel` → `{ reason, comment }`. Backend returns 409 on a stale revision

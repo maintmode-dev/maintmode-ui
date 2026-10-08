@@ -21,7 +21,7 @@ const MAX_BODY_BYTES = 64 * 1024;
  * mutation hook can navigate to the new detail page.
  *
  * Security: same-origin CSRF check (defense-in-depth on top of the
- * SameSite=Lax NextAuth cookie).
+ * SameSite=Lax session cookie).
  */
 export async function POST(request: Request) {
   if (!isSameOriginRequest(request)) {

@@ -1,28 +1,24 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { decode, encode } from "next-auth/jwt";
 
 import { parseMaintmodeAuthConfig, type MaintmodeAuthConfig } from "@/shared/config/auth-config";
 import { refreshBackendToken } from "@/server/auth/backend-token-exchange";
 import type { AuthSessionUser, BackendTokenPair } from "@/server/auth/contracts";
+import {
+  SESSION_COOKIE_NAMES,
+  SESSION_MAX_AGE_SECONDS,
+  decodeSession,
+  encodeSession,
+  sessionCookieAttributes,
+  sessionCookieNameFor,
+  type SessionPayload,
+} from "@/server/auth/session-cookie";
 import { logError } from "@/server/observability/error-log";
 
-const REFRESH_LEEWAY_MS = 60_000;
-const SESSION_COOKIE_NAMES = [
-  "authjs.session-token",
-  "__Secure-authjs.session-token",
-  "next-auth.session-token",
-  "__Secure-next-auth.session-token",
-] as const;
-const MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+export type { SessionPayload } from "@/server/auth/session-cookie";
 
-export type SessionPayload = {
-  accessToken: string;
-  refreshToken: string;
-  accessTokenExpiresAt: number;
-  user: AuthSessionUser;
-};
+const REFRESH_LEEWAY_MS = 60_000;
 
 type CookieEntry = {
   name: string;
@@ -36,10 +32,6 @@ function getAuthConfig(): MaintmodeAuthConfig {
     cachedAuthConfig = parseMaintmodeAuthConfig(process.env);
   }
   return cachedAuthConfig;
-}
-
-function isProduction(): boolean {
-  return process.env.NODE_ENV === "production";
 }
 
 /**
@@ -67,7 +59,63 @@ type InFlightRefresh = {
 const inFlightRefreshes = new Map<string, InFlightRefresh>();
 
 /**
- * Reads the NextAuth jwt cookie server-side. When the access token is close
+ * Starts a session from a token pair the backend just issued: writes the
+ * session cookie under the name this deployment uses (`__Secure-` over https)
+ * and removes any other session cookie, so one browser never carries two.
+ *
+ * Refuses a pair it could not keep alive — no refresh token, or no usable
+ * expiry — by throwing rather than writing a session that dies at the first
+ * rotation, minutes later and far from here. Callers map the throw to their
+ * flow's failure code.
+ */
+export async function establishSession(
+  pair: BackendTokenPair,
+  user: AuthSessionUser,
+): Promise<SessionPayload> {
+  const expiresIn =
+    typeof pair.expires_in === "number" && Number.isFinite(pair.expires_in) ? pair.expires_in : 0;
+  if (!pair.access_token || !pair.refresh_token || expiresIn <= 0) {
+    throw new Error("token pair cannot sustain a session");
+  }
+  const payload: SessionPayload = {
+    accessToken: pair.access_token,
+    refreshToken: pair.refresh_token,
+    accessTokenExpiresAt: Date.now() + expiresIn * 1000,
+    user,
+  };
+  const name = sessionCookieNameFor(getAuthConfig().appBaseUrl);
+  await clearActiveSession();
+  await writeSessionCookie(name, payload);
+  return payload;
+}
+
+/**
+ * Who is signed in, WITHOUT refreshing: for server components and the proxy,
+ * which must not rotate tokens (a page render cannot write the cookie, and a
+ * second refresh path spending the same token is what used to sign people out
+ * — review L-1). Rotation belongs to `readActiveSession`, on the BFF side.
+ */
+export async function readSessionUser(): Promise<AuthSessionUser | null> {
+  const cookieStore = await cookies();
+  return readSessionUserFrom(cookieStore);
+}
+
+/** Same as `readSessionUser`, over any cookie reader — the proxy passes `request.cookies`. */
+export async function readSessionUserFrom(store: {
+  get(name: string): { value: string } | undefined;
+}): Promise<AuthSessionUser | null> {
+  for (const name of SESSION_COOKIE_NAMES) {
+    const value = store.get(name)?.value;
+    if (value) {
+      const session = await decodeSession(value, name, getAuthConfig().authSecret);
+      return session?.user ?? null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Reads the session cookie server-side. When the access token is close
  * to expiry (within `REFRESH_LEEWAY_MS`) the call transparently runs a
  * refresh and persists the rotated tokens back into the cookie. Returns
  * `null` when there is no usable session.
@@ -109,22 +157,14 @@ export async function forceSessionRefresh(): Promise<SessionPayload | null> {
 }
 
 /**
- * Clears every known NextAuth session cookie. Called on logout and when a
- * refresh-and-retry cycle has irrecoverably failed.
+ * Clears every known session cookie. Called on logout, before a new session is
+ * written, and when a refresh-and-retry cycle has irrecoverably failed.
  */
 export async function clearActiveSession(): Promise<void> {
   const cookieStore = await cookies();
   for (const name of SESSION_COOKIE_NAMES) {
     if (cookieStore.get(name)) {
-      cookieStore.set({
-        name,
-        value: "",
-        httpOnly: true,
-        sameSite: "lax",
-        secure: isProduction(),
-        path: "/",
-        maxAge: 0,
-      });
+      cookieStore.set({ name, value: "", ...sessionCookieAttributes(name), maxAge: 0 });
     }
   }
 }
@@ -140,26 +180,8 @@ async function readSessionCookieEntry(): Promise<CookieEntry | null> {
   return null;
 }
 
-async function decodeSessionCookie(entry: CookieEntry): Promise<SessionPayload | null> {
-  const config = getAuthConfig();
-  const decoded = (await decode({
-    token: entry.value,
-    secret: config.authSecret,
-    salt: entry.name,
-  })) as (Partial<SessionPayload> & { error?: string }) | null;
-
-  if (!decoded?.accessToken || !decoded.refreshToken || !decoded.user) {
-    return null;
-  }
-  if (decoded.error === "RefreshAccessTokenError") {
-    return null;
-  }
-  return {
-    accessToken: decoded.accessToken,
-    refreshToken: decoded.refreshToken,
-    accessTokenExpiresAt: typeof decoded.accessTokenExpiresAt === "number" ? decoded.accessTokenExpiresAt : 0,
-    user: decoded.user,
-  };
+function decodeSessionCookie(entry: CookieEntry): Promise<SessionPayload | null> {
+  return decodeSession(entry.value, entry.name, getAuthConfig().authSecret);
 }
 
 function isExpiring(payload: SessionPayload): boolean {
@@ -223,21 +245,16 @@ function refreshOnce(refreshToken: string, userId: string): Promise<BackendToken
 }
 
 async function persistRefreshedSession(entry: CookieEntry, payload: SessionPayload): Promise<void> {
-  const config = getAuthConfig();
+  // Under the name it was found under: the name is the encryption key's salt.
+  await writeSessionCookie(entry.name, payload);
+}
+
+async function writeSessionCookie(name: string, payload: SessionPayload): Promise<void> {
   const cookieStore = await cookies();
-  const encoded = await encode({
-    token: payload as unknown as Record<string, unknown>,
-    secret: config.authSecret,
-    salt: entry.name,
-    maxAge: MAX_AGE_SECONDS,
-  });
   cookieStore.set({
-    name: entry.name,
-    value: encoded,
-    httpOnly: true,
-    sameSite: "lax",
-    secure: isProduction(),
-    path: "/",
-    maxAge: MAX_AGE_SECONDS,
+    name,
+    value: await encodeSession(payload, name, getAuthConfig().authSecret),
+    ...sessionCookieAttributes(name),
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 }

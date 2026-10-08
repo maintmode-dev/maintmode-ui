@@ -29,9 +29,9 @@ export interface LoginPageProps {
   /**
    * Server action that starts an OAuth sign-in for the given provider id.
    * Supplied by the server page (`src/app/(public)/login/page.tsx`) so this
-   * browser-owned component never imports the server auth boundary. It must
-   * wrap NextAuth's `signIn` so the CSRF token is attached — a plain form POST
-   * to `/api/auth/signin/<id>` omits it and fails with `MissingCSRF`.
+   * browser-owned component never imports the server auth boundary. A server
+   * action, so Next checks its Origin and the destination stays closed over on
+   * the server.
    */
   signInAction: (providerId: string) => Promise<void>;
   /** Step one of the OTP flow: mails a code and binds it to this browser. */
@@ -106,9 +106,9 @@ const UNSUPPORTED_TOOLTIP = "This sign-in method isn't supported by this version
  * so this is the defensive half: it keeps a future redirect-based failure from
  * dropping the user one click away from the form it is about. Mirrors the names
  * in `src/server/auth/contracts.ts` (`AUTH_ERROR_CODES`), which a browser module
- * may not import. The generic NextAuth `credentials` / `CredentialsSignin` are
- * deliberately absent: the OAuth dance's own redemption is a Credentials
- * provider too, so they do not say which flow failed.
+ * may not import. The generic `credentials` code (input that never reached the
+ * backend) is deliberately absent: every flow can produce it, so it does not say
+ * which one failed.
  */
 const BUILT_IN_ERROR_CODES: ReadonlySet<string> = new Set([
   "invalid_credentials",
