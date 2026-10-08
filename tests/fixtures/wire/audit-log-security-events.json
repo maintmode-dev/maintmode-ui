@@ -110,11 +110,10 @@
   ],
   "total": 6,
   "facets": {
-    "all": 78,
-    "auth": "<redacted-auth>",
-    "roles": 5,
-    "block": 0,
-    "maintenance": 12,
-    "integration": 2
+    "all": 86,
+    "sign_in": 63,
+    "users": 8,
+    "settings": 3,
+    "maintenance": 12
   }
 }

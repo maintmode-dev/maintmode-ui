@@ -41,5 +41,5 @@
     }
   ],
   "total": 3,
-  "facets": { "all": 3, "auth": 0, "roles": 0, "block": 0, "maintenance": 0, "integration": 3 }
+  "facets": { "all": 3, "sign_in": 0, "users": 0, "settings": 3, "maintenance": 0 }
 }

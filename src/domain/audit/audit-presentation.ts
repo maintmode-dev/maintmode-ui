@@ -70,9 +70,10 @@ export function auditActionDotToken(action: AuditEventAction): string {
 /**
  * Actions whose metadata is a sign-in context — IP / user agent / session, plus
  * a failure reason when the attempt was refused. Password changes and provider
- * links are written with the same payload as a login (backend
- * `fillAuthPayload`), so the table and the expanded detail read them the same
- * way.
+ * links are written with the same payload as a login (the backend copies the
+ * request's sign-in metadata onto them), so the table and the expanded detail
+ * read them the same way. This is about the PAYLOAD, not the chip: those three
+ * sit under Users, because they change an account rather than open a session.
  */
 const SIGN_IN_SHAPED: ReadonlySet<AuditAction> = new Set<AuditAction>([
   "login.success",
@@ -87,18 +88,23 @@ export function isSignInShaped(action: AuditEventAction): boolean {
 }
 
 /**
- * Category filter chips for the filter bar (frozen decision 2026-06-10):
- * collapse the per-enum chips into four categories. `All` selects everything;
- * each category covers a group of wire actions. The row dot-colour still
- * distinguishes the specific event inside the table.
+ * Category filter chips for the filter bar. The per-enum chips were collapsed
+ * into categories (frozen decision 2026-06-10); the categories themselves were
+ * regrouped for v0.3.1 (owner-approved 2026-10-08) so that every action has
+ * exactly one chip: Sign-ins / Users / Settings / Maintenance. `All` selects
+ * everything; each category covers a group of wire actions. The row dot-colour
+ * still distinguishes the specific event inside the table.
+ *
+ * The ids are the backend's facet keys (`apiauthmodels.AuditFacets`), so a
+ * chip's count is `facets[id]` with no translation table in between.
  */
-export type AuditCategory = "all" | "auth" | "roles" | "block" | "maintenance";
+export type AuditCategory = "all" | "sign_in" | "users" | "settings" | "maintenance";
 
 export const AUDIT_CATEGORIES: { id: AuditCategory; label: string }[] = [
   { id: "all", label: "All" },
-  { id: "auth", label: "Auth" },
-  { id: "roles", label: "Roles" },
-  { id: "block", label: "Block" },
+  { id: "sign_in", label: "Sign-ins" },
+  { id: "users", label: "Users" },
+  { id: "settings", label: "Settings" },
   { id: "maintenance", label: "Maintenance" },
 ];
 
@@ -109,20 +115,28 @@ export const AUDIT_CATEGORIES: { id: AuditCategory; label: string }[] = [
  * the table never reaches.
  */
 const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditAction>> = {
-  // Sign-ins, and everything that changes how one can sign in.
-  auth: new Set<AuditAction>([
-    "login.success",
-    "login.failed",
-    "logout.success",
+  // Sessions starting, being refused, and ending.
+  sign_in: new Set<AuditAction>(["login.success", "login.failed", "logout.success"]),
+  // One account changing — its roles, tags, block state, credentials or linked
+  // providers. Password and provider events are here rather than under
+  // Sign-ins: they change an account, they do not open a session.
+  users: new Set<AuditAction>([
+    "roles.changed",
+    "user.tags_changed",
+    "user.blocked",
+    "user.unblocked",
     "password.changed",
     "password.reset",
     "provider.linked",
-    "auth_method.toggled",
   ]),
-  // "An admin manages someone else's profile" — the backend files tag edits here.
-  roles: new Set<AuditAction>(["roles.changed", "user.tags_changed"]),
-  // `user.unblocked` rides with `user.blocked` — both are user-block lifecycle events.
-  block: new Set<AuditAction>(["user.blocked", "user.unblocked"]),
+  // The instance's own configuration: which sign-in methods it accepts and
+  // which integrations it talks to.
+  settings: new Set<AuditAction>([
+    "auth_method.toggled",
+    "integration.created",
+    "integration.updated",
+    "integration.deleted",
+  ]),
   // Maintenance + step lifecycle.
   maintenance: new Set<AuditAction>([
     "maintenance.created",
@@ -136,19 +150,6 @@ const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditA
     "maintenance_step.canceled",
   ]),
 };
-
-/**
- * Actions shown under `All` only, ON PURPOSE. A category chip for integrations
- * is a product decision (docs/contract-gaps.md, "deliberately left open") and the
- * chips are a frozen decision; the rows themselves must not wait for it — before
- * they were modelled, the route dropped them. Named here so an action missing
- * from every category by accident still fails the partition test.
- */
-export const ALL_ONLY_ACTIONS: ReadonlySet<AuditAction> = new Set<AuditAction>([
-  "integration.created",
-  "integration.updated",
-  "integration.deleted",
-]);
 
 /**
  * Whether an action belongs to the given category (`all` matches everything).

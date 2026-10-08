@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import {
-  ALL_ONLY_ACTIONS,
   AUDIT_CATEGORIES,
   auditActionDotToken,
   auditActionInCategory,
@@ -43,21 +42,11 @@ describe("auditActionLabel / auditActionDotToken", () => {
 describe("category partition", () => {
   // The actions are hand-assigned across 4 category sets; the type system
   // does NOT catch an action that's missing from every set (it just becomes
-  // unfilterable by any chip). Assert exactly-one-category coverage.
-  it.each(AUDIT_ACTIONS)("places %s in exactly one non-`all` category, or names it All-only", (action) => {
+  // unfilterable by any chip). Assert exactly-one-category coverage — with no
+  // exception list: since the v0.3.1 regroup every modelled action has a chip.
+  it.each(AUDIT_ACTIONS)("places %s in exactly one non-`all` category", (action) => {
     const hits = REAL_CATEGORIES.filter((cat) => auditActionInCategory(action, cat));
-    expect(hits).toHaveLength(ALL_ONLY_ACTIONS.has(action) ? 0 : 1);
-  });
-
-  // The All-only set is integration.* and nothing else: a chip for them is an
-  // open product decision, and the set must not become a place to park any
-  // action someone forgot to categorise.
-  it("keeps only the integration actions out of every chip", () => {
-    expect([...ALL_ONLY_ACTIONS].sort()).toEqual([
-      "integration.created",
-      "integration.deleted",
-      "integration.updated",
-    ]);
+    expect(hits).toHaveLength(1);
   });
 
   it("matches every action under `all`", () => {
@@ -95,22 +84,40 @@ describe("auditCategoryActions", () => {
   // (`auditActionCategories`, internal/entity/audit.go), which computes the
   // facet counts. A chip requesting fewer actions than its facet counts shows a
   // number its table never reaches — the RUK-297 symptom.
-  it("maps `auth` to the backend's seven auth actions", () => {
-    expect(new Set(auditCategoryActions("auth"))).toEqual(
+  it("offers exactly the five approved chips, in order, with their labels", () => {
+    expect(AUDIT_CATEGORIES).toEqual([
+      { id: "all", label: "All" },
+      { id: "sign_in", label: "Sign-ins" },
+      { id: "users", label: "Users" },
+      { id: "settings", label: "Settings" },
+      { id: "maintenance", label: "Maintenance" },
+    ]);
+  });
+
+  it("maps `sign_in` to the three session events", () => {
+    expect(new Set(auditCategoryActions("sign_in"))).toEqual(
+      new Set(["login.success", "login.failed", "logout.success"]),
+    );
+  });
+
+  it("maps `users` to the seven account-change events", () => {
+    expect(new Set(auditCategoryActions("users"))).toEqual(
       new Set([
-        "login.success",
-        "login.failed",
-        "logout.success",
+        "roles.changed",
+        "user.tags_changed",
+        "user.blocked",
+        "user.unblocked",
         "password.changed",
         "password.reset",
         "provider.linked",
-        "auth_method.toggled",
       ]),
     );
   });
 
-  it("maps `roles` to roles.changed and user.tags_changed", () => {
-    expect(new Set(auditCategoryActions("roles"))).toEqual(new Set(["roles.changed", "user.tags_changed"]));
+  it("maps `settings` to the sign-in method toggle and the integration lifecycle", () => {
+    expect(new Set(auditCategoryActions("settings"))).toEqual(
+      new Set(["auth_method.toggled", "integration.created", "integration.updated", "integration.deleted"]),
+    );
   });
 
   it("maps `maintenance` to the nine maintenance lifecycle actions", () => {

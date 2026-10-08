@@ -97,20 +97,20 @@
       "handEdited": false
     },
     "audit-log": {
-      "url": "http://localhost:9000/auth/api/v1/audit/log?limit=20",
+      "url": "http://maintmode:8000/api/v1/audit/log?limit=20",
       "method": "GET",
       "status": 200,
-      "capturedAt": "2026-08-11T18:37:05.031Z",
+      "capturedAt": "2026-10-08T14:10:34.043Z",
       "why": "RUK-171: `details` is a flat string, `actor` an email — FE renders degraded.",
       "handEdited": true,
-      "handEditedReason": "TRIMMED 2026-10-08 (RUK-297), not invented: the two rows whose action was `prune-expired-<id>` / `prune-none-<id>` were removed. They are not a backend contract — no product code writes such an action. They are per-run markers inserted into audit_log by the BACKEND'S OWN TEST internal/storages/audit/prune_test.go (commit 8634b23f, RUK-180), which ran against the database this capture was taken from; the UI had misread them as \"the backend started emitting prune-* service actions\". No field of any kept row was edited; `total`/`facets` still count the database as captured. Re-record from a database the backend test suite has not written to, then set handEdited back to false.",
+      "handEditedReason": "RE-CAPTURED 2026-10-08 for the v0.3.1 audit chip regroup (facet keys all/sign_in/users/settings/maintenance), from the self-host stand running backend feat/audit-categories-regroup @ 84efe34 — not by scripts/refresh-fixtures.mjs, whose dev-bypass exchange and gateway path the stand does not have. Taken off the wire inside the stand's compose network with a break-glass bearer and passed through that script's OWN pipeline, loaded from its source: total bucketed by bucketCount(), logs sampled by sampleRows() to SAMPLED.logs, everything masked by normalize(), value domains by collectValueDomains(). ONE edit after that: a real person's name in actor_display_name (a Google sign-in attempt on the stand, refused with `signup disabled`) is replaced by <display-name-1> in the body and in valueDomains, because the normaliser masks addresses, not display names. No rows trimmed: the stand database was never written by the backend's test suite, so the earlier prune-* trim no longer applies. Set handEdited back to false once refresh-fixtures.mjs can reach a stand like this one.",
       "sampledRows": {
         "logs": {
-          "kept": 10,
+          "kept": 12,
           "actual": 20
         }
       },
-      "totalObserved": "1000+ (threshold 200: EXCEEDED)",
+      "totalObserved": "50+ (threshold 200: under)",
       "valueDomains": {
         "logs": {
           "id": [
@@ -135,6 +135,46 @@
             "<uuid-19>",
             "<uuid-20>"
           ],
+          "action": [
+            "login.failed",
+            "login.success",
+            "logout.success",
+            "password.reset",
+            "provider.linked",
+            "user.tags_changed"
+          ],
+          "actor": [
+            "",
+            "<email-1>",
+            "<email-2>",
+            "<email-3>",
+            "<email-4>"
+          ],
+          "actor_id": [
+            "<uuid-21>",
+            "<uuid-22>",
+            "<uuid-23>",
+            "<uuid-24>"
+          ],
+          "actor_display_name": [
+            "Break-glass admin",
+            "<display-name-1>",
+            "<email-2>",
+            "<email-3>"
+          ],
+          "entity_type": [
+            "user"
+          ],
+          "entity_id": [
+            "<uuid-21>",
+            "<uuid-22>",
+            "<uuid-23>",
+            "<uuid-24>",
+            "<email-4>"
+          ],
+          "metadata": [
+            "<object>"
+          ],
           "created_at": [
             "<ts-1>",
             "<ts-2>",
@@ -156,15 +196,6 @@
             "<ts-18>",
             "<ts-19>",
             "<ts-20>"
-          ],
-          "entity_type": [
-            "user"
-          ],
-          "actor_id": [
-            "<uuid-21>"
-          ],
-          "entity_id": [
-            "<uuid-21>"
           ]
         }
       }
@@ -270,7 +301,7 @@
       "capturedAt": "2026-10-08",
       "why": "Security review S2 rework: instead of demanding a notify secret when its destination changes, the backend records the change on integration.updated (metadata.changes, with a secret named as `secrets.<key>` and no value). The audit route used to drop every integration.* row as an unknown action (docs/contract-gaps.md, RUK-297), so this pins both that the rows arrive and that a secret flag with neither side survives the mapper's no-op filter.",
       "handEdited": true,
-      "handEditedReason": "NOT RECORDABLE yet: metadata.changes on integration.updated ships on the backend commit b4a9e73 (branch fix/integration-audit-diff), not deployed to the :9000 stand, which runs main. Transcribed from that commit: action/entity values from internal/audit/integration_action.go (entity_id = kind/name, details format) and its render test; the change list from internal/services/integration/audit_changes.go (enabled first, config fields sorted, an added key with no old side, secrets by name only); field omission from the omitempty tags in internal/app/api/public/audit/models/logs.go. Re-record once the commit is deployed."
+      "handEditedReason": "NOT RECORDABLE yet: metadata.changes on integration.updated ships on the backend commit b4a9e73 (branch fix/integration-audit-diff), not deployed to the :9000 stand, which runs main. Transcribed from that commit: action/entity values from internal/audit/integration_action.go (entity_id = kind/name, details format) and its render test; the change list from internal/services/integration/audit_changes.go (enabled first, config fields sorted, an added key with no old side, secrets by name only); field omission from the omitempty tags in internal/app/api/public/audit/models/logs.go. Re-record once the commit is deployed. FACETS re-keyed by hand 2026-10-08 for the v0.3.1 chip regroup: {all, sign_in, users, settings, maintenance}, with the three integration rows counted under settings, which is the key set the regrouped backend (feat/audit-categories-regroup @ 84efe34) sends in the same-day captures of audit-log.json and audit-log-security-events.json. Still not re-recordable from the stand: it holds two integration.created rows and no integration.updated / integration.deleted, and creating them would mean reconfiguring the stand's live integrations."
     },
     "audit-log-security-events": {
       "url": "http://maintmode:8000/api/v1/audit/log?action=auth_method.toggled,password.changed,password.reset,provider.linked,user.tags_changed&limit=20",
@@ -279,7 +310,7 @@
       "capturedAt": "2026-10-08",
       "why": "RUK-297: these five actions were dropped by the audit route as unknown, so the security log never showed a password change, a reset, a provider link, a sign-in method toggle or an admin editing someone's messenger tags. This pins that every one of them reaches the client with the payload the backend really writes.",
       "handEdited": true,
-      "handEditedReason": "CAPTURED, not transcribed — but not by scripts/refresh-fixtures.mjs, which signs in through the dev-bypass exchange and reaches the backend through a gateway; the self-host stand at :9000 has neither (its gateway exposes only the OAuth dance). Taken off the wire inside the stand's compose network (backend maintmode:main @ ef2ce99) with a break-glass bearer, then masked with that script's own normalize() and not edited otherwise. Every row was written by the real backend on 2026-10-08: password.changed by qa-editor changing their password on /settings/profile; password.reset through the /login reset-code flow; user.tags_changed twice by an admin in /admin/users (set, then changed + cleared — so both a one-sided and a two-sided diff are pinned); auth_method.toggled was already on the stand (the break-glass admin enabling email_otp earlier that day); provider.linked by POST /api/v1/me/providers/link/complete with a forged link code, so it is the REFUSED variant (empty actor, nil user id, failure_reason). A SUCCESSFUL link needs a real Google sign-in and was not recorded; per the backend's renderer (internal/audit/render.go providerLinkDetails, render_test.go TestRender_ProviderLinked) it differs only in details (\"provider linked\") and the absence of failure_reason, and names the account. ip/user_agent read <redacted-*> by name; facets.auth reads \"<redacted-auth>\" because the normaliser's sensitive-key rule matches the key `auth` — a normaliser false positive shared with audit-log.json, not the wire (the backend sends a number)."
+      "handEditedReason": "CAPTURED, not transcribed — but not by scripts/refresh-fixtures.mjs, which signs in through the dev-bypass exchange and reaches the backend through a gateway; the self-host stand at :9000 has neither (its gateway exposes only the OAuth dance). Taken off the wire inside the stand's compose network (rows first captured with backend maintmode:main @ ef2ce99; re-captured 2026-10-08 against feat/audit-categories-regroup @ 84efe34 for the regrouped facet keys: the rows came back identical, only `facets` changed) with a break-glass bearer, then masked with that script's own normalize() and not edited otherwise. Every row was written by the real backend on 2026-10-08: password.changed by qa-editor changing their password on /settings/profile; password.reset through the /login reset-code flow; user.tags_changed twice by an admin in /admin/users (set, then changed + cleared — so both a one-sided and a two-sided diff are pinned); auth_method.toggled was already on the stand (the break-glass admin enabling email_otp earlier that day); provider.linked by POST /api/v1/me/providers/link/complete with a forged link code, so it is the REFUSED variant (empty actor, nil user id, failure_reason). A SUCCESSFUL link needs a real Google sign-in and was not recorded; per the backend's renderer (internal/audit/render.go providerLinkDetails, render_test.go TestRender_ProviderLinked) it differs only in details (\"provider linked\") and the absence of failure_reason, and names the account. ip/user_agent read <redacted-*> by name. Every facet is a number again: the old `auth` facet key, which the normaliser's sensitive-key rule masked into the string \"<redacted-auth>\", no longer exists on the wire."
     },
     "audit-action-enum": {
       "url": "maintmode:docs/auth/swagger.json#/components/schemas/entity.AuditAction",
@@ -289,7 +320,7 @@
       "why": "RUK-297: AUDIT_ACTIONS fell five actions behind the backend and the route dropped those rows silently. audit-actions.contract.test.ts compares the UI list with this published enum, so the next new action fails CI instead of vanishing from the security log.",
       "handEdited": false,
       "capturedBy": "npm run fixtures:audit-actions (scripts/sync-audit-actions.mjs) — copied verbatim from the backend checkout, not from the wire: the spec is served on the backend's infra port, which no gateway exposes.",
-      "backendCommit": "ef2ce99"
+      "backendCommit": "84efe34"
     }
   },
   "gateway": "http://localhost:9000"

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readWireFixture } from "./_harness";
 
 import { AUDIT_ACTIONS, isKnownAuditAction } from "@/domain/audit/audit-log";
-import { ALL_ONLY_ACTIONS, AUDIT_CATEGORIES, auditCategoryActions } from "@/domain/audit/audit-presentation";
+import { AUDIT_CATEGORIES, auditCategoryActions } from "@/domain/audit/audit-presentation";
 
 /**
  * Drift guard — `AUDIT_ACTIONS` against the enum the backend publishes. RUK-297.
@@ -58,14 +58,15 @@ describe("AUDIT_ACTIONS matches the backend's published entity.AuditAction enum"
 });
 
 describe("every published action is reachable from the filter bar", () => {
-  it("is requested by exactly one chip, or is deliberately All-only", () => {
-    // A modelled action under no chip is a row the facet counts but no chip
-    // ever asks the server for. `ALL_ONLY_ACTIONS` is the declared exception
-    // (integration.* — the tab is an open product decision).
+  it("is requested by exactly one chip", () => {
+    // A modelled action under no chip is a row the backend counts in a facet
+    // but no chip ever asks the server for; under two chips, it is counted once
+    // and shown twice. No exception list: since the v0.3.1 regroup the backend
+    // puts every action in exactly one category, and so must the chips.
     const chips = AUDIT_CATEGORIES.map((c) => c.id).filter((id) => id !== "all");
     const unplaced = (published as string[]).filter((action) => {
       // An unmodelled action is already named by the test above.
-      if (!isKnownAuditAction(action) || ALL_ONLY_ACTIONS.has(action)) return false;
+      if (!isKnownAuditAction(action)) return false;
       return chips.filter((chip) => auditCategoryActions(chip).includes(action)).length !== 1;
     });
 

@@ -123,11 +123,10 @@ export function mapAuditLog(dto: AuditLogDto): AuditEvent | null {
 function mapAuditFacets(dto: AuditLogResponseDto["facets"]): AuditFacets {
   return {
     all: dto?.all ?? 0,
-    auth: dto?.auth ?? 0,
-    roles: dto?.roles ?? 0,
-    block: dto?.block ?? 0,
+    sign_in: dto?.sign_in ?? 0,
+    users: dto?.users ?? 0,
+    settings: dto?.settings ?? 0,
     maintenance: dto?.maintenance ?? 0,
-    integration: dto?.integration ?? 0,
   };
 }
 

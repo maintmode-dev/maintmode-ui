@@ -222,11 +222,40 @@ describe("GET /api/audit — response pass-through", () => {
     const body = await (await GET(new Request("http://localhost/api/audit?limit=20"))).json();
 
     // Field NAMES are independent literals: the mapper renaming or dropping a
-    // facet fails here regardless of what the fixture holds.
-    expect(Object.keys(body.facets)).toEqual(
-      expect.arrayContaining(["all", "auth", "roles", "block", "maintenance"]),
-    );
-    expect(typeof body.facets.all).toBe("number");
+    // facet fails here regardless of what the fixture holds. Exact set, not
+    // `arrayContaining`: a leftover pre-v0.3.1 key (`auth`, `roles`, `block`,
+    // `integration`) is a chip count nothing renders.
+    expect(Object.keys(body.facets).sort()).toEqual(["all", "maintenance", "settings", "sign_in", "users"]);
+    for (const [key, value] of Object.entries(body.facets)) {
+      expect(typeof value, `facets.${key}`).toBe("number");
+    }
+  });
+
+  it("records the regrouped facet keys on the wire, every one a number", () => {
+    // The backend side of the same contract, read from the capture itself: the
+    // v0.3.1 regroup renamed the keys, and a capture still carrying the old ones
+    // means the fixture predates the backend the UI ships with. A string here is
+    // the normaliser masking a count (it once turned `auth` into
+    // "<redacted-auth>"), which would make the fixture describe a wire that
+    // never existed.
+    const facets = (wire.facets ?? {}) as Record<string, unknown>;
+
+    expect(Object.keys(facets).sort()).toEqual(["all", "maintenance", "settings", "sign_in", "users"]);
+    for (const [key, value] of Object.entries(facets)) {
+      expect(typeof value, `facets.${key}`).toBe("number");
+    }
+  });
+
+  it("counts every recorded action under exactly one category, so the categories sum to `all`", () => {
+    // Since the regroup no action is All-only on the backend: the four category
+    // counters partition `all`. If this breaks on a fresh capture, the backend
+    // writes an action its category map does not know (or the UI now ships
+    // against a backend that left one out) — a row the operator can only find
+    // under All.
+    const { all, sign_in, users, settings, maintenance } = wire.facets ?? {};
+
+    expect(all).toBeGreaterThan(0);
+    expect((sign_in ?? 0) + (users ?? 0) + (settings ?? 0) + (maintenance ?? 0)).toBe(all);
   });
 });
 

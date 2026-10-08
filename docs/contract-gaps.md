@@ -143,7 +143,7 @@ backend has already computed never reaches the operator.
 
 | Field                    | What is on the wire                                                                                                                                                                                                                                                                      | Where it is lost                                                                                                                             | Ticket  |
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain                                                                                                                                                                   | —                                                                                                                                            | —       |
+| ~~`facets.integration`~~ | **CLOSED** — the counter reached the domain; the key itself was retired in v0.3.1 (integration events count under `settings`), and the check now covers every wire facet key                                                                                                             | —                                                                                                                                            | —       |
 | ~~`prune-*` (action)~~   | **CLOSED — false alarm.** Not a backend contract: per-run markers (`prune-expired-<id>` / `prune-limit-<id>` / `prune-none-<id>`) written into audit_log by the backend's own test `internal/storages/audit/prune_test.go`, which leaked into the database the fixture was captured from | — (fixture cleaned; nothing is filtered)                                                                                                     | —       |
 | ~~5 audit actions~~      | **CLOSED** 2026-10-08 — `AUDIT_ACTIONS` declares all 23 the backend publishes, and an action it does not know is rendered instead of dropped                                                                                                                                             | —                                                                                                                                            | RUK-297 |
 | collection-change flags  | `maintenance.updated` names a supplied `steps`/`resources`/`notify_targets` as `{field}` with no `old`/`new`                                                                                                                                                                             | `mapChanges` ([`audit-mapper.ts`](../src/server/backend/contracts/audit-mapper.ts)) reads a change with neither side as a no-op and drops it | —       |
@@ -163,7 +163,10 @@ So the fix is to the evidence, not the code: the two rows are removed from
 `audit-log.json` (declared as a trim in its manifest entry), and the exception
 that let `prune-*` through the "nothing is dropped" assertion in
 [`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts) is
-gone — that assertion is strict now. There is deliberately **no** `prune-*`
+gone — that assertion is strict now. (`audit-log.json` has since been
+re-captured for the v0.3.1 facet keys from the self-host stand, whose database
+the backend's tests never touched, so the trim no longer applies.) There is
+deliberately **no** `prune-*`
 filter in `src/`: if such rows appear on a dev stand after the backend's tests,
 they render as a generic unknown-action row under **All** (see below), which is
 the honest outcome. Lesson recorded for the next capture: a row on the wire is
@@ -181,8 +184,10 @@ total 46, rows 45).
 Closed as a class, not as five entries:
 
 - **The five are modelled** — label, colour and chip, following the backend's own
-  category map (`auditActionCategories`, `internal/entity/audit.go`): the four
-  auth events on **Auth**, `user.tags_changed` on **Roles**.
+  category map (`auditActionCategories`, `internal/entity/audit.go`). Since the
+  v0.3.1 regroup that puts `password.changed`, `password.reset`,
+  `provider.linked` and `user.tags_changed` on **Users** and
+  `auth_method.toggled` on **Settings** (they were on Auth / Roles before).
 - **An unknown action is rendered, not dropped.** The mapper carries the wire
   value through; `AuditEvent.action` is typed `AuditEventAction` (a known
   `AuditAction` or a plain string), the label falls back to the raw value and the
@@ -193,8 +198,11 @@ Closed as a class, not as five entries:
   `entity.AuditAction` enum, vendored verbatim from its OpenAPI spec into
   `tests/fixtures/wire/audit-action-enum.json` by `npm run fixtures:audit-actions`
   (the spec is not on the wire, and CI cannot read the backend checkout). It also
-  fails when a published action sits under no chip and is not declared All-only.
-  Refresh the vendored copy whenever the backend changes the enum.
+  fails when a published action sits under no chip, or under several. There is
+  no All-only exception any more: the v0.3.1 regroup gave every action a chip
+  and `ALL_ONLY_ACTIONS` was removed, so only an action this build does not
+  model shows under **All** alone. Refresh the vendored copy whenever the backend
+  changes the enum.
 - **Rows are pinned from the wire.** `audit-log-security-events.json` holds the
   five actions as the backend wrote them on the self-host stand; see its manifest
   entry for which rows are captured and how.
@@ -204,20 +212,27 @@ the backend's `IsValid()`, which gates the read filter — is gone: backend main
 lists all 23.
 
 **`facets.integration` — closed, and the first gap this mechanism closed
-end-to-end.** The backend sends six counters
+end-to-end.** The backend sent six counters
 (`all/auth/roles/block/maintenance/integration`), the DTO declared five — the
 sixth was dropped in `mapAuditFacets`. Found by **reconciling the fixture against
 the DTO**, not by eye: the value on the dev seed is `0`, so a visible symptom
-could not exist in principle. The field is now declared and the assertion in
-`contract-gaps.test.ts` is **inverted** — it now fails if the field is ever
-removed again.
+could not exist in principle. The field was declared and the assertion in
+`contract-gaps.test.ts` **inverted** to fail if it were ever removed again.
 
-**What is deliberately left open:** there is no visible "Integration" tab. The
-counter reaches the domain and `AUDIT_ACTIONS` now has the integration actions,
-but `AuditCategory` does not know about a tab for them — they are listed in
-`ALL_ONLY_ACTIONS` instead. That is a product decision rather than a mapping fix
-— recorded instead of done quietly. The "counter only" assertion inverts when
-the tab ships.
+**Superseded by the v0.3.1 chip regroup (2026-10-08, owner-approved).** The
+open question this row used to carry — "there is no visible Integration tab;
+integration events are `ALL_ONLY_ACTIONS`" — is answered: the backend and the
+UI now group actions into **Sign-ins / Users / Settings / Maintenance**, every
+action in exactly one, and integration events sit under **Settings** with
+`auth_method.toggled`. The facet keys changed with it
+(`all/sign_in/users/settings/maintenance`; `auth`, `roles`, `block` and
+`integration` are gone), `ALL_ONLY_ACTIONS` was removed, and the registry check
+was generalised from "`integration` is declared" to "every facet key in the
+recorded response is declared in the DTO and the domain type" — the same defect
+for whatever counter comes next. The old `auth` key also took a normaliser false
+positive with it: `SENSITIVE_KEY_RE` masked that count into the string
+`"<redacted-auth>"`; none of the new keys match the rule, and the contract test
+now asserts every recorded facet is a number.
 
 **Collection-change flags on `maintenance.updated`.** The backend records a
 supplied `steps`, `resources` or `notify_targets` as a change with no `old`/`new`

@@ -126,14 +126,19 @@ export interface AuditMetadata {
   changes?: AuditFieldChange[];
 }
 
-/** Category facet counts over the current actor/date window. */
+/**
+ * Category facet counts over the current actor/date window. One key per filter
+ * chip (`AuditCategory` in `audit-presentation.ts`), named as the backend names
+ * them. Every action the backend writes counts toward exactly one category, so
+ * the four categories sum to `all`; an action newer than this build still
+ * counts toward `all`.
+ */
 export interface AuditFacets {
   all: number;
-  auth: number;
-  roles: number;
-  block: number;
+  sign_in: number;
+  users: number;
+  settings: number;
   maintenance: number;
-  integration: number;
 }
 
 /** One server-filtered page of the audit log. */
