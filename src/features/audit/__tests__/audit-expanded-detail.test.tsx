@@ -130,3 +130,53 @@ describe("AuditExpandedDetail — RUK-297 actions", () => {
     expect(screen.getByText("x-1")).toBeTruthy();
   });
 });
+
+/** Invitation and catalog actions (backend 3c1609f): who/what was acted on. */
+describe("AuditExpandedDetail — invitation and catalog actions", () => {
+  it("names the invited address and the roles an invitation grants", () => {
+    render(
+      <AuditExpandedDetail
+        event={{
+          id: "a-6",
+          created_at: "2026-10-09T10:00:00Z",
+          actor: "admin@example.test",
+          action: "invitation.created",
+          entity_type: "invitation",
+          entity_id: "0199c3a0-0000-7000-8000-000000000001",
+          details: "invitation for new.hire@example.test created by admin@example.test",
+          metadata: { target_email: "new.hire@example.test", roles: ["editor"] },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Target")).toBeTruthy();
+    expect(screen.getByText("new.hire@example.test")).toBeTruthy();
+    expect(screen.getByText("Roles")).toBeTruthy();
+    expect(screen.getByText("editor")).toBeTruthy();
+  });
+
+  it("names the resource and shows what an update moved", () => {
+    render(
+      <AuditExpandedDetail
+        event={{
+          id: "a-7",
+          created_at: "2026-10-09T10:00:00Z",
+          actor: "admin@example.test",
+          action: "resource.updated",
+          entity_type: "resource",
+          entity_id: "0199c3a0-0000-7000-8000-000000000002",
+          details: 'resource "payments-db" updated by admin@example.test',
+          metadata: {
+            target_display_name: "payments-db",
+            changes: [{ field: "description", old: "old text", new: "new text" }],
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Target")).toBeTruthy();
+    expect(screen.getByText("payments-db")).toBeTruthy();
+    expect(screen.getByText("old text")).toBeTruthy();
+    expect(screen.getByText("new text")).toBeTruthy();
+  });
+});

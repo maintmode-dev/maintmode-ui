@@ -42,6 +42,20 @@ export const AUDIT_ACTIONS = [
   "integration.created",
   "integration.updated",
   "integration.deleted",
+  // An invitation is a pending account: issuing or withdrawing one decides who
+  // may get in, and with which roles.
+  "invitation.created",
+  "invitation.revoked",
+  // The resource and notify-channel catalogs maintenances draw from. Archive is
+  // soft and reversible, hence the unarchive pair.
+  "resource.created",
+  "resource.updated",
+  "resource.archived",
+  "resource.unarchived",
+  "notify_channel.created",
+  "notify_channel.updated",
+  "notify_channel.archived",
+  "notify_channel.unarchived",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -76,7 +90,11 @@ export interface AuditEvent {
   actor_id?: string;
   /** Wire action — possibly one the UI does not model; see {@link AuditEventAction}. */
   action: AuditEventAction;
-  /** Entity the action targeted — `user` | `maintenance` | `integration` | `auth_setting` (backend `entity_type`). */
+  /**
+   * Entity the action targeted — `user` | `maintenance` | `integration` |
+   * `auth_setting` | `invitation` | `resource` | `notify_channel` (backend
+   * `entity_type`).
+   */
   entity_type?: string;
   entity_id?: string;
   /** One-line human summary (fallback display). */
@@ -102,7 +120,10 @@ export interface AuditFieldChange {
  * changes (config fields, `enabled`, and `secrets.<key>` flags);
  * `password.changed` / `password.reset` / `provider.linked` → ip/user_agent
  * (+ failure_reason on a refused link); `user.tags_changed` → changes +
- * target_display_name/target_email.
+ * target_display_name/target_email; `invitation.*` → target_email (the invited
+ * address) + roles (what the invitation grants); `resource.*` /
+ * `notify_channel.*` → target_display_name (the row's name at event time),
+ * + changes on `*.updated`.
  */
 export interface AuditMetadata {
   ip?: string;
@@ -119,7 +140,7 @@ export interface AuditMetadata {
   maint_title?: string;
   /**
    * Per-field before/after diff — `maintenance.updated`, `integration.updated`,
-   * `user.tags_changed`.
+   * `user.tags_changed`, `resource.updated`, `notify_channel.updated`.
    * A `secrets.<key>` entry has neither side: it says the secret was replaced
    * or cleared, and its value is never recorded.
    */

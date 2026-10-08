@@ -33,6 +33,13 @@ describe("auditActionLabel / auditActionDotToken", () => {
     expect(auditActionLabel("user.tags_changed")).toBe("User tags changed");
   });
 
+  it("labels the invitation and catalog actions", () => {
+    expect(auditActionLabel("invitation.created")).toBe("Invitation created");
+    expect(auditActionLabel("invitation.revoked")).toBe("Invitation revoked");
+    expect(auditActionLabel("resource.archived")).toBe("Resource archived");
+    expect(auditActionLabel("notify_channel.unarchived")).toBe("Channel unarchived");
+  });
+
   it("renders an action the UI does not model with its raw value and the neutral dot, without throwing", () => {
     expect(auditActionLabel("something.new")).toBe("something.new");
     expect(auditActionDotToken("something.new")).toBe(UNKNOWN_ACTION_TOKEN);
@@ -100,7 +107,7 @@ describe("auditCategoryActions", () => {
     );
   });
 
-  it("maps `users` to the seven account-change events", () => {
+  it("maps `users` to the account-change and invitation events", () => {
     expect(new Set(auditCategoryActions("users"))).toEqual(
       new Set([
         "roles.changed",
@@ -110,13 +117,28 @@ describe("auditCategoryActions", () => {
         "password.changed",
         "password.reset",
         "provider.linked",
+        "invitation.created",
+        "invitation.revoked",
       ]),
     );
   });
 
-  it("maps `settings` to the sign-in method toggle and the integration lifecycle", () => {
+  it("maps `settings` to the sign-in method toggle, the integration lifecycle and the catalogs", () => {
     expect(new Set(auditCategoryActions("settings"))).toEqual(
-      new Set(["auth_method.toggled", "integration.created", "integration.updated", "integration.deleted"]),
+      new Set([
+        "auth_method.toggled",
+        "integration.created",
+        "integration.updated",
+        "integration.deleted",
+        "resource.created",
+        "resource.updated",
+        "resource.archived",
+        "resource.unarchived",
+        "notify_channel.created",
+        "notify_channel.updated",
+        "notify_channel.archived",
+        "notify_channel.unarchived",
+      ]),
     );
   });
 

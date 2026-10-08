@@ -19,6 +19,12 @@ import { type AuditAction, type AuditEventAction, isKnownAuditAction } from "./a
  * blue as `roles.changed` / `integration.updated`. `provider.linked` is blue
  * rather than green on purpose: the backend files a REFUSED link under the same
  * action (the reason is in the details), so a success colour would lie.
+ *
+ * Catalog and invitation events follow the integration lifecycle: created /
+ * updated are configuration blue, a revoked invitation takes the cancel token.
+ * Archiving a resource or channel is soft and reversible, so it takes the
+ * neutral logout grey rather than a destructive red, and unarchiving reads as
+ * a recovery, like `user.unblocked`.
  */
 const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
   "login.success": { label: "Login success", token: "--status-completed-fg" },
@@ -44,6 +50,16 @@ const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
   "integration.created": { label: "Integration created", token: "--status-planned-fg" },
   "integration.updated": { label: "Integration updated", token: "--status-planned-fg" },
   "integration.deleted": { label: "Integration deleted", token: "--conflict-fg" },
+  "invitation.created": { label: "Invitation created", token: "--status-planned-fg" },
+  "invitation.revoked": { label: "Invitation revoked", token: "--conflict-fg" },
+  "resource.created": { label: "Resource created", token: "--status-planned-fg" },
+  "resource.updated": { label: "Resource updated", token: "--status-planned-fg" },
+  "resource.archived": { label: "Resource archived", token: "--fg-dim" },
+  "resource.unarchived": { label: "Resource unarchived", token: "--status-completed-fg" },
+  "notify_channel.created": { label: "Channel created", token: "--status-planned-fg" },
+  "notify_channel.updated": { label: "Channel updated", token: "--status-planned-fg" },
+  "notify_channel.archived": { label: "Channel archived", token: "--fg-dim" },
+  "notify_channel.unarchived": { label: "Channel unarchived", token: "--status-completed-fg" },
 };
 
 /**
@@ -128,14 +144,26 @@ const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditA
     "password.changed",
     "password.reset",
     "provider.linked",
+    // A pending account: who may get in, and with which roles.
+    "invitation.created",
+    "invitation.revoked",
   ]),
-  // The instance's own configuration: which sign-in methods it accepts and
-  // which integrations it talks to.
+  // The instance's own configuration: which sign-in methods it accepts, which
+  // integrations it talks to, and the resource and channel catalogs
+  // maintenances draw from.
   settings: new Set<AuditAction>([
     "auth_method.toggled",
     "integration.created",
     "integration.updated",
     "integration.deleted",
+    "resource.created",
+    "resource.updated",
+    "resource.archived",
+    "resource.unarchived",
+    "notify_channel.created",
+    "notify_channel.updated",
+    "notify_channel.archived",
+    "notify_channel.unarchived",
   ]),
   // Maintenance + step lifecycle.
   maintenance: new Set<AuditAction>([

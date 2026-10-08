@@ -145,7 +145,7 @@ backend has already computed never reaches the operator.
 | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
 | ~~`facets.integration`~~ | **CLOSED** — the counter reached the domain; the key itself was retired in v0.3.1 (integration events count under `settings`), and the check now covers every wire facet key                                                                                                             | —                                                                                                                                            | —       |
 | ~~`prune-*` (action)~~   | **CLOSED — false alarm.** Not a backend contract: per-run markers (`prune-expired-<id>` / `prune-limit-<id>` / `prune-none-<id>`) written into audit_log by the backend's own test `internal/storages/audit/prune_test.go`, which leaked into the database the fixture was captured from | — (fixture cleaned; nothing is filtered)                                                                                                     | —       |
-| ~~5 audit actions~~      | **CLOSED** 2026-10-08 — `AUDIT_ACTIONS` declares all 23 the backend publishes, and an action it does not know is rendered instead of dropped                                                                                                                                             | —                                                                                                                                            | RUK-297 |
+| ~~5 audit actions~~      | **CLOSED** 2026-10-08 — `AUDIT_ACTIONS` declares every action the backend publishes (23 then, 33 since backend `3c1609f`), and an action it does not know is rendered instead of dropped                                                                                                 | —                                                                                                                                            | RUK-297 |
 | collection-change flags  | `maintenance.updated` names a supplied `steps`/`resources`/`notify_targets` as `{field}` with no `old`/`new`                                                                                                                                                                             | `mapChanges` ([`audit-mapper.ts`](../src/server/backend/contracts/audit-mapper.ts)) reads a change with neither side as a no-op and drops it | —       |
 
 **`prune-*` — CLOSED 2026-10-08 as a false alarm.** This row used to call itself
@@ -170,7 +170,8 @@ deliberately **no** `prune-*`
 filter in `src/`: if such rows appear on a dev stand after the backend's tests,
 they render as a generic unknown-action row under **All** (see below), which is
 the honest outcome. Lesson recorded for the next capture: a row on the wire is
-not automatically a contract — check what wrote it.
+not automatically a contract — check what wrote it. (Backend `eb62350` makes
+those tests delete their own marker rows, so a fresh run no longer leaves any.)
 
 **Five audit actions — CLOSED 2026-10-08 (RUK-297).** The backend declares 23
 actions; `AUDIT_ACTIONS` ([`audit-log.ts`](../src/domain/audit/audit-log.ts))
@@ -210,6 +211,16 @@ Closed as a class, not as five entries:
 The earlier reason not to fix — `password.changed`/`password.reset` missing from
 the backend's `IsValid()`, which gates the read filter — is gone: backend main
 lists all 23.
+
+**Ten more actions — 2026-10-09 (backend `3c1609f`).** The backend began
+auditing invitations (`invitation.created` / `invitation.revoked`, on **Users**)
+and the resource and notify-channel catalogs (`resource.*` /
+`notify_channel.*` created / updated / archived / unarchived, on **Settings**).
+The vendored enum was refreshed and the drift guard named all ten; they are
+modelled with label, colour and chip. They carry no new metadata fields: an
+invitation row fills `target_email` + `roles`, a catalog row fills
+`target_display_name` (+ `changes` on `*.updated`), so the existing Target /
+Roles / Changes rows of the expanded detail render them.
 
 **`facets.integration` — closed, and the first gap this mechanism closed
 end-to-end.** The backend sent six counters
