@@ -141,89 +141,98 @@ detector that cannot fire is worse than an acknowledged absence of one.
 The opposite direction. It does not break a screen, but it means data the
 backend has already computed never reaches the operator.
 
-| Field                    | What is on the wire                                                                                                    | Where it is lost                                                                                                                                                               | Ticket          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
-| ~~`facets.integration`~~ | **CLOSED** — the field is declared in `AuditFacetsDto` and in the domain `AuditFacets`, the counter reaches the domain | —                                                                                                                                                                              | —               |
-| `prune-*` (action)       | the backend sends the service actions `prune-expired`/`prune-none`                                                     | `mapAuditAction` ([`audit-mapper.ts:36`](../src/server/backend/contracts/audit-mapper.ts)) returns `undefined` for an unknown action, and the route **discards the whole row** | —               |
-| 5 audit actions          | the backend declares 23 audit actions; `AUDIT_ACTIONS` declares 18                                                     | the same `mapAuditAction` hole — see the section below                                                                                                                         | RUK-297 (found) |
-| collection-change flags  | `maintenance.updated` names a supplied `steps`/`resources`/`notify_targets` as `{field}` with no `old`/`new`           | `mapChanges` ([`audit-mapper.ts`](../src/server/backend/contracts/audit-mapper.ts)) reads a change with neither side as a no-op and drops it                                   | —               |
+| Field                    | What is on the wire                                                                                                                                                                                                                                                                      | Where it is lost                                                                                                                             | Ticket  |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| ~~`facets.integration`~~ | **CLOSED** — the counter reached the domain; the key itself was retired in v0.3.1 (integration events count under `settings`), and the check now covers every wire facet key                                                                                                             | —                                                                                                                                            | —       |
+| ~~`prune-*` (action)~~   | **CLOSED — false alarm.** Not a backend contract: per-run markers (`prune-expired-<id>` / `prune-limit-<id>` / `prune-none-<id>`) written into audit_log by the backend's own test `internal/storages/audit/prune_test.go`, which leaked into the database the fixture was captured from | — (fixture cleaned; nothing is filtered)                                                                                                     | —       |
+| ~~5 audit actions~~      | **CLOSED** 2026-10-08 — `AUDIT_ACTIONS` declares all 23 the backend publishes, and an action it does not know is rendered instead of dropped                                                                                                                                             | —                                                                                                                                            | RUK-297 |
+| collection-change flags  | `maintenance.updated` names a supplied `steps`/`resources`/`notify_targets` as `{field}` with no `old`/`new`                                                                                                                                                                             | `mapChanges` ([`audit-mapper.ts`](../src/server/backend/contracts/audit-mapper.ts)) reads a change with neither side as a no-op and drops it | —       |
 
-**`prune-*` is the most serious entry in this file.** The other discrepancies
-mean "a field did not arrive"; this one means **"a row did not arrive"**. In a
-snapshot of 12 records, 10 reach the client: the security log silently shows
-less than what happened. Found by the assertion `does not silently drop recorded
-rows the domain enum has not heard of`
-([`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts)) —
-the very one whose comment described exactly this scenario in advance as "drift
-arriving".
+**`prune-*` — CLOSED 2026-10-08 as a false alarm.** This row used to call itself
+"the most serious entry in this file": `audit-log.json` held two rows with an
+action of `prune-expired-<id>` / `prune-none-<id>`, the mapper's allowlist
+dropped them, and the reading was "the backend started emitting service `prune-*`
+actions and the security log silently shows less than happened". The rows were
+real, the reading was not. No non-test backend code writes such an action — it
+is not in `entity.AuditAction`, and `IsValid()` rejects it. They are per-run
+markers that `internal/storages/audit/prune_test.go` (backend `8634b23f`,
+RUK-180) inserts into `audit_log` and partly leaves behind, and the fixture was
+captured from a database those tests had run against.
 
-It is fixed by adding the actions to the domain enum, but the decision belongs to
-the owner: possibly the service `prune-*` actions are not needed in the UI at
-all, in which case the correct fix is to filter them out **explicitly** rather
-than lose them to a hole in the whitelist. Right now the assertion lets only
-`prune-*` through; any **new** unknown action will fail the test and name itself.
+So the fix is to the evidence, not the code: the two rows are removed from
+`audit-log.json` (declared as a trim in its manifest entry), and the exception
+that let `prune-*` through the "nothing is dropped" assertion in
+[`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts) is
+gone — that assertion is strict now. (`audit-log.json` has since been
+re-captured for the v0.3.1 facet keys from the self-host stand, whose database
+the backend's tests never touched, so the trim no longer applies.) There is
+deliberately **no** `prune-*`
+filter in `src/`: if such rows appear on a dev stand after the backend's tests,
+they render as a generic unknown-action row under **All** (see below), which is
+the honest outcome. Lesson recorded for the next capture: a row on the wire is
+not automatically a contract — check what wrote it.
 
-**The `prune-*` row is the visible half of a wider gap, measured under RUK-297.**
-The backend declares 23 audit actions; `AUDIT_ACTIONS`
-([`audit-log.ts`](../src/domain/audit/audit-log.ts)) declares 18. Diffing the two
-sets leaves **five** the screen drops silently, through the same
-`mapAuditAction` hole:
+**Five audit actions — CLOSED 2026-10-08 (RUK-297).** The backend declares 23
+actions; `AUDIT_ACTIONS` ([`audit-log.ts`](../src/domain/audit/audit-log.ts))
+declared 18, and the mapper's allowlist dropped every row of the other five on a
+200, with no error: `auth_method.toggled`, `password.changed`, `password.reset`,
+`provider.linked`, `user.tags_changed`. The category chips made it worse — a chip
+filters by sending the UI's own known actions as an `action` CSV, so the backend
+facet counted rows no chip ever asked for (observed on the self-host stand: All
+total 46, rows 45).
 
-`auth_method.toggled`, `password.changed`, `password.reset`, `provider.linked`,
-`user.tags_changed`.
+Closed as a class, not as five entries:
 
-There were eight. `integration.created/updated/deleted` were added on
-2026-10-08 for the security review's S2 rework, where `integration.updated`
-became the record of a notify secret's destination moving — a record the screen
-was dropping whole. They show under **All** only (`ALL_ONLY_ACTIONS` in
-[`audit-presentation.ts`](../src/domain/audit/audit-presentation.ts)): the chip
-is still the open product decision described below. `auth_method.toggled` was
-the case that made someone count.
+- **The five are modelled** — label, colour and chip, following the backend's own
+  category map (`auditActionCategories`, `internal/entity/audit.go`). Since the
+  v0.3.1 regroup that puts `password.changed`, `password.reset`,
+  `provider.linked` and `user.tags_changed` on **Users** and
+  `auth_method.toggled` on **Settings** (they were on Auth / Roles before).
+- **An unknown action is rendered, not dropped.** The mapper carries the wire
+  value through; `AuditEvent.action` is typed `AuditEventAction` (a known
+  `AuditAction` or a plain string), the label falls back to the raw value and the
+  dot to a neutral token. Such a row shows under **All** only — the chips ask the
+  server for known actions, so it cannot appear under one.
+- **Drift fails CI.** [`audit-actions.contract.test.ts`](../tests/contracts/audit-actions.contract.test.ts)
+  compares `AUDIT_ACTIONS` both ways with the backend's published
+  `entity.AuditAction` enum, vendored verbatim from its OpenAPI spec into
+  `tests/fixtures/wire/audit-action-enum.json` by `npm run fixtures:audit-actions`
+  (the spec is not on the wire, and CI cannot read the backend checkout). It also
+  fails when a published action sits under no chip, or under several. There is
+  no All-only exception any more: the v0.3.1 regroup gave every action a chip
+  and `ALL_ONLY_ACTIONS` was removed, so only an action this build does not
+  model shows under **All** alone. Refresh the vendored copy whenever the backend
+  changes the enum.
+- **Rows are pinned from the wire.** `audit-log-security-events.json` holds the
+  five actions as the backend wrote them on the self-host stand; see its manifest
+  entry for which rows are captured and how.
 
-**Not fixed here, deliberately.** RUK-297 built the screen that emits
-`auth_method.toggled`, and repairing the enum in that change would be exactly the
-drive-by this registry exists to prevent. Two further reasons the fix is not the
-one-liner it looks like: `auditActionLabel`
-([`audit-presentation.ts`](../src/domain/audit/audit-presentation.ts)) reads
-`ACTION_META[action].label` with no fallback, so an enum entry without a matching
-meta row throws at runtime; and `password.changed` / `password.reset` are also
-missing from the backend's own `IsValid()` list that gates the audit read filter,
-so they stay unfilterable until `feature/ruk-297` merges — adding them here first
-would not make them work.
-
-Whoever picks this up should fix the CLASS, not one action, and consider
-checking `AUDIT_ACTIONS` against the enum the backend publishes rather than
-maintaining a parallel list by hand — and/or rendering an unknown action as a
-generic row instead of dropping it, since losing an audit record silently is
-worse than showing it plainly. Adding `integration.*` to the audit fixture first
-would make the existing assertion in
-[`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts)
-speak up about the loss already under way.
-
-**The remaining five have no executable assertion.** (`integration.*` now does:
-`audit-log-integration.json` and the "integration rows" block of
-[`audit-log.contract.test.ts`](../tests/contracts/audit-log.contract.test.ts).)
-The registry's checks compare rows against recorded fixtures, and none of the
-five appears in `audit-log.json`
-— see _Unproven captures_ below for the same limitation elsewhere. It will
-acquire one the day a fixture carries any of the eight: that assertion's
-whitelist admits only `prune-*`, so it will fail and name the action itself.
+The earlier reason not to fix — `password.changed`/`password.reset` missing from
+the backend's `IsValid()`, which gates the read filter — is gone: backend main
+lists all 23.
 
 **`facets.integration` — closed, and the first gap this mechanism closed
-end-to-end.** The backend sends six counters
+end-to-end.** The backend sent six counters
 (`all/auth/roles/block/maintenance/integration`), the DTO declared five — the
 sixth was dropped in `mapAuditFacets`. Found by **reconciling the fixture against
 the DTO**, not by eye: the value on the dev seed is `0`, so a visible symptom
-could not exist in principle. The field is now declared and the assertion in
-`contract-gaps.test.ts` is **inverted** — it now fails if the field is ever
-removed again.
+could not exist in principle. The field was declared and the assertion in
+`contract-gaps.test.ts` **inverted** to fail if it were ever removed again.
 
-**What is deliberately left open:** there is no visible "Integration" tab. The
-counter reaches the domain and `AUDIT_ACTIONS` now has the integration actions,
-but `AuditCategory` does not know about a tab for them — they are listed in
-`ALL_ONLY_ACTIONS` instead. That is a product decision rather than a mapping fix
-— recorded instead of done quietly. The "counter only" assertion inverts when
-the tab ships.
+**Superseded by the v0.3.1 chip regroup (2026-10-08, owner-approved).** The
+open question this row used to carry — "there is no visible Integration tab;
+integration events are `ALL_ONLY_ACTIONS`" — is answered: the backend and the
+UI now group actions into **Sign-ins / Users / Settings / Maintenance**, every
+action in exactly one, and integration events sit under **Settings** with
+`auth_method.toggled`. The facet keys changed with it
+(`all/sign_in/users/settings/maintenance`; `auth`, `roles`, `block` and
+`integration` are gone), `ALL_ONLY_ACTIONS` was removed, and the registry check
+was generalised from "`integration` is declared" to "every facet key in the
+recorded response is declared in the DTO and the domain type" — the same defect
+for whatever counter comes next. The old `auth` key also took a normaliser false
+positive with it: `SENSITIVE_KEY_RE` masked that count into the string
+`"<redacted-auth>"`; none of the new keys match the rule, and the contract test
+now asserts every recorded facet is a number.
 
 **Collection-change flags on `maintenance.updated`.** The backend records a
 supplied `steps`, `resources` or `notify_targets` as a change with no `old`/`new`
@@ -283,11 +292,11 @@ about this endpoint stays a census until the capture learns to select rows.
 Claims that sounded like discrepancies, but the wire refuted them. Kept here so
 they do not get filed again.
 
-| Claim                                                                 | What is actually the case                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `actor_display_name` is absent from the audit log (RUK-171)           | **False — but "always present" is false too.** The field rides on the ACTION: `roles.changed` and `maintenance.*` carry it, `login.success` carries an `actor_id` without it, `prune-*` carries neither. The ticket's "never sent" is refuted; the rule "always sent" is refuted as well — see below |
-| calendar `created_by` is a display name only, without an id (RUK-192) | **Stale.** The event carries `created_by` as an object with `id`/`display_name`/`email`. The blocker of the cancelled RUK-192 is lifted — the decision is the owner's (SPEC §10.3)                                                                                                                   |
-| `timezone` never reached the backend (RUK-202)                        | **False.** The key is present in `/api/v1/me`; the value `null` means "the user has not chosen one", not "the field is missing"                                                                                                                                                                      |
+| Claim                                                                 | What is actually the case                                                                                                                                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actor_display_name` is absent from the audit log (RUK-171)           | **False — but "always present" is false too.** The field rides on the ACTION: `roles.changed` and `maintenance.*` carry it, `login.success` carries an `actor_id` without it. (An earlier capture also held `prune-*` rows carrying neither — backend test residue, since removed.) The ticket's "never sent" is refuted; the rule "always sent" is refuted as well — see below |
+| calendar `created_by` is a display name only, without an id (RUK-192) | **Stale.** The event carries `created_by` as an object with `id`/`display_name`/`email`. The blocker of the cancelled RUK-192 is lifted — the decision is the owner's (SPEC §10.3)                                                                                                                                                                                              |
+| `timezone` never reached the backend (RUK-202)                        | **False.** The key is present in `/api/v1/me`; the value `null` means "the user has not chosen one", not "the field is missing"                                                                                                                                                                                                                                                 |
 
 The confirmed half of RUK-171 stands: `details` arrives as a **flat string**
 (`"login success for …"`) rather than a structured object. Rich diff rendering

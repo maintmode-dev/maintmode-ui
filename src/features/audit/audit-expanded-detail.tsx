@@ -5,6 +5,7 @@ import type * as React from "react";
 import { cn } from "@/shared/ui/lib/cn";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { type AuditEvent, type AuditFieldChange, auditActorFull } from "@/domain/audit/audit-log";
+import { isSignInShaped } from "@/domain/audit/audit-presentation";
 
 /** `name · email` when both differ, else whichever single value exists. */
 function joinNameEmail(name?: string, email?: string): string | undefined {
@@ -16,12 +17,14 @@ function joinNameEmail(name?: string, email?: string): string | undefined {
 
 /**
  * Per-action expanded detail, driven by the structured `metadata` payload:
- * login → IP / User agent / Session (+ Failure reason on `login.failed`);
- * logout → Session / Kind; `maintenance.*` / `maintenance_step.*` → Maintenance
- * title + a `changes` diff; `integration.*` → Integration (`kind/name`) + a
- * `changes` diff; role/block events → Target + a role diff
- * (added/removed) or the assigned role set. Falls back to the one-line `details`
- * summary + timestamp when no metadata is present.
+ * login / password / provider link → IP / User agent / Session (+ Reason when
+ * refused); logout → Session / Kind; `auth_method.toggled` → Method;
+ * `maintenance.*` / `maintenance_step.*` → Maintenance title + a `changes`
+ * diff; `integration.*` → Integration (`kind/name`) + a `changes` diff;
+ * role/block/tag events — and any action the UI does not model — → Target, a
+ * role diff (added/removed) or the assigned role set, and a `changes` diff when
+ * one was recorded. Falls back to the one-line `details` summary + timestamp
+ * when no metadata is present.
  *
  * Shared by both the global audit log (`/admin/audit-log`) and the
  * per-maintenance audit page so the expand grid is identical in both.
@@ -35,7 +38,7 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
   // recorded no actor).
   rows.push({ label: "Actor", value: auditActorFull(event) });
 
-  if (event.action === "login.success" || event.action === "login.failed") {
+  if (isSignInShaped(event.action)) {
     if (m?.ip) rows.push({ label: "IP", value: m.ip });
     if (m?.user_agent) rows.push({ label: "User agent", value: m.user_agent });
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
@@ -44,6 +47,9 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
   } else if (event.action === "logout.success") {
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
     if (m?.logout_kind) rows.push({ label: "Kind", value: m.logout_kind });
+  } else if (event.action === "auth_method.toggled") {
+    // The method is the entity; the new state is in the details line.
+    if (event.entity_id) rows.push({ label: "Method", value: event.entity_id });
   } else if (event.action.startsWith("integration")) {
     // Which integration (`kind/name`, the REST identity) + what the update moved.
     if (event.entity_id) rows.push({ label: "Integration", value: event.entity_id });
@@ -53,7 +59,9 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
     if (m?.maint_title) rows.push({ label: "Maintenance", value: m.maint_title });
     if (m?.changes?.length) rows.push({ label: "Changes", value: <ChangeDiff changes={m.changes} /> });
   } else {
-    // Role / block events — target identity as a single `name · email` line.
+    // Role / block / tag events, and any action this build does not model —
+    // target identity as a single `name · email` line, then whatever diff the
+    // row carries.
     const target = joinNameEmail(m?.target_display_name, m?.target_email) || event.entity_id;
     if (target) rows.push({ label: "Target", value: target });
     if (m?.roles_added?.length)
@@ -62,6 +70,7 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
       rows.push({ label: "Removed", value: <RoleDiff roles={m.roles_removed} sign="−" /> });
     if (m?.roles?.length && !m.roles_added?.length && !m.roles_removed?.length)
       rows.push({ label: "Roles", value: <RoleDiff roles={m.roles} /> });
+    if (m?.changes?.length) rows.push({ label: "Changes", value: <ChangeDiff changes={m.changes} /> });
   }
 
   // Always anchor on the human summary + exact timestamp.

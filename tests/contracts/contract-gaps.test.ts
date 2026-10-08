@@ -30,7 +30,6 @@ const REGISTRY_PATH = join(process.cwd(), "docs/contract-gaps.md");
 const MAPPER_PATH = join(process.cwd(), "src/server/backend/contracts/maintenance-mapper.ts");
 const DTO_PATH = join(process.cwd(), "src/server/backend/contracts/maintmode-dto.ts");
 const DOMAIN_AUDIT_PATH = join(process.cwd(), "src/domain/audit/audit-log.ts");
-const AUDIT_PRESENTATION_PATH = join(process.cwd(), "src/domain/audit/audit-presentation.ts");
 
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURE_DIR, name), "utf8"));
 const registry = readFileSync(REGISTRY_PATH, "utf8");
@@ -192,11 +191,14 @@ describe("registry — class B: audit `details` is flat, not structured (RUK-171
  * reconciliation rather than by anyone noticing, and the count is 0 on the dev
  * seed — so there was no symptom available to notice.
  *
- * The gap is now closed, and the assertion is INVERTED to match: it fails if the
- * field is ever dropped from the DTO or the domain type again. A closed gap that
- * stops being checked is just a gap waiting to reopen.
+ * The v0.3.1 regroup retired that key (integration events now count under
+ * `settings`, which has a chip), so the check is generalised to the class: EVERY
+ * facet key in the recorded response must be declared in the DTO and in the
+ * domain type. It fails if the next counter the backend adds, or a renamed one,
+ * is dropped the same way. A closed gap that stops being checked is just a gap
+ * waiting to reopen.
  */
-describe("registry — class B′ (closed): `facets.integration` reaches the domain", () => {
+describe("registry — class B′ (closed): every wire facet reaches the domain", () => {
   it("is declared in AuditFacetsDto and in the domain AuditFacets", () => {
     const facets = (fixture("audit-log.json").facets ?? {}) as Record<string, unknown>;
     const dto = readFileSync(DTO_PATH, "utf8");
@@ -211,33 +213,21 @@ describe("registry — class B′ (closed): `facets.integration` reaches the dom
     );
 
     // Preconditions, so a failed lookup cannot masquerade as a passing check.
-    expect("integration" in facets).toBe(true);
+    // The anchors are literals, not read from the fixture.
+    expect(Object.keys(facets)).toEqual(expect.arrayContaining(["all", "settings"]));
     expect(dtoBlock.length).toBeGreaterThan(0);
     expect(domainBlock.length).toBeGreaterThan(0);
 
-    expect(`declared in DTO: ${dtoBlock.includes("integration")}`).toBe("declared in DTO: true");
-    expect(`declared in domain: ${domainBlock.includes("integration")}`).toBe("declared in domain: true");
-  });
+    const declared = (block: string, key: string) => new RegExp(`\\b${key}\\??:`).test(block);
+    const missingInDto = Object.keys(facets).filter((key) => !declared(dtoBlock, key));
+    const missingInDomain = Object.keys(facets).filter((key) => !declared(domainBlock, key));
 
-  it("is NOT yet a rendered category — that needs the category vocabulary", () => {
-    // Deliberate scope line. The counter now reaches the domain, but a visible
-    // "Integration" tab needs `AuditCategory`, `AUDIT_CATEGORIES` and
-    // `CATEGORY_ACTIONS` extended with integration actions the domain enum does
-    // not yet contain. That is a product decision, so it is recorded rather than
-    // quietly done. This assertion inverts when the tab ships.
-    const presentation = readFileSync(AUDIT_PRESENTATION_PATH, "utf8");
-    const categories = presentation.slice(
-      presentation.indexOf("export type AuditCategory"),
-      presentation.indexOf("const CATEGORY_ACTIONS"),
+    expect(`wire facets missing from the DTO: ${missingInDto.join(", ") || "none"}`).toBe(
+      "wire facets missing from the DTO: none",
     );
-    expect(categories.length).toBeGreaterThan(0);
-
-    expect(
-      categories.includes('"integration"')
-        ? "TAB SHIPPED: `integration` is now an AuditCategory. Update the note in " +
-            "docs/contract-gaps.md — the facet is fully rendered."
-        : "counter only",
-    ).toBe("counter only");
+    expect(`wire facets missing from the domain: ${missingInDomain.join(", ") || "none"}`).toBe(
+      "wire facets missing from the domain: none",
+    );
   });
 });
 
