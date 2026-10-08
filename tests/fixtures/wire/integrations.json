@@ -75,7 +75,7 @@
       "created_at": "<ts-2>",
       "created_by": {
         "id": "<uuid-5>",
-        "display_name": "User Name[<uuid-6>]",
+        "display_name": "<display-name-1>",
         "email": "<email-1>"
       },
       "updated_at": "<ts-2>",
@@ -100,7 +100,7 @@
       "created_at": "<ts-3>",
       "created_by": {
         "id": "<uuid-5>",
-        "display_name": "User Name[<uuid-6>]",
+        "display_name": "<display-name-1>",
         "email": "<email-1>"
       },
       "updated_at": "<ts-3>",

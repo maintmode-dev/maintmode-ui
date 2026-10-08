@@ -16,9 +16,6 @@
       "totalObserved": "500+ (threshold 200: EXCEEDED)",
       "valueDomains": {
         "users": {
-          "display_name": [
-            "Eligible Approver"
-          ],
           "roles": [
             "<array>"
           ],

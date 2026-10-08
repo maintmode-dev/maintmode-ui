@@ -44,7 +44,7 @@
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "tests/fixtures/wire");
@@ -273,6 +273,16 @@ function collectValueDomains(rows) {
         freeText.add(key);
         continue;
       }
+      // A name keyed only by CONTEXT — `display_name` on a row that also
+      // carries `email` — cannot be recognised once it is lifted out of its row
+      // into a flat domain list, so `normalize` would have no way to mask it
+      // there and the manifest would become the side door the body is not.
+      // Dropped instead, like free text. A name whose KEY says so
+      // (`actor_display_name`) stays: `normalize` masks it in the list too.
+      if (typeof value === "string" && !PERSON_NAME_KEY_RE.test(key) && personNameContext(key, row)) {
+        freeText.add(key);
+        continue;
+      }
       if (seen.size <= MAX_DOMAIN_SIZE) seen.add(marker);
     }
   }
@@ -320,6 +330,63 @@ const SENSITIVE_KEY_RE =
  * that masking it would break a test and that the value carries no secret.
  */
 const NOT_SENSITIVE_KEYS = new Set(["password_set"]);
+
+/**
+ * Fields that name a PERSON, masked to `<display-name-N>`.
+ *
+ * Names are personal data and fit no value shape the rules below recognise: an
+ * audit capture committed a real person's Google display name in
+ * `actor_display_name` (a refused sign-in on a stand), and it had to be
+ * replaced by hand. Two ways a field is known to hold a name:
+ *
+ * - by its KEY alone, when the key says whose name it is
+ *   (`actor_display_name`, `target_display_name`, `inviter_name`, `full_name`,
+ *   `first_name`, …);
+ * - by CONTEXT, for the generic `name` / `display_name` / `displayName` keys,
+ *   which also label providers, integrations, resources and channels — those
+ *   are masked only on a person-shaped object: one carrying an `email`, or one
+ *   sitting under a key that names a person (`created_by`, `approver`,
+ *   `inviter`, `actor`, `user`, …).
+ *
+ * Case-sensitive, so `username` stays out: on this wire it is an SMTP login
+ * (`integrations[].config.username`), not a person's name.
+ */
+const PERSON_NAME_KEY_RE = new RegExp(
+  [
+    // snake_case: actor_display_name, inviter_name, invited_by_name, …
+    "^(?:actor|target|inviter|invitee|invited_by|author|creator|created_by|updated_by|approver|assignee|reviewer|requester|owner|user|member|recipient)_(?:display_)?name$",
+    // camelCase: actorDisplayName, inviterName, createdByName, …
+    "^(?:actor|target|inviter|invitee|invitedBy|author|creator|createdBy|updatedBy|approver|assignee|reviewer|requester|owner|user|member|recipient)(?:Display)?Name$",
+    "^(?:full|first|last|given|family|middle|real)(?:_name|Name)$",
+  ].join("|"),
+);
+const CONTEXTUAL_NAME_KEYS = new Set(["name", "display_name", "displayname"]);
+const PERSON_PARENT_KEY_RE =
+  /^(?:actor|target|inviter|invitee|invited_by|author|creator|created_by|createdby|updated_by|updatedby|approver|assignee|reviewer|requester|owner|user|member|recipient|me|profile|mentions?)$/i;
+
+/**
+ * Names that are the backend's own constants, not a person's. Each one carries
+ * meaning a test or a mapper reads — "Unknown user" is the backend's fallback
+ * for an author it could not resolve (`maintenance-mapper.ts` passes it
+ * through), "Break-glass admin" is `entity.BreakGlassName`, the bootstrap
+ * administrator — and masking it would erase that meaning while protecting no
+ * one. Same justification bar as `NOT_SENSITIVE_KEYS`.
+ */
+const NON_PERSONAL_NAMES = new Set(["Unknown user", "Break-glass admin"]);
+
+/** A value that is already one of this normaliser's placeholders. */
+const PLACEHOLDER_RE = /^<[a-z]+(?:-[a-z]+)*-\d+>$/;
+
+/**
+ * Whether `key` names a person in `parent` (the object holding it), where
+ * `parentKey` is the key `parent` itself sits under.
+ */
+function personNameContext(key, parent, parentKey = "") {
+  if (PERSON_NAME_KEY_RE.test(key)) return true;
+  if (!CONTEXTUAL_NAME_KEYS.has(key.toLowerCase())) return false;
+  if (parent && typeof parent === "object" && !Array.isArray(parent) && "email" in parent) return true;
+  return PERSON_PARENT_KEY_RE.test(parentKey);
+}
 
 /**
  * Numeric fields that are identifiers or clocks rather than data.
@@ -379,12 +446,14 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
  * the same placeholder — relationships between records survive, which is what a
  * reviewer needs to read the diff.
  */
-function normalize(value, seen = new Map(), key = "", counters = new Map()) {
-  if (Array.isArray(value)) return value.map((v) => normalize(v, seen, key, counters));
+function normalize(value, seen = new Map(), key = "", counters = new Map(), personName = false) {
+  if (Array.isArray(value)) return value.map((v) => normalize(v, seen, key, counters, personName));
   if (value && typeof value === "object") {
     const out = {};
     // Key order is preserved as received: a reordered response should not diff.
-    for (const [k, v] of Object.entries(value)) out[k] = normalize(v, seen, k, counters);
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = normalize(v, seen, k, counters, personNameContext(k, value, key));
+    }
     return out;
   }
 
@@ -433,6 +502,17 @@ function normalize(value, seen = new Map(), key = "", counters = new Map()) {
   if (UUID_RE.test(value)) return stamp("uuid", value);
   if (ISO_RE.test(value)) return stamp("ts", value);
   if (EMAIL_RE.test(value)) return stamp("email", value);
+
+  // A person's name (see PERSON_NAME_KEY_RE). After the address check on
+  // purpose: a display name that fell back to the address is stamped as that
+  // address, so it still reads as the same `<email-N>` as the row's `email`.
+  // Strings only — the `typeof` guard above already returned every number,
+  // boolean and null untouched. An empty name stays empty, a backend constant
+  // stays itself, and an existing placeholder is kept, so re-normalising a
+  // committed fixture is a no-op.
+  if (personName && value !== "" && !NON_PERSONAL_NAMES.has(value) && !PLACEHOLDER_RE.test(value)) {
+    return stamp("display-name", value);
+  }
 
   // Ids embedded INSIDE a larger string — the seed builds display names like
   // `User Name[019ff1ae-…]`, and dev-bypass mints a fresh user on every run, so
@@ -762,7 +842,15 @@ async function main() {
   console.log("Review `git diff` — a change here is the backend contract moving.");
 }
 
-main().catch((error) => {
-  console.error(`\nfixtures:refresh failed — ${error.message}`);
-  process.exit(1);
-});
+// Exported for `tests/contracts/fixture-masking.test.ts`: the masking rules are
+// the defence that keeps personal data out of git, and a defence nothing
+// executes is how the last three holes got in. Importing must not start a
+// capture, so `main` only runs when this file is the entry point.
+export { collectValueDomains, normalize };
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`\nfixtures:refresh failed — ${error.message}`);
+    process.exit(1);
+  });
+}
