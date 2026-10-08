@@ -5,7 +5,7 @@ import type * as React from "react";
 import { cn } from "@/shared/ui/lib/cn";
 import { formatUtc } from "@/shared/ui/lib/format";
 import { type AuditEvent, type AuditFieldChange, auditActorFull } from "@/domain/audit/audit-log";
-import { isSignInShaped } from "@/domain/audit/audit-presentation";
+import { auditRevokeReasonLabel, isSignInShaped } from "@/domain/audit/audit-presentation";
 
 /** `name · email` when both differ, else whichever single value exists. */
 function joinNameEmail(name?: string, email?: string): string | undefined {
@@ -17,8 +17,8 @@ function joinNameEmail(name?: string, email?: string): string | undefined {
 
 /**
  * Per-action expanded detail, driven by the structured `metadata` payload:
- * login / password / provider link → IP / User agent / Session (+ Reason when
- * refused); logout → Session / Kind; `auth_method.toggled` → Method;
+ * login / password / provider link / session revocation → IP / User agent /
+ * Session (+ Reason when refused or revoked); logout → Session / Kind; `auth_method.toggled` → Method;
  * `maintenance.*` / `maintenance_step.*` → Maintenance title + a `changes`
  * diff; `integration.*` → Integration (`kind/name`) + a `changes` diff;
  * role/block/tag events — and any action the UI does not model — → Target, a
@@ -44,6 +44,11 @@ export function AuditExpandedDetail({ event }: { event: AuditEvent }) {
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
     if (m?.failure_reason)
       rows.push({ label: "Reason", value: <span className="text-destructive-fg">{m.failure_reason}</span> });
+    if (m?.revoke_reason)
+      rows.push({
+        label: "Reason",
+        value: <span className="text-destructive-fg">{auditRevokeReasonLabel(m.revoke_reason)}</span>,
+      });
   } else if (event.action === "logout.success") {
     if (m?.session_id) rows.push({ label: "Session", value: m.session_id });
     if (m?.logout_kind) rows.push({ label: "Kind", value: m.logout_kind });

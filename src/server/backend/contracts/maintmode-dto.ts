@@ -512,7 +512,8 @@ export interface AuditLogFieldChangeDto {
  * (+failure_reason on `login.failed`); logout → session_id/logout_kind;
  * `roles.changed`/`user.blocked`/`user.unblocked` → roles_added/removed/roles
  * + target_*; `maintenance.*`/`maintenance_step.*` → maint_title (+ changes on
- * `maintenance.updated`).
+ * `maintenance.updated`); `session.revoked` → ip/user_agent/session_id +
+ * revoke_reason.
  */
 export interface AuditLogMetadataDto {
   ip?: string;
@@ -520,6 +521,8 @@ export interface AuditLogMetadataDto {
   session_id?: string;
   failure_reason?: string;
   logout_kind?: string;
+  /** `session.revoked` only; backend enum `token_reuse`. */
+  revoke_reason?: string;
   roles?: string[];
   roles_added?: string[];
   roles_removed?: string[];

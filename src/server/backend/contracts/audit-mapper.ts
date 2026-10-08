@@ -85,6 +85,7 @@ function mapAuditMetadata(dto: AuditLogMetadataDto | undefined): AuditMetadata |
     session_id: trimmed(dto.session_id),
     failure_reason: trimmed(dto.failure_reason),
     logout_kind: trimmed(dto.logout_kind),
+    revoke_reason: trimmed(dto.revoke_reason),
     roles: trimmedList(dto.roles),
     roles_added: trimmedList(dto.roles_added),
     roles_removed: trimmedList(dto.roles_removed),

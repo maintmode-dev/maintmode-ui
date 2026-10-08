@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = [
   "password.changed",
   "password.reset",
   "provider.linked",
+  "session.revoked",
   "auth_method.toggled",
   "roles.changed",
   "user.tags_changed",
@@ -119,7 +120,9 @@ export interface AuditFieldChange {
  * maint_title (+ changes on `maintenance.updated`); `integration.updated` →
  * changes (config fields, `enabled`, and `secrets.<key>` flags);
  * `password.changed` / `password.reset` / `provider.linked` → ip/user_agent
- * (+ failure_reason on a refused link); `user.tags_changed` → changes +
+ * (+ failure_reason on a refused link); `session.revoked` → ip/user_agent of
+ * the request that replayed the token, session_id (the revoked session) and
+ * revoke_reason; `user.tags_changed` → changes +
  * target_display_name/target_email; `invitation.*` → target_email (the invited
  * address) + roles (what the invitation grants); `resource.*` /
  * `notify_channel.*` → target_display_name (the row's name at event time),
@@ -131,6 +134,11 @@ export interface AuditMetadata {
   session_id?: string;
   failure_reason?: string;
   logout_kind?: string;
+  /**
+   * Why the system revoked a session — `session.revoked` only. A fixed backend
+   * vocabulary (`token_reuse`), labelled by `auditRevokeReasonLabel`.
+   */
+  revoke_reason?: string;
   roles?: string[];
   roles_added?: string[];
   roles_removed?: string[];

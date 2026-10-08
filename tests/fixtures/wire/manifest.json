@@ -317,7 +317,48 @@
       "why": "RUK-297: AUDIT_ACTIONS fell five actions behind the backend and the route dropped those rows silently. audit-actions.contract.test.ts compares the UI list with this published enum, so the next new action fails CI instead of vanishing from the security log.",
       "handEdited": false,
       "capturedBy": "npm run fixtures:audit-actions (scripts/sync-audit-actions.mjs) — copied verbatim from the backend checkout, not from the wire: the spec is served on the backend's infra port, which no gateway exposes.",
-      "backendCommit": "6e2a2c6"
+      "backendCommit": "0ec0d2e"
+    },
+    "audit-log-session-revoked": {
+      "url": "http://maintmode:8000/api/v1/audit/log?action=session.revoked&limit=20",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-10-08",
+      "why": "session.revoked is the backend's record of revoking a session because a rotated refresh token was replayed past its grace window -- the only trace of a possible token theft. This pins that the row reaches the client with the replaying request's ip/user_agent, the revoked session_id and revoke_reason.",
+      "handEdited": true,
+      "handEditedReason": "CAPTURED, not transcribed -- but not by scripts/refresh-fixtures.mjs, which signs in through the dev-bypass exchange and reaches the backend through a gateway; the self-host stand at :9000 has neither. The row was written by the real backend (branch fix/client-ip-session-metadata @ 93896a6, image local-def3 -- the commit before the branch was rebased onto release/v0.3.1; the rebase left the session.revoked path unchanged) on 2026-10-08: qa-admin signed in from the browser, a throwaway container on the stand's edge network drove a refresh through the gateway with that session cookie, and 35s later (past the 30s grace window) replayed the pre-rotation cookie, so the BFF presented the rotated-out refresh token and reuse detection revoked the session. Taken off the wire inside the stand's compose network with a qa-admin bearer (GET /api/v1/audit/log?action=session.revoked) and passed through that script's OWN capture() pipeline, loaded from its source with fetch stubbed to the recorded body: total bucketed, rows sampled, everything masked by normalize(). Not edited after that. Set handEdited back to false once refresh-fixtures.mjs can reach a stand like this one.",
+      "totalObserved": "1+ (threshold 200: under)",
+      "valueDomains": {
+        "logs": {
+          "id": [
+            "<uuid-1>"
+          ],
+          "action": [
+            "session.revoked"
+          ],
+          "actor": [
+            "<email-1>"
+          ],
+          "actor_id": [
+            "<uuid-2>"
+          ],
+          "actor_display_name": [
+            "<email-1>"
+          ],
+          "entity_type": [
+            "user"
+          ],
+          "entity_id": [
+            "<uuid-2>"
+          ],
+          "metadata": [
+            "<object>"
+          ],
+          "created_at": [
+            "<ts-1>"
+          ]
+        }
+      }
     }
   },
   "gateway": "http://localhost:9000"

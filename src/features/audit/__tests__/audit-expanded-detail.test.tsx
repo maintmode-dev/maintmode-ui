@@ -93,6 +93,37 @@ describe("AuditExpandedDetail — RUK-297 actions", () => {
     expect(screen.getByText("link ticket unusable")).toBeTruthy();
   });
 
+  it("reads a session revocation like a login: IP, user agent, session and the worded reason", () => {
+    render(
+      <AuditExpandedDetail
+        event={{
+          id: "a-6",
+          created_at: "2026-10-09T10:00:00Z",
+          actor: "admin@example.test",
+          action: "session.revoked",
+          entity_type: "user",
+          details: "session of admin@example.test revoked: refresh token reused",
+          metadata: {
+            ip: "198.51.100.9",
+            user_agent: "curl/8.4.0",
+            session_id: "session-1",
+            revoke_reason: "token_reuse",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("IP")).toBeTruthy();
+    expect(screen.getByText("198.51.100.9")).toBeTruthy();
+    expect(screen.getByText("User agent")).toBeTruthy();
+    expect(screen.getByText("curl/8.4.0")).toBeTruthy();
+    expect(screen.getByText("Session")).toBeTruthy();
+    expect(screen.getByText("Reason")).toBeTruthy();
+    expect(screen.getByText("Refresh token reused")).toBeTruthy();
+    // Read as sign-in shaped, not through the account-change branch.
+    expect(screen.queryByText("Target")).toBeNull();
+  });
+
   it("names the method a sign-in method toggle acted on", () => {
     render(
       <AuditExpandedDetail
