@@ -132,7 +132,10 @@ export async function credentialsSignInAction(
     // A 429 is not a verdict on the code, and the flow has copy for it ("wait
     // a moment"). Collapsed into the uniform failure it told a throttled user
     // their code was wrong and spent their local attempt budget.
-    if (input.kind === "otp" && code === AUTH_ERROR_CODES.otpRateLimited) {
+    // The same holds for a password: retyping a correct one into the limiter
+    // only keeps it refusing. One code for both, as the backend's per-address
+    // budget is one for both.
+    if (code === AUTH_ERROR_CODES.otpRateLimited) {
       return { error: AUTH_ERROR_CODES.otpRateLimited };
     }
     if (input.kind === "password") {

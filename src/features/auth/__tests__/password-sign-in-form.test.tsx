@@ -55,6 +55,23 @@ describe("password sign-in form", () => {
     expect(alert.textContent).toBe("That email or password isn't right.");
   });
 
+  // A 429 is the limiter, not the password: "isn't right" would send a user
+  // with a correct password back into the limiter that is refusing them.
+  it("says to wait, not that the password is wrong, when rate limited", async () => {
+    setup(vi.fn(async () => ({ error: "otp_rate_limited" })));
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "admin@example.test" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "right" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/too many attempts/i);
+    expect(alert.textContent).toMatch(/wait/i);
+    expect(alert.textContent).not.toMatch(/isn't right/i);
+  });
+
   it("is fillable by a password manager", () => {
     // Without these, a sign-in page pushes people toward weaker credentials.
     setup();

@@ -186,6 +186,22 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
 
     expect(result.error).toBe("otp_rate_limited");
   });
+
+  it("passes a rate limit through for a password too", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "otp_rate_limited" }));
+
+    const result = await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "right" });
+
+    expect(result.error).toBe("otp_rate_limited");
+  });
+
+  it("still answers every other password failure with the uniform one", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "invalid_credentials" }));
+
+    const result = await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "wrong" });
+
+    expect(result.error).toBe("invalid_credentials");
+  });
 });
 
 /**
