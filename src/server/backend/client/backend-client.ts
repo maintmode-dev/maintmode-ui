@@ -1,6 +1,6 @@
 import "server-only";
 
-import { forwardedForHeader } from "@/server/backend/client/forwarded-for";
+import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
 import {
   BackendRequestError,
@@ -34,7 +34,7 @@ export async function backendRequest<TResponse>({
   const config = readMaintmodeBackendConfig();
   const baseUrl = useAuthBase ? config.authApiBaseUrl : config.apiBaseUrl;
   const target = resolveBackendUrl(baseUrl, path);
-  const forwardedFor = await forwardedForHeader();
+  const forwardedClient = await forwardedClientHeaders();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -53,7 +53,7 @@ export async function backendRequest<TResponse>({
           ? AbortSignal.any([init.signal as AbortSignal, controller.signal])
           : controller.signal,
         headers: {
-          ...forwardedFor,
+          ...forwardedClient,
           accept: "application/json",
           ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
           ...init.headers,

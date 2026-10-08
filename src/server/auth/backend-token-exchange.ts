@@ -1,6 +1,6 @@
 import "server-only";
 
-import { forwardedForHeader } from "@/server/backend/client/forwarded-for";
+import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
 import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from "@/server/auth/contracts";
 
@@ -467,7 +467,7 @@ export async function fetchBackendMe(accessToken: string): Promise<BackendMeResp
  * configured timeout.
  *
  * Owns the request scaffold ONLY — the URL, the abort timer and the browser's
- * forwarded address (see `forwardedForHeader`), identical at every call site. It deliberately does not touch the response:
+ * forwarded address and User-Agent (see `forwardedClientHeaders`), identical at every call site. It deliberately does not touch the response:
  * these endpoints disagree about what a response even is (a shape-checked JSON
  * body, a bare 204, a 401 classified by what the REQUEST carried), and some
  * throw where others return a discriminated result. Folding that in would erase
@@ -486,7 +486,7 @@ async function backendFetch<T>(
 ): Promise<T> {
   const config = readMaintmodeBackendConfig();
   const target = resolveBackendUrl(config.authApiBaseUrl, path);
-  const forwardedFor = await forwardedForHeader();
+  const forwardedClient = await forwardedClientHeaders();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -494,7 +494,7 @@ async function backendFetch<T>(
     return await handleResponse(
       await fetch(target, {
         ...init,
-        headers: { ...forwardedFor, ...init.headers },
+        headers: { ...forwardedClient, ...init.headers },
         signal: controller.signal,
       }),
     );
