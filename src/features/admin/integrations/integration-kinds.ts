@@ -200,13 +200,17 @@ export const NOTIFICATION_KIND_META: Record<NotificationIntegrationName, Integra
       },
     ],
   },
+  // Email is not a channel transport: the backend offers only Slack and
+  // Telegram for channels, and sends exactly three kinds of mail — invitations,
+  // sign-in codes and password-reset codes. Turning it off therefore breaks
+  // email-code sign-in and password reset, which the disabled hint says.
   email: {
     label: "Email",
     statusHint: [
-      "Channels using this transport will deliver notifications.",
-      "Delivery through this transport is paused; settings are kept.",
+      "Invitations, sign-in codes and password resets are sent through this server.",
+      "Invitations, sign-in codes and password resets are not sent — email-code sign-in and password reset stop working. Settings are kept.",
     ],
-    description: "Delivers maintenance notifications over SMTP.",
+    description: "Sends invitations, sign-in codes and password-reset codes over SMTP.",
     brand: "email",
     configFields: [
       { name: "host", label: "SMTP host", optional: false, placeholder: "smtp.example.com" },

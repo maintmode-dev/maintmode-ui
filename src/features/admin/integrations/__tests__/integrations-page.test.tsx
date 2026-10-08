@@ -221,7 +221,20 @@ describe("IntegrationsPage — sign-in providers are no longer here", () => {
     renderPage([]);
 
     expect(await screen.findByRole("heading", { name: "Notification transports" })).toBeTruthy();
-    expect(screen.getByText(/how MaintMode delivers messages/i)).toBeTruthy();
+    expect(screen.getByText(/How MaintMode reaches people/)).toBeTruthy();
+  });
+
+  // DEF-7 (2026-10-08 self-host acceptance): the header said email delivers
+  // maintenance notifications. It cannot — channels exist only on Slack and
+  // Telegram — so the header must not lump email in with them.
+  it("does not present email as a maintenance-notification transport", async () => {
+    renderPage([]);
+
+    const header = (await screen.findByText(/How MaintMode reaches people/)).textContent ?? "";
+    expect(header).toContain(
+      "Slack and Telegram deliver maintenance notifications to channels; email carries invitations, sign-in codes and password resets.",
+    );
+    expect(header).not.toMatch(/to Slack, Telegram and email/);
   });
 });
 
