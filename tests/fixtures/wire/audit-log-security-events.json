@@ -1,0 +1,120 @@
+{
+  "logs": [
+    {
+      "id": "<uuid-1>",
+      "action": "user.tags_changed",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "actor_display_name": "Break-glass admin",
+      "entity_type": "user",
+      "entity_id": "<uuid-3>",
+      "details": "messenger tags of <email-2> changed by <email-1>",
+      "metadata": {
+        "target_email": "<email-2>",
+        "target_display_name": "<email-2>",
+        "changes": [
+          {
+            "field": "telegram_tag",
+            "old": "@qa_editor_tg",
+            "new": "@qa_editor_tg2"
+          },
+          {
+            "field": "slack_tag",
+            "old": "@qa.editor"
+          }
+        ]
+      },
+      "created_at": "<ts-1>"
+    },
+    {
+      "id": "<uuid-4>",
+      "action": "password.reset",
+      "actor": "<email-2>",
+      "actor_id": "<uuid-3>",
+      "actor_display_name": "<email-2>",
+      "entity_type": "user",
+      "entity_id": "<uuid-3>",
+      "details": "password reset for <email-2>",
+      "metadata": {
+        "ip": "<redacted-ip>",
+        "user_agent": "<redacted-user_agent>"
+      },
+      "created_at": "<ts-2>"
+    },
+    {
+      "id": "<uuid-5>",
+      "action": "provider.linked",
+      "actor": "",
+      "actor_id": "<uuid-6>",
+      "entity_type": "user",
+      "entity_id": "<uuid-6>",
+      "details": "provider link refused: link ticket unusable",
+      "metadata": {
+        "ip": "<redacted-ip>",
+        "user_agent": "<redacted-user_agent>",
+        "failure_reason": "link ticket unusable"
+      },
+      "created_at": "<ts-3>"
+    },
+    {
+      "id": "<uuid-7>",
+      "action": "user.tags_changed",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "actor_display_name": "Break-glass admin",
+      "entity_type": "user",
+      "entity_id": "<uuid-3>",
+      "details": "messenger tags of <email-2> changed by <email-1>",
+      "metadata": {
+        "target_email": "<email-2>",
+        "target_display_name": "<email-2>",
+        "changes": [
+          {
+            "field": "telegram_tag",
+            "new": "@qa_editor_tg"
+          },
+          {
+            "field": "slack_tag",
+            "new": "@qa.editor"
+          }
+        ]
+      },
+      "created_at": "<ts-4>"
+    },
+    {
+      "id": "<uuid-8>",
+      "action": "password.changed",
+      "actor": "<email-2>",
+      "actor_id": "<uuid-3>",
+      "actor_display_name": "<email-2>",
+      "entity_type": "user",
+      "entity_id": "<uuid-3>",
+      "details": "password changed for <email-2>",
+      "metadata": {
+        "ip": "<redacted-ip>",
+        "user_agent": "<redacted-user_agent>"
+      },
+      "created_at": "<ts-5>"
+    },
+    {
+      "id": "<uuid-9>",
+      "action": "auth_method.toggled",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "actor_display_name": "Break-glass admin",
+      "entity_type": "auth_setting",
+      "entity_id": "email_otp",
+      "details": "sign-in method email_otp enabled by <email-1>",
+      "created_at": "<ts-6>"
+    }
+  ],
+  "total": 6,
+  "facets": {
+    "all": 78,
+    "auth": "<redacted-auth>",
+    "roles": 5,
+    "block": 0,
+    "maintenance": 12,
+    "integration": 2
+  }
+}

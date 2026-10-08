@@ -102,10 +102,11 @@
       "status": 200,
       "capturedAt": "2026-08-11T18:37:05.031Z",
       "why": "RUK-171: `details` is a flat string, `actor` an email — FE renders degraded.",
-      "handEdited": false,
+      "handEdited": true,
+      "handEditedReason": "TRIMMED 2026-10-08 (RUK-297), not invented: the two rows whose action was `prune-expired-<id>` / `prune-none-<id>` were removed. They are not a backend contract — no product code writes such an action. They are per-run markers inserted into audit_log by the BACKEND'S OWN TEST internal/storages/audit/prune_test.go (commit 8634b23f, RUK-180), which ran against the database this capture was taken from; the UI had misread them as \"the backend started emitting prune-* service actions\". No field of any kept row was edited; `total`/`facets` still count the database as captured. Re-record from a database the backend test suite has not written to, then set handEdited back to false.",
       "sampledRows": {
         "logs": {
-          "kept": 12,
+          "kept": 10,
           "actual": 20
         }
       },
@@ -270,6 +271,25 @@
       "why": "Security review S2 rework: instead of demanding a notify secret when its destination changes, the backend records the change on integration.updated (metadata.changes, with a secret named as `secrets.<key>` and no value). The audit route used to drop every integration.* row as an unknown action (docs/contract-gaps.md, RUK-297), so this pins both that the rows arrive and that a secret flag with neither side survives the mapper's no-op filter.",
       "handEdited": true,
       "handEditedReason": "NOT RECORDABLE yet: metadata.changes on integration.updated ships on the backend commit b4a9e73 (branch fix/integration-audit-diff), not deployed to the :9000 stand, which runs main. Transcribed from that commit: action/entity values from internal/audit/integration_action.go (entity_id = kind/name, details format) and its render test; the change list from internal/services/integration/audit_changes.go (enabled first, config fields sorted, an added key with no old side, secrets by name only); field omission from the omitempty tags in internal/app/api/public/audit/models/logs.go. Re-record once the commit is deployed."
+    },
+    "audit-log-security-events": {
+      "url": "http://maintmode:8000/api/v1/audit/log?action=auth_method.toggled,password.changed,password.reset,provider.linked,user.tags_changed&limit=20",
+      "method": "GET",
+      "status": 200,
+      "capturedAt": "2026-10-08",
+      "why": "RUK-297: these five actions were dropped by the audit route as unknown, so the security log never showed a password change, a reset, a provider link, a sign-in method toggle or an admin editing someone's messenger tags. This pins that every one of them reaches the client with the payload the backend really writes.",
+      "handEdited": true,
+      "handEditedReason": "CAPTURED, not transcribed — but not by scripts/refresh-fixtures.mjs, which signs in through the dev-bypass exchange and reaches the backend through a gateway; the self-host stand at :9000 has neither (its gateway exposes only the OAuth dance). Taken off the wire inside the stand's compose network (backend maintmode:main @ ef2ce99) with a break-glass bearer, then masked with that script's own normalize() and not edited otherwise. Every row was written by the real backend on 2026-10-08: password.changed by qa-editor changing their password on /settings/profile; password.reset through the /login reset-code flow; user.tags_changed twice by an admin in /admin/users (set, then changed + cleared — so both a one-sided and a two-sided diff are pinned); auth_method.toggled was already on the stand (the break-glass admin enabling email_otp earlier that day); provider.linked by POST /api/v1/me/providers/link/complete with a forged link code, so it is the REFUSED variant (empty actor, nil user id, failure_reason). A SUCCESSFUL link needs a real Google sign-in and was not recorded; per the backend's renderer (internal/audit/render.go providerLinkDetails, render_test.go TestRender_ProviderLinked) it differs only in details (\"provider linked\") and the absence of failure_reason, and names the account. ip/user_agent read <redacted-*> by name; facets.auth reads \"<redacted-auth>\" because the normaliser's sensitive-key rule matches the key `auth` — a normaliser false positive shared with audit-log.json, not the wire (the backend sends a number)."
+    },
+    "audit-action-enum": {
+      "url": "maintmode:docs/auth/swagger.json#/components/schemas/entity.AuditAction",
+      "method": "SPEC",
+      "status": "n/a",
+      "capturedAt": "2026-10-08",
+      "why": "RUK-297: AUDIT_ACTIONS fell five actions behind the backend and the route dropped those rows silently. audit-actions.contract.test.ts compares the UI list with this published enum, so the next new action fails CI instead of vanishing from the security log.",
+      "handEdited": false,
+      "capturedBy": "npm run fixtures:audit-actions (scripts/sync-audit-actions.mjs) — copied verbatim from the backend checkout, not from the wire: the spec is served on the backend's infra port, which no gateway exposes.",
+      "backendCommit": "ef2ce99"
     }
   },
   "gateway": "http://localhost:9000"

@@ -18,12 +18,6 @@
       "created_at": "<ts-2>"
     },
     {
-      "id": "<uuid-5>",
-      "action": "prune-expired-<uuid-6>",
-      "actor": "tester-<uuid-7>",
-      "created_at": "<ts-3>"
-    },
-    {
       "id": "<uuid-8>",
       "action": "login.success",
       "actor": "<email-1>",
@@ -66,12 +60,6 @@
       "actor": "add-test-<uuid-12>",
       "entity_type": "user",
       "created_at": "<ts-8>"
-    },
-    {
-      "id": "<uuid-14>",
-      "action": "prune-none-<uuid-15>",
-      "actor": "tester-<uuid-16>",
-      "created_at": "<ts-9>"
     },
     {
       "id": "<uuid-17>",
