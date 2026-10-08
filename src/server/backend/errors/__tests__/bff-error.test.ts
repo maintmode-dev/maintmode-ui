@@ -53,6 +53,34 @@ describe("normalizeRouteError", () => {
     });
   });
 
+  // I-3 (security review 2026-10-07): a 5xx body that is not JSON — a panic,
+  // a proxy's HTML page — is internals, not a message for the browser.
+  it.each([
+    ["panic: runtime error: invalid memory address\ngoroutine 1 [running]:"],
+    ["<html><body>502 Bad Gateway</body></html>"],
+    ['"pq: relation does not exist"'],
+  ])("does not pass a non-JSON 5xx body to the client: %s", (body) => {
+    const normalized = normalizeRouteError(new BackendRequestError(502, body));
+
+    expect(normalized.error).toBe("Maintmode backend request failed");
+    expect(JSON.stringify(normalized)).not.toContain(body.slice(0, 12));
+  });
+
+  // 500 itself is the status a recovered panic is answered with, so the
+  // boundary is the case that matters most, not a corner.
+  it("hides a non-JSON body at exactly 500", () => {
+    const normalized = normalizeRouteError(
+      new BackendRequestError(500, "panic: assignment to entry in nil map\ngoroutine 7 [running]:"),
+    );
+
+    expect(normalized.error).toBe("Maintmode backend request failed");
+    expect(JSON.stringify(normalized)).not.toContain("goroutine");
+  });
+
+  it("still passes a non-JSON 4xx body through", () => {
+    expect(normalizeRouteError(new BackendRequestError(400, "bad cursor")).error).toBe("bad cursor");
+  });
+
   it("does not hide internal TypeError bugs as backend outages", () => {
     expect(normalizeRouteError(new TypeError("adapter bug"))).toEqual({
       error: "Unexpected BFF error",

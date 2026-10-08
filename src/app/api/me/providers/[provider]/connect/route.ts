@@ -5,6 +5,7 @@ import { authenticatedBackendRequest } from "@/server/backend/client/authenticat
 import { routeErrorResponse } from "@/server/backend/errors/bff-error";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
 import { isSafePathSegment } from "@/server/backend/http/path-segment";
+import { mintOAuthBinding } from "@/server/auth/oauth-binding-cookie";
 
 interface ConnectDanceWire {
   link_url?: unknown;
@@ -62,8 +63,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       );
     }
 
+    // The browser binding (backend M1): the link code the dance comes back with
+    // completes only with this browser's nonce, so a link URL forwarded to a
+    // colleague attaches nothing to this account. The cookie rides this JSON
+    // response; the card then navigates, so it is in place before /start.
+    const binding = await mintOAuthBinding();
+    const separator = linkUrl.includes("?") ? "&" : "?";
+
     const { authPublicBaseUrl } = parseMaintmodeAuthConfig(process.env);
-    return NextResponse.json({ url: `${authPublicBaseUrl}${linkUrl}` });
+    return NextResponse.json({
+      url: `${authPublicBaseUrl}${linkUrl}${separator}binding=${encodeURIComponent(binding)}`,
+    });
   } catch (error) {
     return routeErrorResponse(error);
   }

@@ -19,6 +19,12 @@ export function readMaintmodeBackendConfig() {
  * paths so that a misconfigured caller cannot redirect a backend request to
  * an attacker-controlled host. The query string and hash on `path` are
  * preserved verbatim.
+ *
+ * Also rejects any dot segment (`.`, `..`, or their `%2e` spellings, which a
+ * URL parser treats the same). `encodeURIComponent` leaves `..` as it is, so a
+ * route parameter of `..` would otherwise move the request to a neighbouring
+ * backend route under the user's token (security review 2026-10-07, L-3).
+ * Checked here rather than in each route so a new route cannot forget it.
  */
 export function resolveBackendUrl(baseUrl: string, path: string): URL {
   if (typeof path !== "string" || path.length === 0) {
@@ -30,6 +36,9 @@ export function resolveBackendUrl(baseUrl: string, path: string): URL {
   if (path.startsWith("//")) {
     throw new TypeError(`resolveBackendUrl: protocol-relative paths are not allowed (got "${path}")`);
   }
+  if (hasDotSegment(path)) {
+    throw new TypeError(`resolveBackendUrl: dot segments are not allowed (got "${path}")`);
+  }
   const baseWithSlash = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const pathNoLeading = path.startsWith("/") ? path.slice(1) : path;
   const resolved = new URL(pathNoLeading, baseWithSlash);
@@ -40,4 +49,18 @@ export function resolveBackendUrl(baseUrl: string, path: string): URL {
     );
   }
   return resolved;
+}
+
+const DOT_SEGMENT = /^(?:\.|%2e){1,2}$/i;
+
+function hasDotSegment(path: string): boolean {
+  // Read the path the way the WHATWG parser will: it trims leading and trailing
+  // C0 controls and spaces, strips TAB/LF/CR anywhere, and for http(s) treats
+  // `\` as a separator. Splitting on `/` alone let `..\..`, `.<TAB>.` or a
+  // trailing `..<US>` through for a path built without encoding.
+  const pathname = path
+    .replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "")
+    .replace(/[\t\n\r]/g, "")
+    .split(/[?#]/, 1)[0];
+  return pathname.split(/[\/\\]/).some((segment) => DOT_SEGMENT.test(segment));
 }

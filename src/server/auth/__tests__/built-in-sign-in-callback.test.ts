@@ -26,7 +26,6 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
   loginWithBreakGlass: (...args: unknown[]) => loginWithBreakGlass(...args),
   fetchBackendMe: (...args: unknown[]) => fetchBackendMe(...args),
   exchangeGoogleIdToken: vi.fn(),
-  acceptInvitation: vi.fn(),
   refreshBackendToken: vi.fn(),
 }));
 
@@ -242,6 +241,23 @@ describe("failures are attributed to the stage that actually failed", () => {
     );
 
     expect(code).toBe(AUTH_ERROR_CODES.invalidCredentials);
+  });
+
+  // The backend now limits /login/password per address as well as per IP, and
+  // counts it before any account lookup, so a 429 enumerates nothing.
+  it("calls a rate-limited password sign-in rate limited, not wrong", async () => {
+    loginWithPassword.mockRejectedValue(
+      new BackendAuthError(429, JSON.stringify({ code: "too many requests" })),
+    );
+
+    const code = await codeOf(
+      callSignIn(
+        { provider: "backend-login" },
+        { signInKind: "password", email: "admin@example.test", password: "right" },
+      ),
+    );
+
+    expect(code).toBe(AUTH_ERROR_CODES.otpRateLimited);
   });
 
   it("distinguishes a profile-load failure from a credential failure", async () => {

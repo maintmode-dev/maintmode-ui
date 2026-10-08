@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  AuthConfigValidationError,
-  isSafeOriginalUri,
-  parseMaintmodeAuthConfig,
-} from "@/shared/config/auth-config";
+import { AuthConfigValidationError, parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
 
 describe("auth-config", () => {
   const validEnv: Record<string, string | undefined> = {
@@ -101,21 +97,5 @@ describe("auth-config", () => {
         MAINTMODE_GOOGLE_OAUTH_CLIENT_SECRET: undefined,
       }),
     ).not.toThrow();
-  });
-});
-
-describe("isSafeOriginalUri", () => {
-  it.each([
-    ["/calendar", true],
-    ["/maintenance/abc", true],
-    ["/", true],
-    ["//evil.com", false],
-    ["http://evil.com", false],
-    ["/path\\evil", false],
-    ["", false],
-    [null, false],
-    [undefined, false],
-  ])("classifies %s as %s", (value, expected) => {
-    expect(isSafeOriginalUri(value)).toBe(expected);
   });
 });

@@ -178,6 +178,46 @@ describe("failures the user must be able to act on", () => {
   });
 });
 
+describe("M5 — a first password needs a recent sign-in", () => {
+  // jsdom does not implement form submission; the spy records it instead.
+  let submitted: HTMLFormElement[];
+  beforeEach(() => {
+    submitted = [];
+    vi.spyOn(HTMLFormElement.prototype, "submit").mockImplementation(function (this: HTMLFormElement) {
+      submitted.push(this);
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  async function submitAndGet(error: BffError) {
+    bffFetch.mockRejectedValue(error);
+    renderCard(false);
+    fill("New password", LONG_ENOUGH);
+    fireEvent.click(screen.getByRole("button", { name: "Set password" }));
+    await screen.findByRole("alert");
+  }
+
+  it("says why, then signs the user out and back to this form", async () => {
+    await submitAndGet(new BffError(403, "Sign in again to set a password", "REAUTHENTICATION_REQUIRED"));
+
+    expect(screen.getByRole("alert").textContent).toMatch(/sign in again to set a password/i);
+    // Not straight away: the message is read first.
+    expect(submitted).toHaveLength(0);
+
+    await waitFor(() => expect(submitted).toHaveLength(1), { timeout: 3000 });
+    expect(submitted[0].getAttribute("method")).toBe("post");
+    expect(submitted[0].getAttribute("action")).toBe("/api/auth/logout?next=%2Fset-password");
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("does not sign out on any other 403", async () => {
+    await submitAndGet(new BffError(403, "Forbidden", "FORBIDDEN"));
+
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    expect(submitted).toHaveLength(0);
+  });
+});
+
 describe("the form follows password_set when it changes under the card", () => {
   // Found against a live backend, invisible to every test that mounts fresh.
   // `password_set` flips to `true` the moment a password is set, and this card

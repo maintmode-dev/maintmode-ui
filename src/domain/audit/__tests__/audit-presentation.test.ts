@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AUDIT_ACTIONS } from "@/domain/audit/audit-log";
 import {
+  ALL_ONLY_ACTIONS,
   AUDIT_CATEGORIES,
   auditActionDotToken,
   auditActionInCategory,
@@ -29,9 +30,20 @@ describe("category partition", () => {
   // The 15 actions are hand-assigned across 4 category sets; the type system
   // does NOT catch an action that's missing from every set (it just becomes
   // unfilterable by any chip). Assert exactly-one-category coverage.
-  it.each(AUDIT_ACTIONS)("places %s in exactly one non-`all` category", (action) => {
+  it.each(AUDIT_ACTIONS)("places %s in exactly one non-`all` category, or names it All-only", (action) => {
     const hits = REAL_CATEGORIES.filter((cat) => auditActionInCategory(action, cat));
-    expect(hits).toHaveLength(1);
+    expect(hits).toHaveLength(ALL_ONLY_ACTIONS.has(action) ? 0 : 1);
+  });
+
+  // The All-only set is integration.* and nothing else: a chip for them is an
+  // open product decision, and the set must not become a place to park any
+  // action someone forgot to categorise.
+  it("keeps only the integration actions out of every chip", () => {
+    expect([...ALL_ONLY_ACTIONS].sort()).toEqual([
+      "integration.created",
+      "integration.deleted",
+      "integration.updated",
+    ]);
   });
 
   it("matches every action under `all`", () => {

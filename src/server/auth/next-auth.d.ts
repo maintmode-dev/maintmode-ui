@@ -68,6 +68,8 @@ declare module "next-auth" {
      * the fields above: an input to an exchange, single-use, and never a token.
      */
     danceCode?: string;
+    /** The binding nonce that proves this browser started the dance. Same lifetime as `danceCode`. */
+    danceProof?: string;
   }
 }
 

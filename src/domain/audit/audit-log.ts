@@ -24,6 +24,12 @@ export const AUDIT_ACTIONS = [
   "maintenance_step.started",
   "maintenance_step.completed",
   "maintenance_step.canceled",
+  // Written by `/admin/integrations`. Until these were here the route dropped
+  // every one of them (docs/contract-gaps.md, RUK-297): the record of who
+  // re-pointed a stored token's destination never reached the screen.
+  "integration.created",
+  "integration.updated",
+  "integration.deleted",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -37,7 +43,7 @@ export interface AuditEvent {
   actor_display_name?: string;
   actor_id?: string;
   action: AuditAction;
-  /** Entity the action targeted — `user` | `maintenance` (backend `entity_type`). */
+  /** Entity the action targeted — `user` | `maintenance` | `integration` (backend `entity_type`). */
   entity_type?: string;
   entity_id?: string;
   /** One-line human summary (fallback display). */
@@ -59,7 +65,8 @@ export interface AuditFieldChange {
  * `login.failed`); logout → session_id/logout_kind; `roles.changed` /
  * `user.blocked` / `user.unblocked` → roles_added/roles_removed/roles +
  * target_display_name/target_email; `maintenance.*` / `maintenance_step.*` →
- * maint_title (+ changes on `maintenance.updated`).
+ * maint_title (+ changes on `maintenance.updated`); `integration.updated` →
+ * changes (config fields, `enabled`, and `secrets.<key>` flags).
  */
 export interface AuditMetadata {
   ip?: string;
@@ -74,7 +81,11 @@ export interface AuditMetadata {
   target_email?: string;
   /** Maintenance title snapshot — `maintenance.*` / `maintenance_step.*`. */
   maint_title?: string;
-  /** Per-field before/after diff — `maintenance.updated`. */
+  /**
+   * Per-field before/after diff — `maintenance.updated`, `integration.updated`.
+   * A `secrets.<key>` entry has neither side: it says the secret was replaced
+   * or cleared, and its value is never recorded.
+   */
   changes?: AuditFieldChange[];
 }
 

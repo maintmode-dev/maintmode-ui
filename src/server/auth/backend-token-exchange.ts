@@ -6,7 +6,6 @@ import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from 
 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
 const DANCE_CODE_EXCHANGE_PATH = "/api/v1/login/oauth/code/exchange";
-const ACCEPT_INVITATION_PATH = "/api/v1/users/invitations/accept";
 const ACCEPT_INVITATION_PASSWORD_PATH = "/api/v1/users/invitations/accept/password";
 const REFRESH_PATH = "/api/v1/refresh";
 const LOGOUT_PATH = "/api/v1/logout";
@@ -54,40 +53,6 @@ export async function exchangeGoogleIdToken(idToken: string, testRoles = ""): Pr
     { id_token: idToken },
     (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
     headers,
-  );
-}
-
-/**
- * Public invitation accept.
- *
- * Completes an invitation by handing the backend the raw invitation token plus
- * the OAuth payload (provider + signed `id_token`). The backend verifies the
- * token, checks the OAuth email matches the invited email, creates the user
- * with the invitation's pre-assigned roles, and returns its own
- * `TokenPairResponse` — exactly like a normal login.
- *
- * Security: this runs server-side only (inside the NextAuth `signIn`
- * callback). The returned `access_token`/`refresh_token` are persisted in the
- * server-only JWT cookie and never reach the browser. The endpoint is public
- * (no Bearer), so we call the unauthenticated `backendRequest` directly.
- *
- * The backend collapses every accept failure into a bare `400` with code
- * `invalid` | `email_mismatch` and no message (anti-enumeration). On any
- * non-2xx this throws `BackendAuthError`, which the `signIn` callback maps to
- * a generic sign-in failure code — no invitation detail leaks to the UI.
- */
-export async function acceptInvitation(args: {
-  invitationToken: string;
-  provider: string;
-  idToken: string;
-}): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(
-    ACCEPT_INVITATION_PATH,
-    {
-      invitation_token: args.invitationToken,
-      oauth_payload: { provider: args.provider, id_token: args.idToken },
-    },
-    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 
@@ -219,14 +184,20 @@ export async function loginWithBreakGlass(password: string): Promise<BackendToke
  * carries the status either way, which is what lets the caller log the two apart
  * while telling the user the same thing.
  */
-export async function redeemOAuthDanceCode(code: string): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(DANCE_CODE_EXCHANGE_PATH, { code }, (parsed) =>
-    // BOTH tokens, matching every other call that mints a session. Accepting a
-    // pair with no refresh token signs the user in and then kills the session at
-    // the first rotation — the `jwt` callback has nothing to rotate with and
-    // marks it `RefreshAccessTokenError`. That lands minutes later, mid-work,
-    // and points nowhere near this function.
-    Boolean(parsed?.access_token && parsed?.refresh_token),
+export async function redeemOAuthDanceCode(code: string, bindingProof: string): Promise<BackendTokenPair> {
+  // `binding_proof` is the nonce from this browser's binding cookie
+  // (`oauth-binding-cookie.ts`). Without the right one the backend answers the
+  // same 401 as for a bad code, and burns the code either way.
+  return postBackendJson<BackendTokenPair>(
+    DANCE_CODE_EXCHANGE_PATH,
+    { code, binding_proof: bindingProof },
+    (parsed) =>
+      // BOTH tokens, matching every other call that mints a session. Accepting a
+      // pair with no refresh token signs the user in and then kills the session at
+      // the first rotation — the `jwt` callback has nothing to rotate with and
+      // marks it `RefreshAccessTokenError`. That lands minutes later, mid-work,
+      // and points nowhere near this function.
+      Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 
@@ -308,6 +279,12 @@ export type ChangePasswordOutcome =
   | { ok: false; kind: "session-stale" }
   /** A 400: the wrong shape for this account's state, or a policy violation. */
   | { ok: false; kind: "rejected"; message: string }
+  /**
+   * A FIRST password needs a recent sign-in: the session must have started
+   * within the last few minutes (security review M5), so a stolen session
+   * cannot be turned into a permanent password. Nothing was changed.
+   */
+  | { ok: false; kind: "reauthentication-required" }
   | { ok: false; kind: "unavailable" };
 
 /**
@@ -380,6 +357,15 @@ export async function changeBackendPassword(args: {
             kind: "rejected",
             message: parsed?.message ?? "That password wasn't accepted.",
           };
+        }
+        if (response.status === 403) {
+          // Branching on the code, not the status: a 403 is otherwise an
+          // unexpected answer here and stays "unavailable". The code is a
+          // literal agreed with the backend (M5).
+          const parsed = safeJsonParse<{ code?: string }>(body);
+          if (parsed?.code === "reauthentication_required") {
+            return { ok: false, kind: "reauthentication-required" };
+          }
         }
         return { ok: false, kind: "unavailable" };
       },

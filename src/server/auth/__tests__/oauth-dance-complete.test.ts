@@ -18,6 +18,17 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
 }));
 vi.mock("@/server/auth/auth-config", () => ({ signIn: (...args: unknown[]) => signIn(...args) }));
 vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+const readOAuthBindingProof = vi.fn();
+const clearOAuthBinding = vi.fn();
+vi.mock("@/server/auth/oauth-binding-cookie", () => ({
+  readOAuthBindingProof: () => readOAuthBindingProof(),
+  clearOAuthBinding: () => clearOAuthBinding(),
+  mintOAuthBinding: vi.fn(),
+}));
+const completeProviderLink = vi.fn();
+vi.mock("@/server/auth/provider-link", () => ({
+  completeProviderLink: (...args: unknown[]) => completeProviderLink(...args),
+}));
 
 const { completeOAuthDanceAction } = await import("@/server/auth/oauth-dance-actions");
 
@@ -52,6 +63,9 @@ describe("completeOAuthDanceAction", () => {
     clearOAuthNext.mockReset();
     signIn.mockReset();
     readActiveSession.mockReset().mockResolvedValue(null);
+    readOAuthBindingProof.mockReset().mockResolvedValue("binding-nonce");
+    clearOAuthBinding.mockReset();
+    completeProviderLink.mockReset();
     redirect.mockClear();
   });
 
@@ -148,6 +162,89 @@ describe("completeOAuthDanceAction", () => {
     expect(await landsOn(form({}))).toBe("/login?code=oauth_handoff_failed");
   });
 
+  /**
+   * Login CSRF on a signed-out browser (security review 2026-10-07, M-1). The
+   * receiver submits itself, so a link carrying someone else's fresh code would
+   * sign whoever opens it into that account. Only a browser that started the
+   * dance here holds the destination cookie.
+   */
+  it("refuses a code when this browser never started a dance", async () => {
+    readOAuthNext.mockResolvedValue(null);
+
+    expect(await landsOn(form({ code: "attacker-code" }))).toBe("/login?code=oauth_handoff_failed");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The proof check must sit AFTER the session branch and the backend-error
+   * branch. A link comes back with no destination cookie (the profile's connect
+   * route never sets one), and a backend error is worth its own message even
+   * when the cookie has expired; moving the check up would turn both into the
+   * generic handoff failure.
+   */
+  // The attack against a signed-in victim, or simply a tab older than the
+  // cookie: refused by the session branch, and it must still land somewhere.
+  it("sends a signed-in browser with a code but no destination cookie to /", async () => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "victim" } });
+
+    expect(await landsOn(form({ code: "attacker-code" }))).toBe("/");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Backend M1: a link comes back as a one-time `link_code`, completed from
+   * this session with this browser's nonce. The outcome lands on the profile.
+   */
+  it.each([
+    ["linked", "/settings/profile?linked=1"],
+    ["link_conflict", "/settings/profile?link_error=link_conflict"],
+    ["failed", "/settings/profile?link_error=failed"],
+  ])("completes a pending link from the session (%s)", async (outcome, expected) => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+    completeProviderLink.mockResolvedValue(outcome);
+
+    expect(await landsOn(form({ link_code: "lc-1" }))).toBe(expected);
+    expect(completeProviderLink).toHaveBeenCalledWith("lc-1", "binding-nonce");
+  });
+
+  it("does not complete a link this browser holds no nonce for", async () => {
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+    readOAuthBindingProof.mockResolvedValue(null);
+
+    expect(await landsOn(form({ link_code: "forwarded" }))).toBe("/settings/profile?link_error=failed");
+    expect(completeProviderLink).not.toHaveBeenCalled();
+  });
+
+  it("does not complete a link without a session", async () => {
+    expect(await landsOn(form({ link_code: "lc-1" }))).toBe("/login?code=oauth_handoff_failed");
+    expect(completeProviderLink).not.toHaveBeenCalled();
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("still sends a completed link to the profile without the destination cookie", async () => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+
+    expect(await landsOn(form({ linked: "1" }))).toBe("/settings/profile?linked=1");
+  });
+
+  it("still sends a failed link to the profile without the destination cookie", async () => {
+    readOAuthNext.mockResolvedValue(null);
+    readActiveSession.mockResolvedValue({ user: { id: "me" } });
+
+    expect(await landsOn(form({ error: "link_conflict" }))).toBe(
+      "/settings/profile?link_error=link_conflict",
+    );
+  });
+
+  it("still maps a backend error without the destination cookie", async () => {
+    readOAuthNext.mockResolvedValue(null);
+
+    expect(await landsOn(form({ error: "email_mismatch" }))).toBe("/login?code=email_mismatch");
+  });
+
   it("redeems the code with the stored destination", async () => {
     readOAuthNext.mockResolvedValue("/calendar?view=week");
     signIn.mockImplementation(() => {
@@ -160,6 +257,7 @@ describe("completeOAuthDanceAction", () => {
 
     expect(signIn).toHaveBeenCalledWith("oauth-dance", {
       code: "one-time",
+      proof: "binding-nonce",
       redirectTo: "/calendar?view=week",
     });
     // The success path is a THROWN redirect that must pass through untouched;
@@ -167,13 +265,17 @@ describe("completeOAuthDanceAction", () => {
     expect(outcome).toBe("THROWN:ok");
   });
 
-  it("falls back to / when no destination was stored", async () => {
+  it("redeems with / when the stored destination is empty or rejected", async () => {
     readOAuthNext.mockResolvedValue("/");
     signIn.mockResolvedValue(undefined);
 
     await landsOn(form({ code: "one-time" }));
 
-    expect(signIn).toHaveBeenCalledWith("oauth-dance", { code: "one-time", redirectTo: "/" });
+    expect(signIn).toHaveBeenCalledWith("oauth-dance", {
+      code: "one-time",
+      proof: "binding-nonce",
+      redirectTo: "/",
+    });
   });
 
   /**
@@ -208,6 +310,29 @@ describe("completeOAuthDanceAction", () => {
     await landsOn(form(fields));
 
     expect(clearOAuthNext).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The binding (M-1 / backend L1). The nonce is the proof the backend checks;
+   * without it there is nothing to redeem with, and spending the code on a
+   * request the backend must refuse would only burn it.
+   */
+  it("refuses a code when this browser holds no binding nonce", async () => {
+    readOAuthBindingProof.mockResolvedValue(null);
+
+    expect(await landsOn(form({ code: "one-time" }))).toBe("/login?code=oauth_handoff_failed");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("clears the binding on every exit, before redeeming", async () => {
+    signIn.mockResolvedValue(undefined);
+
+    await landsOn(form({ code: "one-time" }));
+    expect(clearOAuthBinding.mock.invocationCallOrder[0]).toBeLessThan(signIn.mock.invocationCallOrder[0]);
+
+    clearOAuthBinding.mockClear();
+    await landsOn(form({ error: "access_denied" }));
+    expect(clearOAuthBinding).toHaveBeenCalledTimes(1);
   });
 
   it("clears the cookie before redeeming, not after", async () => {

@@ -7,7 +7,13 @@ import { signIn } from "@/server/auth/auth-config";
 import { readActiveSession } from "@/server/auth/session-token";
 import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
 import { isNextRedirect } from "@/server/auth/next-redirect";
+import {
+  clearOAuthBinding,
+  mintOAuthBinding,
+  readOAuthBindingProof,
+} from "@/server/auth/oauth-binding-cookie";
 import { clearOAuthNext, readOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
+import { completeProviderLink } from "@/server/auth/provider-link";
 import { safeNext } from "@/server/auth/safe-next";
 import type { LinkFailure } from "@/domain/auth/link-outcome";
 
@@ -71,6 +77,9 @@ export async function startOAuthDanceAction(
   }
 
   await setOAuthNext(next ? safeNext(next) : "/");
+  // The browser binding (M-1 / backend L1): the backend refuses a /start
+  // without one, and the code it yields redeems only with this cookie's nonce.
+  const binding = await mintOAuthBinding();
 
   const { authPublicBaseUrl } = parseMaintmodeAuthConfig(process.env);
 
@@ -78,9 +87,13 @@ export async function startOAuthDanceAction(
   // The API base is server-to-server and resolves to a container name in two of
   // the three shipped deployments, where it would produce a dead button.
   const base = `${authPublicBaseUrl}/api/v1/login/oauth/${encodeURIComponent(providerId)}/start`;
+  const query = new URLSearchParams({ binding });
   const token = invitation?.trim();
+  if (token) {
+    query.set("invitation", token);
+  }
 
-  redirect(token ? `${base}?invitation=${encodeURIComponent(token)}` : base);
+  redirect(`${base}?${query.toString()}`);
 }
 
 /**
@@ -171,8 +184,13 @@ function mapDanceError(code: string): AuthErrorCode {
  * consumer of this module, matching `built-in-sign-in-actions.ts`.
  */
 export async function completeOAuthDanceAction(formData: FormData): Promise<void> {
-  const destination = await readOAuthNext();
+  const stored = await readOAuthNext();
+  const destination = stored ?? "/";
   await clearOAuthNext();
+  // Read and cleared up front for the same reason: the nonce proves one dance,
+  // and must not outlive it on any exit.
+  const proof = await readOAuthBindingProof();
+  await clearOAuthBinding();
 
   // Refuse to redeem into a browser that already holds a session.
   //
@@ -201,6 +219,20 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   // the URL is rendered — and telling the two apart would take a "link
   // pending" cookie for a stale-tab edge case.
   if (await readActiveSession()) {
+    // A pending link (backend M1): the callback no longer links, it hands back
+    // a one-time `link_code` that only this session, with this browser's
+    // nonce, can complete. No nonce means this browser did not start it.
+    const linkCode = String(formData.get("link_code") ?? "").trim();
+    if (linkCode) {
+      const outcome = proof ? await completeProviderLink(linkCode, proof) : "failed";
+      redirect(
+        outcome === "linked"
+          ? "/settings/profile?linked=1"
+          : `/settings/profile?link_error=${encodeURIComponent(outcome)}`,
+      );
+    }
+    // `linked=1` is what a backend before the link_code change answered. Kept
+    // so a frontend deployed ahead of its backend still lands somewhere sane.
     if (String(formData.get("linked") ?? "").trim() === "1") {
       redirect("/settings/profile?linked=1");
     }
@@ -223,8 +255,28 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
     redirectToLoginError(AUTH_ERROR_CODES.oauthHandoffFailed);
   }
 
+  // Refuse a code this browser did not ask for (login CSRF, security review
+  // 2026-10-07 M-1). The session check above protects a signed-in victim; this
+  // one protects a signed-out one, who would otherwise be signed into whatever
+  // account minted the code in the link they were sent — and everything they
+  // typed next would land there. `startOAuthDanceAction` always writes the
+  // destination cookie, so its absence means the dance began somewhere else.
+  //
+  // One cookie per browser, so two dances started in parallel tabs collide: the
+  // first to finish clears it and the second is refused. Accepted — rare, and
+  // the person simply signs in again.
+  //
+  // The destination cookie alone narrowed this to "victim started a dance in
+  // the last fifteen minutes"; the binding nonce closes it — the backend
+  // redeems the code only with the nonce of the browser that started it. A
+  // missing nonce is refused here, before the code is spent on a request the
+  // backend must refuse anyway.
+  if (stored === null || !proof) {
+    redirectToLoginError(AUTH_ERROR_CODES.oauthHandoffFailed);
+  }
+
   try {
-    await signIn("oauth-dance", { code, redirectTo: destination });
+    await signIn("oauth-dance", { code, proof, redirectTo: destination });
   } catch (error) {
     if (isNextRedirect(error)) {
       throw error;

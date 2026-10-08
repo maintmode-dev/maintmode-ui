@@ -54,12 +54,23 @@ function trimmedList(value: string[] | undefined): string[] | undefined {
  * backend emits such no-op entries for untouched fields on `maintenance.updated`
  * (e.g. `steps`/`resources` with empty before/after), which would otherwise
  * render as a meaningless `field: ∅ → ∅` row in the diff.
+ *
+ * Except a `secrets.<key>` entry, which is blank on both sides BY DESIGN: it is
+ * `integration.updated` saying a secret was replaced or cleared, without ever
+ * writing its value. Dropping it would hide exactly the change the audit row
+ * exists to show.
  */
 function mapChanges(value: AuditLogFieldChangeDto[] | undefined): AuditFieldChange[] | undefined {
   const list = value
     ?.map((c): AuditFieldChange => ({ field: trimmed(c.field), old: trimmed(c.old), new: trimmed(c.new) }))
-    .filter((c) => c.field !== undefined && (c.old !== undefined || c.new !== undefined));
+    .filter(
+      (c) => c.field !== undefined && (c.old !== undefined || c.new !== undefined || isSecretChange(c.field)),
+    );
   return list && list.length > 0 ? list : undefined;
+}
+
+function isSecretChange(field: string): boolean {
+  return field.startsWith("secrets.");
 }
 
 /** `AuditLogMetadata` → domain `AuditMetadata`, or `undefined` when nothing is set. */

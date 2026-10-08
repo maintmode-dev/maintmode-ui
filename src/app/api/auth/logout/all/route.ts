@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { signOut } from "@/server/auth/auth-config";
 import { revokeAllBackendSessions } from "@/server/auth/backend-token-exchange";
 import { clearActiveSession, readActiveSession } from "@/server/auth/session-token";
+import { safeNext } from "@/server/auth/safe-next";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
-import { isSafeOriginalUri } from "@/shared/config/auth-config";
 
 /**
  * Signs the account out on ALL devices: revokes every refresh token via
@@ -40,11 +40,16 @@ export async function POST(request: Request) {
   await clearActiveSession();
 
   const nextParam = new URL(request.url).searchParams.get("next");
-  const target = isSafeOriginalUri(nextParam) ? nextParam : "/login";
+  // `safeNext`, the one sanitizer every other redirect uses: it rejects TAB and
+  // the other control characters a URL parser strips (security review
+  // 2026-10-07, L-2). Its `/` fallback becomes `/login` here, where it was
+  // headed anyway once the session is gone.
+  const sanitized = safeNext(nextParam ?? "");
+  const target = sanitized === "/" ? "/login" : sanitized;
   // Relative on purpose. Behind a proxy, standalone Next builds `request.url`
   // from the address it listens on (http://0.0.0.0:3000), so resolving the
   // target against it sent the browser there. The browser resolves a relative
-  // Location against the URL it actually used; `isSafeOriginalUri` keeps the
+  // Location against the URL it actually used; `safeNext` keeps the
   // target a same-origin path.
   return new NextResponse(null, { status: 302, headers: { location: target } });
 }

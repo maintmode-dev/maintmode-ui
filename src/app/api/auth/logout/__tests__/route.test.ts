@@ -45,6 +45,20 @@ describe.each([
     expect(response.headers.get("location")).toBe("/calendar?view=week");
   });
 
+  // L-2 (security review 2026-10-07). A URL parser strips TAB, so
+  // `/<TAB>/evil.example` resolves protocol-relative and leaves the site.
+  it("falls back to /login for a ?next= hiding a control character", async () => {
+    const response = await POST(post(`${path}?next=${encodeURIComponent("/\t/evil.example/x")}`));
+
+    expect(response.headers.get("location")).toBe("/login");
+  });
+
+  it("falls back to /login for a ?next= that parses to a protocol-relative path", async () => {
+    const response = await POST(post(`${path}?next=${encodeURIComponent("/..//evil.example/x")}`));
+
+    expect(response.headers.get("location")).toBe("/login");
+  });
+
   it("falls back to /login for an off-site ?next=", async () => {
     const response = await POST(post(`${path}?next=${encodeURIComponent("//evil.example/x")}`));
 
