@@ -43,6 +43,20 @@ import type { LinkFailure } from "@/domain/auth/link-outcome";
  * written here, on this action's response, so they are in place before the
  * browser navigates.
  *
+ * How it decides, and why `redirect()` used to work: for a same-origin target
+ * Next's SERVER fetches it from its own listener with `RSC: 1`, bypassing the
+ * gateway (`createRedirectRenderResult` in Next's action handler). An RSC answer
+ * becomes a soft navigation; a failed fetch falls back to a hard one. `/start`
+ * is not a route here, so that fetch lands in `proxy.ts`, which sends a
+ * signed-out visitor to `/login`. Under Auth.js the proxy's redirect was
+ * absolute, built from the PUBLIC origin — unreachable from inside the
+ * container — so the fetch failed and the browser happened to hard-navigate.
+ * Since the session layer replaced Auth.js the redirect stays on this server,
+ * the fetch gets `/login`'s RSC, and the router renders the login form under
+ * the `/start` address. A second click then posts the action to `/start`, which
+ * the gateway answers 404 (GET only). Navigating ourselves takes Next out of a
+ * route it does not own instead of relying on that fetch failing.
+ *
  * The destination is stashed first, because it cannot survive the round trip any
  * other way (see `oauth-next-cookie.ts`). It is sanitized here as well as inside
  * the cookie module: this is an exported server action, so it is invocable by
