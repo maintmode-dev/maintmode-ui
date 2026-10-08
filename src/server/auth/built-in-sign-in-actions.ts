@@ -120,10 +120,9 @@ export async function credentialsSignInAction(
     // a moment"). Collapsed into the uniform failure it told a throttled user
     // their code was wrong and spent their local attempt budget.
     // The same holds for a password: retyping a correct one into the limiter
-    // only keeps it refusing. One code for both, as the backend's per-address
-    // budget is one for both.
-    if (code === AUTH_ERROR_CODES.otpRateLimited) {
-      return { error: AUTH_ERROR_CODES.otpRateLimited };
+    // only keeps it refusing. Each flow keeps its own name for it.
+    if (code === AUTH_ERROR_CODES.otpRateLimited || code === AUTH_ERROR_CODES.rateLimited) {
+      return { error: code };
     }
     if (input.kind === "password") {
       return { error: AUTH_ERROR_CODES.invalidCredentials };

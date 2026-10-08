@@ -116,9 +116,10 @@ export async function runBuiltInSignIn(
       // is refusing them. Safe to say: the backend counts the per-address
       // budget before any account lookup, for an address with no account
       // exactly as for one with an account, so the 429 enumerates nothing. The
-      // budget is shared with OTP sign-in for that address, hence the shared code.
+      // budget is shared with OTP sign-in for that address, but there is no
+      // code on this form, so the code is the flow-neutral one.
       if ((error as { status?: number } | null)?.status === 429) {
-        throw new BuiltInSignInError(AUTH_ERROR_CODES.otpRateLimited);
+        throw new BuiltInSignInError(AUTH_ERROR_CODES.rateLimited);
       }
       // The backend answers every password failure with one uniform 401 —
       // wrong password, blocked, signup refused, seats exhausted — precisely so

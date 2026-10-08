@@ -274,6 +274,9 @@ export function flowErrorMessage(code: string): string {
       return "Too many requests. Wait a moment and try again.";
     case "otp_rate_limited":
       return "Too many attempts. Wait a moment and try again.";
+    case "rate_limited":
+      // Password sign-in: says nothing about whether the password was right.
+      return "Too many sign-in attempts. Wait a moment and try again.";
     case "otp_request_failed":
       return "Something went wrong. Try again.";
     default:

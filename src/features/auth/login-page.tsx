@@ -115,6 +115,7 @@ const BUILT_IN_ERROR_CODES: ReadonlySet<string> = new Set([
   "invalid_credentials",
   "otp_verification_failed",
   "otp_rate_limited",
+  "rate_limited",
   "password_reset_failed",
   "password_reset_unavailable",
   "password_policy_violation",

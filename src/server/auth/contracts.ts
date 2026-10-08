@@ -92,11 +92,16 @@ export const AUTH_ERROR_CODES = {
   // Uniform password-login failure. Never says which field was wrong: naming
   // one would enumerate accounts.
   invalidCredentials: "invalid_credentials",
-  // Rate limited, which is not a verdict on the code — or, since the backend's
-  // per-address limit also covers /login/password, the password — the user
-  // typed. Kept separate so the copy does not tell someone to re-check a
-  // correct one and send more requests into the limiter already refusing them.
+  // A one-time code (sign-in verify, password-reset request/confirm) was
+  // rate limited, which is not a verdict on the code the user typed. Kept
+  // separate so the copy does not tell someone to re-check a correct one and
+  // send more requests into the limiter already refusing them.
   otpRateLimited: "otp_rate_limited",
+  // Password sign-in was rate limited. Same reasoning as `otpRateLimited` —
+  // a 429 says nothing about the password — but a password form has no code,
+  // so it gets the flow-neutral name. The backend's 429 carries no code of its
+  // own (it is echo's limiter answer); this name is ours.
+  rateLimited: "rate_limited",
   // Every confirm failure — wrong code, expired, attempts exhausted, a lost
   // browser binding (see `otpVerificationFailed` for why that is not its own
   // code any more), and —

@@ -58,7 +58,7 @@ describe("password sign-in form", () => {
   // A 429 is the limiter, not the password: "isn't right" would send a user
   // with a correct password back into the limiter that is refusing them.
   it("says to wait, not that the password is wrong, when rate limited", async () => {
-    setup(vi.fn(async () => ({ error: "otp_rate_limited" })));
+    setup(vi.fn(async () => ({ error: "rate_limited" })));
 
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "admin@example.test" },
@@ -67,7 +67,7 @@ describe("password sign-in form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(/too many attempts/i);
+    expect(alert.textContent).toMatch(/too many sign-in attempts/i);
     expect(alert.textContent).toMatch(/wait/i);
     expect(alert.textContent).not.toMatch(/isn't right/i);
   });
