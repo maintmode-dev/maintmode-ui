@@ -18,16 +18,28 @@ import { cn } from "@/shared/ui/lib/cn";
 import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { isUnreviewedConflict, type MaintenanceDetail } from "@/domain/maintenance/maintenance";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
-import { useMaintenanceAction } from "./queries/use-maintenance-actions";
+import { useMaintenanceAction, type MaintenanceAction } from "./queries/use-maintenance-actions";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 
 export interface MaintenanceQuickSheetProps {
   maintenanceId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Called after the footer's primary action succeeds. Lets a host whose list
+   * the action just changed — `/approvals`, where an approved draft leaves the
+   * queue — close the peek instead of leaving it open over a row that is gone.
+   * Hosts that omit it keep the sheet open on the refreshed detail.
+   */
+  onActionSucceeded?: (action: MaintenanceAction) => void;
 }
 
-export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: MaintenanceQuickSheetProps) {
+export function MaintenanceQuickSheet({
+  maintenanceId,
+  open,
+  onOpenChange,
+  onActionSucceeded,
+}: MaintenanceQuickSheetProps) {
   // Only fetch while the sheet is mounted with an id; React Query caches
   // hits so re-opening the same id is instant.
   const query = useMaintenanceDetailQuery(maintenanceId ?? "");
@@ -49,7 +61,7 @@ export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: Mai
             <Skeleton type="block" />
           </div>
         ) : null}
-        {detail ? <QuickSheetBody detail={detail} /> : null}
+        {detail ? <QuickSheetBody detail={detail} onActionSucceeded={onActionSucceeded} /> : null}
       </SheetContent>
     </Sheet>
   );
@@ -61,7 +73,13 @@ export function MaintenanceQuickSheet({ maintenanceId, open, onOpenChange }: Mai
  * Plan. Conflicts sit ABOVE Plan as a standalone list — they outrank plan
  * detail in a quick scan.
  */
-function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
+function QuickSheetBody({
+  detail,
+  onActionSucceeded,
+}: {
+  detail: MaintenanceDetail;
+  onActionSucceeded?: (action: MaintenanceAction) => void;
+}) {
   const isGlobal = detail.scope === "global";
   const { zone } = useTimezone();
   return (
@@ -209,7 +227,7 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
             Open full view <ArrowRight className="size-3.5" aria-hidden="true" />
           </Link>
         </Button>
-        <PrimaryQuickAction detail={detail} />
+        <PrimaryQuickAction detail={detail} onSucceeded={onActionSucceeded} />
       </footer>
     </>
   );
@@ -221,14 +239,21 @@ function QuickSheetBody({ detail }: { detail: MaintenanceDetail }) {
  * nothing when no action flag is set. The peek only surfaces the primary — Edit
  * / Cancel stay on the full page.
  */
-function PrimaryQuickAction({ detail }: { detail: MaintenanceDetail }) {
+function PrimaryQuickAction({
+  detail,
+  onSucceeded,
+}: {
+  detail: MaintenanceDetail;
+  onSucceeded?: (action: MaintenanceAction) => void;
+}) {
   const action = useMaintenanceAction();
   const a = detail.actions;
-  const run = (type: "approve" | "start" | "complete") =>
+  const run = (type: MaintenanceAction) =>
     action.mutate(
       type === "approve"
         ? { id: detail.id, action: "approve", revision: detail.revision, conflicts: detail.conflicts }
         : { id: detail.id, action: type },
+      { onSuccess: () => onSucceeded?.(type) },
     );
 
   if (a.can_approve) {
