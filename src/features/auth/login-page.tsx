@@ -191,6 +191,11 @@ export function LoginPage({
   // touched yet.
   const [focusForm, setFocusForm] = useState(false);
   const refocusContinue = useRef(false);
+  // The address typed into whichever email form is showing. Password and
+  // emailed code share it, and so does "Forgot password?": the page swaps
+  // forms by remounting them (and Back unmounts them), so an address held only
+  // inside a form was wiped by every switch, and the user typed it again.
+  const [typedEmail, setTypedEmail] = useState("");
   // Which of the two screens renders. Without a step the forms are the page when
   // there is no provider, and the provider list is the page when there is no
   // form.
@@ -227,7 +232,7 @@ export function LoginPage({
 
         {resetting ? (
           <PasswordResetFlow
-            initialEmail={resumeEmail}
+            initialEmail={resumeEmail ?? typedEmail}
             initialStep={resumeEmail ? "code" : "email"}
             initialExpiresAt={resetInProgressExpiresAt}
             requestCode={requestPasswordResetAction}
@@ -253,6 +258,8 @@ export function LoginPage({
                 key={activeForm.id}
                 method={activeForm}
                 autoFocus={focusForm}
+                email={typedEmail}
+                onEmailChange={setTypedEmail}
                 onForgotPassword={() => {
                   setResetDone(false);
                   setResetting(true);
@@ -372,7 +379,15 @@ function BuiltInMethod({
   changeEmailAction,
   onForgotPassword,
   autoFocus,
-}: BuiltInMethodActions & { method: SignInMethod; onForgotPassword: () => void; autoFocus: boolean }) {
+  email,
+  onEmailChange,
+}: BuiltInMethodActions & {
+  method: SignInMethod;
+  onForgotPassword: () => void;
+  autoFocus: boolean;
+  email: string;
+  onEmailChange: (email: string) => void;
+}) {
   if (method.type === "password") {
     return (
       <div data-method-type="password">
@@ -381,6 +396,8 @@ function BuiltInMethod({
           submit={passwordSignInAction}
           onForgotPassword={onForgotPassword}
           autoFocus={autoFocus}
+          initialEmail={email}
+          onEmailChange={onEmailChange}
         />
       </div>
     );
@@ -395,6 +412,8 @@ function BuiltInMethod({
           submitCode={otpSignInAction}
           onChangeEmail={changeEmailAction}
           autoFocus={autoFocus}
+          initialEmail={email}
+          onEmailChange={onEmailChange}
         />
       </div>
     );

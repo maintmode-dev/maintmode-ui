@@ -335,6 +335,54 @@ describe("the 'Continue with email' step", () => {
   });
 });
 
+describe("the typed email survives switching between the email forms", () => {
+  // The page swaps the password and emailed-code forms by remounting them, and
+  // Back unmounts both, so an address held only inside a form was wiped by
+  // every switch and the user had to type it again.
+  const ADDRESS = "ops@example.test";
+  const field = (label: string) => screen.getByLabelText(label) as HTMLInputElement;
+
+  it("keeps it from the password form to 'Email me a code instead' and back", () => {
+    render(<LoginPage methods={[PASSWORD, OTP]} {...actions} />);
+    fireEvent.change(field("Email"), { target: { value: ADDRESS } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Email me a code instead" }));
+    expect(field("Email code").value).toBe(ADDRESS);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with a password instead" }));
+    expect(field("Email").value).toBe(ADDRESS);
+  });
+
+  it("carries an edit made in the emailed-code form back to the password form", () => {
+    render(<LoginPage methods={[OTP, PASSWORD]} {...actions} />);
+    fireEvent.change(field("Email code"), { target: { value: ADDRESS } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in with a password instead" }));
+
+    expect(field("Email").value).toBe(ADDRESS);
+  });
+
+  it("keeps it across Back and 'Continue with email'", () => {
+    render(<LoginPage methods={[GOOGLE, PASSWORD, OTP]} {...actions} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continue with email" }));
+    fireEvent.change(field("Email"), { target: { value: ADDRESS } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue with email" }));
+
+    expect(field("Email").value).toBe(ADDRESS);
+  });
+
+  it("pre-fills 'Forgot password?' with it", () => {
+    render(<LoginPage methods={[PASSWORD]} {...actions} />);
+    fireEvent.change(field("Email"), { target: { value: ADDRESS } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Forgot password?" }));
+
+    expect(field("Reset your password").value).toBe(ADDRESS);
+  });
+});
+
 describe("AC-2 — rendering dispatches on `type`, never on `id`", () => {
   it("renders an unfamiliar id by its type", () => {
     // The id is deliberately one this build has never seen: dispatch must key

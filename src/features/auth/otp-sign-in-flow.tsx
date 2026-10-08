@@ -27,6 +27,14 @@ export interface OtpSignInFlowProps {
   onChangeEmail: () => Promise<void>;
   /** Focus the email field on mount — set when the user just opened this form. */
   autoFocus?: boolean;
+  /**
+   * The address typed into a sibling form before the user switched to this one.
+   * The page swaps forms by remounting them, so without this the switch threw
+   * the address away.
+   */
+  initialEmail?: string;
+  /** Reports every edit to the address, so the page can hand it to the next form. */
+  onEmailChange?: (email: string) => void;
 }
 
 export function OtpSignInFlow({
@@ -35,9 +43,11 @@ export function OtpSignInFlow({
   submitCode,
   onChangeEmail,
   autoFocus,
+  initialEmail,
+  onEmailChange,
 }: OtpSignInFlowProps) {
   const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(initialEmail ?? "");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [pending, setPending] = useState(false);
@@ -162,7 +172,10 @@ export function OtpSignInFlow({
           autoComplete="email"
           placeholder="you@example.com"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            onEmailChange?.(e.target.value);
+          }}
           aria-describedby={error ? "otp-error" : undefined}
         />
         {error ? <FlowError id="otp-error" code={error} /> : null}
