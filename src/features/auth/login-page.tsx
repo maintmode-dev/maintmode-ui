@@ -31,9 +31,10 @@ export interface LoginPageProps {
    * Supplied by the server page (`src/app/(public)/login/page.tsx`) so this
    * browser-owned component never imports the server auth boundary. A server
    * action, so Next checks its Origin and the destination stays closed over on
-   * the server.
+   * the server. Resolves to the backend's `/start` URL, which the button
+   * leaves for with a full navigation.
    */
-  signInAction: (providerId: string) => Promise<void>;
+  signInAction: (providerId: string) => Promise<string>;
   /** Step one of the OTP flow: mails a code and binds it to this browser. */
   requestOtpAction: (email: string) => Promise<{ error?: string; expiresAt?: number; refused?: number }>;
   /** Step two, and the password form: establishes the session. */

@@ -19,7 +19,7 @@ function renderLogin(
 ): React.ComponentProps<typeof LoginPage> {
   const props: React.ComponentProps<typeof LoginPage> = {
     methods: [PASSWORD_METHOD],
-    signInAction: vi.fn(async () => {}),
+    signInAction: vi.fn(async () => ""),
     requestOtpAction: vi.fn(async () => ({})),
     otpSignInAction: vi.fn(async () => ({})),
     passwordSignInAction: vi.fn(async () => ({})),

@@ -10,9 +10,32 @@ import type { SignInMethod } from "@/domain/auth/sign-in-method";
  * method list, and cannot lock anyone out when that list is unavailable.
  */
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  restoreLocation();
+});
 
-const noopSignIn = async () => {};
+const originalLocation = window.location;
+
+/**
+ * jsdom's `window.location` is sealed, so the whole property is replaced to
+ * spy on `.assign()` — the pattern `organization-suspended-page.test.tsx` uses.
+ */
+function stubLocationAssign() {
+  const assign = vi.fn();
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    writable: true,
+    value: { ...originalLocation, assign } as unknown as Location,
+  });
+  return assign;
+}
+
+function restoreLocation() {
+  Object.defineProperty(window, "location", { configurable: true, writable: true, value: originalLocation });
+}
+
+const noopSignIn = async () => "";
 
 /** The sign-in actions are exercised in their own tests; here they are inert. */
 const actions = {
@@ -150,13 +173,19 @@ describe("BUG-4 — every advertised provider is a working button", () => {
   it("starts the dance for the provider that was clicked", async () => {
     // Two providers, so a button wired to the wrong one — or to a literal —
     // cannot pass by coincidence.
-    const signInAction = vi.fn<(providerId: string) => Promise<void>>(async () => {});
+    const START = "http://localhost:9000/auth/api/v1/login/oauth/custom/start?binding=B";
+    const signInAction = vi.fn<(providerId: string) => Promise<string>>(async () => START);
+    const assign = stubLocationAssign();
     render(<LoginPage methods={[GOOGLE, CUSTOM]} {...actions} signInAction={signInAction} />);
 
     fireEvent.click(providerButton("Corporate SSO"));
 
     await waitFor(() => expect(signInAction).toHaveBeenCalledTimes(1));
     expect(signInAction.mock.calls[0]?.[0]).toBe("custom");
+    // A FULL navigation to the URL the action answered. The action used to
+    // `redirect()` there, and on a same-origin auth base Next soft-navigated
+    // without ever requesting `/start`: a dead button in self-host and dev.
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(START));
   });
 
   it("draws an advertised GitHub as a working button", () => {

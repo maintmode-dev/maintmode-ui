@@ -46,6 +46,15 @@ export function AuthScreen({ children, className }: { children: ReactNode; class
  * line rather than truncating at once — on a phone even "Corporate SSO" did not
  * fit beside "Continue with" and the mark — and clamps there, with `title`
  * carrying the full text.
+ *
+ * `action` is a server action that mints the dance cookies and resolves to the
+ * backend's `/start` URL; the button leaves for it with `window.location.assign`,
+ * a full browser navigation. Not the action's own `redirect()`: wherever the
+ * auth base is this app's origin plus `/auth` (self-host, dev), Next's router
+ * takes a same-origin action redirect for an internal route and soft-navigates
+ * — the address bar changes, no request is sent, and the gateway that routes
+ * `/auth/…/start` to the backend never sees it. `assign` rather than
+ * `replace`, so the back button returns here from the provider.
  */
 export function ProviderButton({
   provider,
@@ -53,12 +62,17 @@ export function ProviderButton({
   primary = false,
 }: {
   provider: SignInMethod;
-  action: () => Promise<void>;
+  action: () => Promise<string>;
   primary?: boolean;
 }) {
   const label = `Continue with ${provider.display_name}`;
   return (
-    <form action={action} className="contents">
+    <form
+      action={async () => {
+        window.location.assign(await action());
+      }}
+      className="contents"
+    >
       <Button
         type="submit"
         variant={primary ? "default" : "outline"}
