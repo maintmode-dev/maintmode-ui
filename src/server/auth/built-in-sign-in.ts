@@ -110,7 +110,16 @@ export async function runBuiltInSignIn(
   } else {
     try {
       tokens = await loginWithPassword({ email, password: user.password ?? "" });
-    } catch {
+    } catch (error) {
+      // A 429 is the limiter, not a verdict on the password: told "wrong
+      // password", a throttled user retypes a correct one into the limiter that
+      // is refusing them. Safe to say: the backend counts the per-address
+      // budget before any account lookup, for an address with no account
+      // exactly as for one with an account, so the 429 enumerates nothing. The
+      // budget is shared with OTP sign-in for that address, hence the shared code.
+      if ((error as { status?: number } | null)?.status === 429) {
+        throw new BuiltInSignInError(AUTH_ERROR_CODES.otpRateLimited);
+      }
       // The backend answers every password failure with one uniform 401 —
       // wrong password, blocked, signup refused, seats exhausted — precisely so
       // the response cannot enumerate accounts. We keep that property.

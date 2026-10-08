@@ -92,9 +92,10 @@ export const AUTH_ERROR_CODES = {
   // Uniform password-login failure. Never says which field was wrong: naming
   // one would enumerate accounts.
   invalidCredentials: "invalid_credentials",
-  // Rate limited, which is not a verdict on the code the user typed. Kept
-  // separate so the copy does not tell someone to re-check a correct code and
-  // send more requests into the limiter that is already refusing them.
+  // Rate limited, which is not a verdict on the code — or, since the backend's
+  // per-address limit also covers /login/password, the password — the user
+  // typed. Kept separate so the copy does not tell someone to re-check a
+  // correct one and send more requests into the limiter already refusing them.
   otpRateLimited: "otp_rate_limited",
   // Every confirm failure — wrong code, expired, attempts exhausted, a lost
   // browser binding (see `otpVerificationFailed` for why that is not its own
