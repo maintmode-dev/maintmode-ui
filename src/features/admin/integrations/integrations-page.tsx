@@ -27,9 +27,10 @@ export function IntegrationsPage() {
       <header>
         <h1 className="h1">Integrations</h1>
         <p className="body-sm mt-1 text-fg-muted max-w-[560px]">
-          Notification transports — how MaintMode delivers messages to Slack, Telegram and email. Email also
-          carries invitations and sign-in codes. Credentials are encrypted at rest and never shown back.
-          Transports declared in the server config file are changed there and applied on restart.
+          How MaintMode reaches people. Slack and Telegram deliver maintenance notifications to channels;
+          email carries invitations, sign-in codes and password resets. Credentials are encrypted at rest and
+          never shown back. Transports declared in the server config file are changed there and applied on
+          restart.
         </p>
         <p className="body-sm mt-2 text-fg-muted">
           <Link href="/admin/authentication#providers" className="underline underline-offset-2">
