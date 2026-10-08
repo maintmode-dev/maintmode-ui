@@ -36,7 +36,7 @@ const ENV = {
 
 /**
  * RUK-292 — the provider button stops being an OAuth client and becomes a
- * redirect. Two properties matter here and nothing else covers them: the
+ * navigation. Two properties matter here and nothing else covers them: the
  * destination is stashed BEFORE the browser leaves (it cannot survive the dance
  * any other way), and the target is built from the browser-reachable base rather
  * than the server-to-server one.
@@ -53,21 +53,38 @@ describe("startOAuthDanceAction", () => {
     for (const [k, v] of Object.entries(ENV)) vi.stubEnv(k, v);
   });
 
+  /**
+   * The URL the browser is sent to: what the action answers on the dance path,
+   * or where it redirects when it refuses.
+   */
   async function run(providerId: string, next?: string, invitation?: string): Promise<string> {
     try {
-      await startOAuthDanceAction(providerId, next, invitation);
+      return await startOAuthDanceAction(providerId, next, invitation);
     } catch (error) {
       return String((error as Error).message).replace("NEXT_REDIRECT:", "");
     }
-    throw new Error("expected the action to redirect");
   }
 
-  it("redirects to the backend's start endpoint for the provider", async () => {
+  it("answers the backend's start endpoint for the provider", async () => {
     const target = await run("google", "/calendar");
 
     // Literal, not composed from the same pieces the code uses: an expectation
     // built the way the implementation builds it passes under any mutation of
     // the join.
+    expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start?binding=BINDING-HASH");
+  });
+
+  /**
+   * Regression: the action used to `redirect()` to `/start`. With the auth
+   * base on this app's own origin (self-host, dev — exactly the config above),
+   * Next's router took that for an internal route and soft-navigated: the
+   * address bar changed, no request reached the gateway, the button did
+   * nothing. The URL must come back as a value for the button to hard-navigate.
+   */
+  it("returns the start URL rather than redirecting to it", async () => {
+    const target = await startOAuthDanceAction("google", "/calendar");
+
+    expect(redirect).not.toHaveBeenCalled();
     expect(target).toBe("http://localhost:9000/auth/api/v1/login/oauth/google/start?binding=BINDING-HASH");
   });
 
@@ -91,11 +108,21 @@ describe("startOAuthDanceAction", () => {
     expect(mintOAuthBinding).not.toHaveBeenCalled();
   });
 
-  it("stashes the destination before redirecting", async () => {
-    await run("google", "/calendar?view=week");
+  it("stashes the destination before answering the URL", async () => {
+    // Awaited inside the action, so the cookie rides the action's response and
+    // is in place before the button navigates: the URL is not answered while
+    // the write is still pending.
+    let finishWrite = () => {};
+    setOAuthNext.mockImplementation(() => new Promise<void>((resolve) => (finishWrite = resolve)));
+    let answered = false;
 
+    const pending = startOAuthDanceAction("google", "/calendar?view=week").then(() => (answered = true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(answered).toBe(false);
+
+    finishWrite();
+    await pending;
     expect(setOAuthNext).toHaveBeenCalledWith("/calendar?view=week");
-    expect(setOAuthNext.mock.invocationCallOrder[0]).toBeLessThan(redirect.mock.invocationCallOrder[0]);
   });
 
   it("stores / when no destination is given", async () => {

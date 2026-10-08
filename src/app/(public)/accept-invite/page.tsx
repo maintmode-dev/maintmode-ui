@@ -28,8 +28,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    *
    * `b74a4536` moved sign-in providers into the integration registry and its
    * migration deleted the existing rows, so a fresh deployment has none — while
-   * this page used to hard-code "google". `startOAuthDanceAction` issues a
-   * `redirect()`, and the backend answers an unknown provider with a JSON error
+   * this page used to hard-code "google". `startOAuthDanceAction` sends the
+   * browser to the backend's `/start`, and the backend answers an unknown provider with a JSON error
    * rather than a redirect (deliberately: it has no trusted frontend address at
    * that point), so the invitee lands on raw backend JSON on another origin
    * with only the back button to escape.
@@ -86,9 +86,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * refuses an unknown one without spending the invitation); the token, which
    * is the thing worth protecting, stays closed over here.
    */
-  async function acceptAction(providerId: string) {
+  async function acceptAction(providerId: string): Promise<string> {
     "use server";
-    await startOAuthDanceAction(providerId, undefined, sp.token);
+    return startOAuthDanceAction(providerId, undefined, sp.token);
   }
 
   /**

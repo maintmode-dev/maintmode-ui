@@ -31,14 +31,15 @@ export default async function Page({
    * Start a provider sign-in.
    *
    * RUK-292: this no longer runs an OAuth flow. The backend owns the dance, so
-   * the action stashes the destination and redirects the browser to the
-   * backend's `/start`; this app is not involved again until the receiver
+   * the action stashes the destination and answers the backend's `/start` URL,
+   * which the button hard-navigates to (see `startOAuthDanceAction` for why it
+   * is not a `redirect()`); this app is not involved again until the receiver
    * redeems the code it comes back with. `redirectTo` is closed over here, so a client can
    * never supply a destination of its own.
    */
-  async function signInAction(providerId: string) {
+  async function signInAction(providerId: string): Promise<string> {
     "use server";
-    await startOAuthDanceAction(providerId, redirectTo);
+    return startOAuthDanceAction(providerId, redirectTo);
   }
 
   // Resolved server-side: `/login` sits under `(public)`, which deliberately
