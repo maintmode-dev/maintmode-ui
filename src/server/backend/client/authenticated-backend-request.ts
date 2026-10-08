@@ -9,7 +9,7 @@ import { readActiveSession, forceSessionRefresh } from "@/server/auth/session-to
  * `src/app/api/auth/**`.
  *
  * Behavior:
- *  - Reads the active NextAuth session server-side and attaches the backend
+ *  - Reads the active session server-side and attaches the backend
  *    `access_token` as `Authorization: Bearer ...`.
  *  - When the backend responds with `401`, attempts exactly one
  *    refresh-and-retry pass via `forceSessionRefresh`. Concurrent BFF

@@ -23,7 +23,7 @@ const MAX_BODY_BYTES = 64 * 1024;
  * resolved value to invalidate on.
  *
  * Security: same-origin CSRF check (defense-in-depth on top of the
- * SameSite=Lax NextAuth cookie).
+ * SameSite=Lax session cookie).
  */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!isSameOriginRequest(request)) {

@@ -16,7 +16,7 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
   clearOAuthNext: () => clearOAuthNext(),
   setOAuthNext: vi.fn(),
 }));
-vi.mock("@/server/auth/auth-config", () => ({ signIn: (...args: unknown[]) => signIn(...args) }));
+vi.mock("@/server/auth/sign-in", () => ({ signInWithDanceCode: (...args: unknown[]) => signIn(...args) }));
 vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
 const readOAuthBindingProof = vi.fn();
 const clearOAuthBinding = vi.fn();
@@ -245,55 +245,19 @@ describe("completeOAuthDanceAction", () => {
     expect(await landsOn(form({ error: "email_mismatch" }))).toBe("/login?code=email_mismatch");
   });
 
-  it("redeems the code with the stored destination", async () => {
+  it("redeems the code with this browser's proof, then lands on the stored destination", async () => {
     readOAuthNext.mockResolvedValue("/calendar?view=week");
-    signIn.mockImplementation(() => {
-      const error = new Error("ok") as Error & { digest: string };
-      error.digest = "NEXT_REDIRECT;replace;/calendar?view=week;307;";
-      throw error;
-    });
+    signIn.mockResolvedValue(undefined);
 
-    const outcome = await landsOn(form({ code: "one-time" }));
-
-    expect(signIn).toHaveBeenCalledWith("oauth-dance", {
-      code: "one-time",
-      proof: "binding-nonce",
-      redirectTo: "/calendar?view=week",
-    });
-    // The success path is a THROWN redirect that must pass through untouched;
-    // swallowing it would turn a completed sign-in into an error page.
-    expect(outcome).toBe("THROWN:ok");
+    expect(await landsOn(form({ code: "one-time" }))).toBe("/calendar?view=week");
+    expect(signIn).toHaveBeenCalledWith("one-time", "binding-nonce");
   });
 
-  it("redeems with / when the stored destination is empty or rejected", async () => {
+  it("lands on / when the stored destination is empty or rejected", async () => {
     readOAuthNext.mockResolvedValue("/");
     signIn.mockResolvedValue(undefined);
 
-    await landsOn(form({ code: "one-time" }));
-
-    expect(signIn).toHaveBeenCalledWith("oauth-dance", {
-      code: "one-time",
-      proof: "binding-nonce",
-      redirectTo: "/",
-    });
-  });
-
-  /**
-   * `signIn` usually leaves by throwing, but it has a path that returns: NextAuth
-   * builds its redirect from a `Location` header its own source calls
-   * possibly-unset. Falling off the end there strands the browser on the receiver
-   * forever — "Signing you in…" under a disabled button — with the code already
-   * spent, so a reload cannot recover.
-   *
-   * Asserted as a landing, not as a call: the two tests above mock this exact
-   * shape and check only what `signIn` was called with, which is what let the
-   * dead end hide.
-   */
-  it("still leaves the receiver when signIn returns instead of redirecting", async () => {
-    readOAuthNext.mockResolvedValue("/calendar");
-    signIn.mockResolvedValue(undefined);
-
-    expect(await landsOn(form({ code: "one-time" }))).toBe("/calendar");
+    expect(await landsOn(form({ code: "one-time" }))).toBe("/");
   });
 
   /**

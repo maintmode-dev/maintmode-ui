@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import { decode, encode } from "next-auth/jwt";
+import { decodeSession, encodeSession } from "@/server/auth/session-cookie";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { forceSessionRefresh, readActiveSession, type SessionPayload } from "@/server/auth/session-token";
@@ -29,7 +29,7 @@ vi.mock("next/headers", () => ({
 }));
 
 vi.mock("@/shared/config/auth-config", () => ({
-  parseMaintmodeAuthConfig: () => ({ authSecret: SECRET }),
+  parseMaintmodeAuthConfig: () => ({ authSecret: SECRET, appBaseUrl: "http://localhost:3000" }),
 }));
 
 // Counts session-cookie decodes that have settled. A request's path from
@@ -38,13 +38,13 @@ vi.mock("@/shared/config/auth-config", () => ({
 // claimed its place in the in-flight map. That replaces a fixed sleep, which
 // under a loaded full-suite run let the requests arrive in the opposite order.
 const decodes = vi.hoisted(() => ({ settled: 0 }));
-vi.mock("next-auth/jwt", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("next-auth/jwt")>();
+vi.mock("@/server/auth/session-cookie", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/auth/session-cookie")>();
   return {
     ...actual,
-    decode: async (...args: Parameters<typeof actual.decode>) => {
+    decodeSession: async (...args: Parameters<typeof actual.decodeSession>) => {
       try {
-        return await actual.decode(...args);
+        return await actual.decodeSession(...args);
       } finally {
         decodes.settled += 1;
       }
@@ -79,16 +79,13 @@ async function jarFor(userId: string, refreshToken: string, expiresAt = 0): Prom
     accessTokenExpiresAt: expiresAt,
     user: { id: userId, email: `${userId}@example.test`, displayName: userId, roles: [] },
   };
-  const value = await encode({
-    token: payload as unknown as Record<string, unknown>,
-    secret: SECRET,
-    salt: COOKIE,
-  });
+  const value = await encodeSession(payload, COOKIE, SECRET);
   return new Map([[COOKIE, value]]);
 }
 
 async function cookiePayload(jar: Jar) {
-  return (await decode({ token: jar.get(COOKIE), secret: SECRET, salt: COOKIE })) as SessionPayload | null;
+  const value = jar.get(COOKIE);
+  return value ? decodeSession(value, COOKIE, SECRET) : null;
 }
 
 beforeEach(() => {

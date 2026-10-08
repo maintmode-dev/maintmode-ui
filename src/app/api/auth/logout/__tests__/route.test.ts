@@ -3,9 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as logoutAll } from "@/app/api/auth/logout/all/route";
 import { POST as logout } from "@/app/api/auth/logout/route";
 
-vi.mock("@/server/auth/auth-config", () => ({
-  signOut: vi.fn(async () => undefined),
-}));
 vi.mock("@/server/auth/backend-token-exchange", () => ({
   revokeBackendSession: vi.fn(async () => undefined),
   revokeAllBackendSessions: vi.fn(async () => undefined),

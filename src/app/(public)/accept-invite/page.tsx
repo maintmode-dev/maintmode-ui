@@ -1,7 +1,7 @@
 import { AcceptInvitePage } from "@/features/auth/accept-invite-page";
-import { auth } from "@/server/auth/auth-config";
 import { acceptInvitationWithPasswordAction } from "@/server/auth/built-in-sign-in-actions";
 import { startOAuthDanceAction } from "@/server/auth/oauth-dance-actions";
+import { readSessionUser } from "@/server/auth/session-token";
 import { resolveAuthProviders } from "@/server/backend/auth/resolve-auth-providers";
 import { signInProviders } from "@/domain/auth/sign-in-method";
 import { resolveInvitationPreview } from "@/server/backend/invitations/resolve-invitation-preview";
@@ -102,7 +102,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   }
 
   /**
-   * `auth()`, NOT `readActiveSession()`. The latter refreshes and writes the
+   * `readSessionUser()`, NOT `readActiveSession()`. The latter refreshes and writes the
    * session cookie when the access token is near expiry, and Next permits a
    * cookie write only in a Server Action or Route Handler — in a page render it
    * throws. That failure appears only inside the rotation window: green tests,
@@ -111,16 +111,16 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
    * read is only to decide what to render.
    *
    * The two readers are NOT the same predicate, and the difference is
-   * deliberate. `readActiveSession()` returns null for a session whose refresh
-   * token is dead; `auth()` still returns the user and merely annotates
-   * `session.error`. Kept BROADER here on purpose — a `RefreshAccessTokenError`
-   * session still counts as signed in for this page — so the page never renders
+   * deliberate. `readActiveSession()` returns null once a refresh has failed;
+   * `readSessionUser()` only opens the cookie and returns its user. Kept BROADER
+   * here on purpose — a session whose refresh token has quietly died still
+   * counts as signed in for this page — so the page never renders
    * a button the action would then refuse. Narrowing it to match the action
    * would put a live button in front of someone whose click cannot work; a
    * false "you are signed in" costs one sign-out.
    */
-  const session = await auth();
-  const signedInAs = session?.user?.email ?? undefined;
+  const sessionUser = await readSessionUser();
+  const signedInAs = sessionUser?.email ?? undefined;
 
   return (
     <AcceptInvitePage

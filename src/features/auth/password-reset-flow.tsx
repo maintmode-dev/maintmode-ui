@@ -15,7 +15,7 @@ import { MAX_CODE_ATTEMPTS, useCodeTimers, useSpentCodeHold } from "@/features/a
  * (RUK-289).
  *
  * A sibling of `OtpSignInFlow` rather than a mode of it. That component's steps
- * end in a session (its success path is a redirect thrown by NextAuth, so there
+ * end in a session (its success path is a redirect away, so there
  * is no success state to render), while this one ends signed OUT with something
  * to say. Sharing the shell would mean a prop deciding which of two endpoints,
  * which of two cookies and which of two terminal states applies — the timers

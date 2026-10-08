@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Defense-in-depth CSRF check for state-mutating BFF route handlers.
  *
- * NextAuth's JWT cookie is `SameSite=Lax`, which blocks the simplest
+ * The session cookie is `SameSite=Lax`, which blocks the simplest
  * cross-site POSTs. Verifying the `Origin` header (or `Referer` as a
  * fallback) closes the residual gap: cross-site forms, programmatic
  * `fetch` from a malicious page, and CDN-proxied origins.

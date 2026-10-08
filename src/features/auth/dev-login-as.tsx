@@ -10,10 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export interface DevLoginAsProps {
   /**
-   * Server action that re-logs in through the dev-bypass provider with the
-   * chosen role. Supplied by the root layout (`src/app/layout.tsx`) so this
-   * browser-owned component never imports the server auth boundary. It wraps
-   * NextAuth's `signIn` (CSRF attached) and redirects to `/`.
+   * Server action that re-logs in through the dev bypass with the chosen role.
+   * Supplied by the root layout (`src/app/layout.tsx`) so this browser-owned
+   * component never imports the server auth boundary. It redirects to `/`.
    */
   loginAsAction: (role: string) => Promise<void>;
 }

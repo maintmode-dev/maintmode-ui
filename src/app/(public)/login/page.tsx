@@ -22,10 +22,9 @@ export default async function Page({
   const sp = await searchParams;
   const redirectTo = sp.next ? safeNext(sp.next) : "/";
 
-  // NextAuth sets `?code=<our BackendExchangeError code>` alongside the generic
-  // `?error=CredentialsSignin`. Prefer the granular code so /login can render a
-  // precise message (e.g. `signup_disabled`), falling back to `?error=` for
-  // NextAuth's own outcomes (`AccessDenied`, etc.).
+  // Failures redirected here carry `?code=` (e.g. `signup_disabled`). `?error=`
+  // is still read as a fallback for links minted before the session layer
+  // replaced Auth.js, which put its own outcome there.
   const errorCode = sp.code ?? sp.error;
 
   /**
@@ -33,8 +32,8 @@ export default async function Page({
    *
    * RUK-292: this no longer runs an OAuth flow. The backend owns the dance, so
    * the action stashes the destination and redirects the browser to the
-   * backend's `/start`; NextAuth is not involved until the receiver redeems the
-   * code it comes back with. `redirectTo` is closed over here, so a client can
+   * backend's `/start`; this app is not involved again until the receiver
+   * redeems the code it comes back with. `redirectTo` is closed over here, so a client can
    * never supply a destination of its own.
    */
   async function signInAction(providerId: string) {
@@ -61,9 +60,10 @@ export default async function Page({
 
   /**
    * The built-in methods post through server actions rather than a client
-   * `fetch`: NextAuth attaches its CSRF token only when `signIn` runs on the
-   * server, and the sanitized `redirectTo` is closed over here so a client can
-   * never supply a destination of its own and route around `safeNext`.
+   * `fetch`: Next checks a server action's Origin, the session cookie can only
+   * be written on the server, and the sanitized `redirectTo` is closed over
+   * here so a client can never supply a destination of its own and route
+   * around `safeNext`.
    */
   async function otpSignInAction(email: string, code: string) {
     "use server";

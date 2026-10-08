@@ -25,8 +25,8 @@ const DEADLINE = Date.parse("2026-09-27T12:05:00Z");
 vi.mock("@/server/auth/backend-token-exchange", () => ({
   requestOtpCode: (...args: unknown[]) => requestOtpCode(...args),
 }));
-vi.mock("@/server/auth/auth-config", () => ({
-  signIn: (...args: unknown[]) => signIn(...args),
+vi.mock("@/server/auth/sign-in", () => ({
+  signInWithBackendLogin: (...args: unknown[]) => signIn(...args),
 }));
 // The keep-the-binding decision itself is tested on the real module in
 // otp-nonce-cookie.test.ts; here only what the action does with its answer.
@@ -119,8 +119,9 @@ describe("requestOtpAction — the address must stay unknowable", () => {
 });
 
 describe("credentialsSignInAction — the destination is sanitized here too", () => {
+  /** Where a successful sign-in sent the browser: the action redirects itself now. */
   function redirectToOf(): string {
-    return (signIn.mock.calls[0]?.[1] as { redirectTo: string }).redirectTo;
+    return redirect.mock.calls[0]?.[0] as string;
   }
 
   it.each([
@@ -130,7 +131,9 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
   ])("refuses %s as a sign-in destination", async (_label, next) => {
     signIn.mockResolvedValue(undefined);
 
-    await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "pw", next });
+    await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "pw", next }).catch(
+      () => {},
+    );
 
     // This action is invocable by action id, so it cannot assume its caller
     // already sanitized the value.
@@ -145,20 +148,22 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
       email: "a@b.test",
       password: "pw",
       next: "/maintenance/m-1001",
-    });
+    }).catch(() => {});
 
     expect(redirectToOf()).toBe("/maintenance/m-1001");
   });
 
-  it("rethrows the redirect that signals a successful sign-in", async () => {
-    // Next signals a redirect by throwing. Swallowing it as a failure would
-    // break the happy path of every sign-in on the page.
-    const redirect = Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;push;/;" });
-    signIn.mockRejectedValue(redirect);
-
+  it("leaves for the destination after a successful sign-in, and not on a failure", async () => {
+    signIn.mockResolvedValue(undefined);
     await expect(
       credentialsSignInAction({ kind: "password", email: "a@b.test", password: "pw" }),
-    ).rejects.toBe(redirect);
+    ).rejects.toThrow("NEXT_REDIRECT");
+    expect(redirect).toHaveBeenCalledWith("/");
+
+    redirect.mockClear();
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "invalid_credentials" }));
+    await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "wrong" });
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("answers a withdrawn mismatch code with the uniform failure, and keeps the binding", async () => {
@@ -267,13 +272,13 @@ describe("acceptInvitationWithPasswordAction", () => {
   it("signs in through backend-login with the invite kind, landing on /", async () => {
     signIn.mockResolvedValue(undefined);
 
-    await expect(acceptInvitationWithPasswordAction(VALID)).resolves.toEqual({});
-    expect(signIn).toHaveBeenCalledWith("backend-login", {
+    await expect(acceptInvitationWithPasswordAction(VALID)).rejects.toThrow("NEXT_REDIRECT");
+    expect(signIn).toHaveBeenCalledWith({
       kind: "invite",
       invitation: "tok-1",
       password: "correct horse battery",
-      redirectTo: "/",
     });
+    expect(redirect).toHaveBeenCalledWith("/");
   });
 
   /**
@@ -303,14 +308,6 @@ describe("acceptInvitationWithPasswordAction", () => {
     expect(signIn).not.toHaveBeenCalled();
   });
 
-  it("passes a success redirect through", async () => {
-    signIn.mockRejectedValue(
-      Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/;303;" }),
-    );
-
-    await expect(acceptInvitationWithPasswordAction(VALID)).rejects.toThrow("NEXT_REDIRECT");
-  });
-
   it("hands a known refusal back as its code", async () => {
     signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "account_exists" }));
 
@@ -330,20 +327,9 @@ describe("breakGlassSignInAction", () => {
   it("signs in through backend-login with the break-glass kind, landing on /", async () => {
     signIn.mockResolvedValue(undefined);
 
-    await expect(breakGlassSignInAction("correct horse battery staple")).resolves.toEqual({});
-    expect(signIn).toHaveBeenCalledWith("backend-login", {
-      kind: "break-glass",
-      password: "correct horse battery staple",
-      redirectTo: "/",
-    });
-  });
-
-  it("passes a success redirect through", async () => {
-    signIn.mockRejectedValue(
-      Object.assign(new Error("NEXT_REDIRECT"), { digest: "NEXT_REDIRECT;replace;/;303;" }),
-    );
-
-    await expect(breakGlassSignInAction("pw")).rejects.toThrow("NEXT_REDIRECT");
+    await expect(breakGlassSignInAction("correct horse battery staple")).rejects.toThrow("NEXT_REDIRECT");
+    expect(signIn).toHaveBeenCalledWith({ kind: "break-glass", password: "correct horse battery staple" });
+    expect(redirect).toHaveBeenCalledWith("/");
   });
 
   it("answers every refusal the same", async () => {

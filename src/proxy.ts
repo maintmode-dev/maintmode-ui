@@ -5,8 +5,8 @@ import { isAdminPath } from "@/domain/auth/admin-paths";
 import { canApprove, canWrite } from "@/domain/auth/permissions";
 import { isPublicPath } from "@/domain/auth/public-paths";
 import { bouncesSignedInVisitor, SIGN_IN_PAGES } from "@/domain/auth/sign-in-pages";
-import { auth } from "@/server/auth/auth-config";
 import { safeNext } from "@/server/auth/safe-next";
+import { readSessionUserFrom } from "@/server/auth/session-token";
 
 export const config = {
   // `icon.svg` is the App-Router-generated favicon (src/app/icon.svg); exclude
@@ -43,17 +43,8 @@ export const config = {
  * gate. The check is HARD-GATED by `NODE_ENV !== "production"` so a
  * leaked env-var on a production deploy cannot disable auth.
  */
-export default auth((request: NextRequest & { auth: AuthSession | null }) => {
+export default async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-
-  // A session whose backend token can no longer be refreshed
-  // (`RefreshAccessTokenError`) is effectively dead: every BFF call 401s.
-  // Treat it as unauthenticated here, otherwise we get an infinite
-  // `/` ⇄ `/login` redirect loop — the page 401s and `bffFetch` redirects to
-  // `/login`, but a still-"valid" cookie would bounce the user straight back
-  // to `/`, which 401s again. Collapsing it to null breaks the loop and lets
-  // the user re-authenticate.
-  const session = request.auth?.error === "RefreshAccessTokenError" ? null : request.auth;
 
   // Local-only escape hatch. Inverted control flow: the production branch
   // explicitly does NOTHING with the flag — even reading it is suspicious —
@@ -69,11 +60,18 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.next();
   }
 
+  // Opened, never refreshed: the gate only asks who is signed in. Rotation is
+  // the BFF's (`readActiveSession`), and the proxy refreshing too spent the same
+  // refresh token twice and signed people out (review L-1). A session whose
+  // refresh has failed is gone from the cookie — the BFF clears it — so a dead
+  // session cannot bounce between `/` and `/login` here.
+  const sessionUser = await readSessionUserFrom(request.cookies);
+
   // A signed-in visitor has nothing to do on a sign-in page — but only a
   // navigation is sent home. A Server Action posted from a form left open
   // reaches the page; see `bouncesSignedInVisitor`.
   if ((SIGN_IN_PAGES as readonly string[]).includes(pathname)) {
-    if (session && bouncesSignedInVisitor(pathname, request.method)) {
+    if (sessionUser && bouncesSignedInVisitor(pathname, request.method)) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }
     return NextResponse.next();
@@ -83,7 +81,7 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
     return NextResponse.next();
   }
 
-  if (!session) {
+  if (!sessionUser) {
     const loginUrl = new URL("/login", request.nextUrl);
     loginUrl.searchParams.set("next", safeNext(`${pathname}${search}`));
     return NextResponse.redirect(loginUrl);
@@ -92,7 +90,7 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
   // `/maintenance/new` is the only create-only route; hide-the-CTA covers the
   // UI, this is defense-in-depth against a deep-link. Exact match (not
   // startsWith) so a hypothetical `/maintenance/newer` is not over-matched.
-  if (pathname === "/maintenance/new" && !canWrite(session.user?.roles)) {
+  if (pathname === "/maintenance/new" && !canWrite(sessionUser.roles)) {
     return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
@@ -102,22 +100,15 @@ export default auth((request: NextRequest & { auth: AuthSession | null }) => {
   // editor does not have. Hiding the nav item covers the UI; this turns a
   // deep-link into a clean redirect instead of an error state. Exact match, so
   // a future `/approvals/<id>` is not silently swept in under this rule.
-  if (pathname === "/approvals" && !canApprove(session.user?.roles)) {
+  if (pathname === "/approvals" && !canApprove(sessionUser.roles)) {
     return NextResponse.redirect(new URL("/", request.nextUrl));
   }
 
   if (isAdminPath(pathname)) {
-    const roles = session.user?.roles ?? [];
-    if (!roles.includes("admin")) {
+    if (!sessionUser.roles.includes("admin")) {
       return NextResponse.redirect(new URL("/", request.nextUrl));
     }
   }
 
   return NextResponse.next();
-});
-
-interface AuthSession {
-  user?: { roles?: string[] };
-  /** Set when the backend token could not be refreshed; see the gate above. */
-  error?: string;
 }

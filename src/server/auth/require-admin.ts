@@ -1,6 +1,6 @@
 import "server-only";
 
-import { auth } from "@/server/auth/auth-config";
+import { readSessionUser } from "@/server/auth/session-token";
 import { isAdmin } from "@/domain/auth/permissions";
 import { BackendRequestError, BackendUnauthorizedError } from "@/server/backend/errors/backend-request-error";
 
@@ -11,12 +11,11 @@ import { BackendRequestError, BackendUnauthorizedError } from "@/server/backend/
  * `FORBIDDEN` payload via `routeErrorResponse`.
  */
 export async function requireAdminSession(): Promise<void> {
-  const session = await auth();
-  if (!session?.user) {
+  const user = await readSessionUser();
+  if (!user) {
     throw new BackendUnauthorizedError("no active session");
   }
-  const roles = (session.user as { roles?: string[] }).roles;
-  if (!isAdmin(roles)) {
+  if (!isAdmin(user.roles)) {
     throw new BackendRequestError(403, JSON.stringify({ code: "FORBIDDEN", message: "Admin role required" }));
   }
 }

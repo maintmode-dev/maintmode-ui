@@ -30,8 +30,7 @@ covers developing _this_ repository.
   managed by a small in-repo provider (`src/app/theme-provider.tsx`). Dark is
   the default.
 - **Data:** TanStack Query v5 — browser → BFF (`src/app/api/**`) → backend
-- **Auth:** NextAuth v5 (Google OAuth); tokens stay server-side
-- **Forms:** react-hook-form + zod
+- **Auth:** an encrypted session cookie (`jose`, `src/server/auth/session-cookie.ts`); sign-in runs on the backend (OAuth dance, email code, password); tokens stay server-side
 - **Tests:** Vitest (unit, component, and FE↔BE contract tests)
 - **Lint/format:** ESLint flat config, Prettier
 
@@ -194,7 +193,7 @@ browser ──► BFF route handlers (src/app/api/**) ──► backend API
 
 The browser **must** call backend systems through the BFF. Browser modules
 **must not** import `src/server/**`. Backend access and refresh tokens live in
-the httpOnly NextAuth session cookie and are read only from server-only code;
+the encrypted httpOnly session cookie and are read only from server-only code;
 the browser never receives them. A backend `401` is normalized and turns into a
 redirect to `/login?next=<current path>`.
 

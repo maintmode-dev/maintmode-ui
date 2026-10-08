@@ -185,9 +185,8 @@ function backendErrorCode(body: string): string {
 }
 
 /**
- * Thrown to hand a stable code to `/login`. Mirrors `BackendExchangeError` in
- * `auth-config.ts`, which extends NextAuth's `CredentialsSignin`; this module
- * deliberately does not import NextAuth, so the callback rewraps what it gets.
+ * Thrown to hand a stable code to `/login`; `sign-in.ts` rewraps it as a
+ * `SignInError`, the one shape the actions read.
  */
 export class BuiltInSignInError extends Error {
   constructor(readonly code: string) {

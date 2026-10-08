@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 
-import { DEV_BYPASS_ENABLED, signIn, signOut } from "@/server/auth/auth-config";
+import { DEV_BYPASS_ENABLED } from "@/server/auth/dev-bypass";
+import { signInWithDevBypass } from "@/server/auth/sign-in";
 import { revokeBackendSession } from "@/server/auth/backend-token-exchange";
 import { clearActiveSession, readActiveSession } from "@/server/auth/session-token";
 import { isRole } from "@/domain/auth/permissions";
@@ -17,11 +18,11 @@ import { isRole } from "@/domain/auth/permissions";
  * submitted from inside a Radix `DropdownMenuItem` is cancelled when the menu
  * closes on select, so the request never fires. A server action invoked via
  * `<form action={…}>` is dispatched by React before the menu unmounts, and
- * NextAuth attaches the CSRF token itself.
+ * Next checks the action's Origin itself.
  *
  * Mirrors the `/api/auth/logout` route's work: revoke the backend refresh token
  * (best-effort — the cookie is the browser's source of truth) before clearing
- * the NextAuth jwt + active-session cookies.
+ * the session cookie.
  */
 export async function signOutAction(): Promise<void> {
   const session = await readActiveSession();
@@ -34,7 +35,6 @@ export async function signOutAction(): Promise<void> {
     }
   }
 
-  await signOut({ redirect: false });
   await clearActiveSession();
 
   redirect("/login");
@@ -45,7 +45,7 @@ export async function signOutAction(): Promise<void> {
  * toolbar (a client component) the same way `signOutAction` is shared with the
  * header — a client component can't declare a `"use server"` action inline.
  *
- * Signs in through the dev-bypass Credentials provider, which seeds the backend
+ * Signs in through the dev bypass (`signInWithDevBypass`), which seeds the backend
  * `X-Test-Roles` header so the stub OAuth mints a fresh user with `role`. The
  * dev backend creates a new user per login, so this is a genuine re-login as a
  * different role rather than an in-place role change (the backend never changes
@@ -55,12 +55,19 @@ export async function signOutAction(): Promise<void> {
  * `DEV_BYPASS_ENABLED`, this action is independently gated — a server action is
  * a public POST endpoint, so it must not trust that its only caller is the
  * hidden UI. When the bypass is off (every production build), it is a no-op.
- * `signIn` redirects to `/` on success (throws NEXT_REDIRECT), matching the
- * post-login destination used elsewhere (see accept-invite).
+ * Lands on `/` on success, matching the post-login destination used elsewhere
+ * (see accept-invite); a failure lands on `/login` with its code.
  */
 export async function devLoginAsAction(role: string): Promise<void> {
   if (!DEV_BYPASS_ENABLED || !isRole(role)) {
     return;
   }
-  await signIn("dev-bypass", { role, redirectTo: "/" });
+  try {
+    await signInWithDevBypass(role);
+  } catch (error) {
+    const code =
+      typeof (error as { code?: unknown } | null)?.code === "string" ? (error as { code: string }).code : "";
+    redirect(`/login?code=${encodeURIComponent(code || "oauth_handoff_failed")}`);
+  }
+  redirect("/");
 }

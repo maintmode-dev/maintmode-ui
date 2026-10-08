@@ -3,10 +3,8 @@
 import { redirect } from "next/navigation";
 
 import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
-import { signIn } from "@/server/auth/auth-config";
 import { readActiveSession } from "@/server/auth/session-token";
 import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
-import { isNextRedirect } from "@/server/auth/next-redirect";
 import {
   clearOAuthBinding,
   mintOAuthBinding,
@@ -15,6 +13,7 @@ import {
 import { clearOAuthNext, readOAuthNext, setOAuthNext } from "@/server/auth/oauth-next-cookie";
 import { completeProviderLink } from "@/server/auth/provider-link";
 import { safeNext } from "@/server/auth/safe-next";
+import { signInWithDanceCode } from "@/server/auth/sign-in";
 import type { LinkFailure } from "@/domain/auth/link-outcome";
 
 /**
@@ -67,7 +66,7 @@ export async function startOAuthDanceAction(
   //
   // `readActiveSession()`, matching `completeOAuthDanceAction` below: a Server
   // Action may write cookies, so its refresh-and-persist is legitimate here. A
-  // page render may not, which is why the page uses `auth()` instead.
+  // page render may not, which is why the page uses `readSessionUser()` instead.
   //
   // `/login`'s caller never reaches this in practice — `proxy.ts` bounces a
   // signed-in user off that path — so this fires for a direct invocation, which
@@ -176,12 +175,9 @@ function mapDanceError(code: string): AuthErrorCode {
  * had to remember. The backend applies the same ordering to its own dance
  * cookies for the same reason.
  *
- * `signIn` does not build the `?code=` redirect itself — NextAuth's server-action
- * path rethrows instead, and the SUCCESS path also arrives as a throw
- * (`NEXT_REDIRECT`). So the happy path is rethrown untouched and everything else
- * is read structurally and redirected here. Reading `.code` structurally rather
- * than via `instanceof AuthError` keeps the `next-auth` runtime out of every
- * consumer of this module, matching `built-in-sign-in-actions.ts`.
+ * `signInWithDanceCode` writes the session and returns; this action decides
+ * where the browser goes — the destination on success, `/login?code=` with the
+ * failure's code otherwise, read structurally as in `built-in-sign-in-actions.ts`.
  */
 export async function completeOAuthDanceAction(formData: FormData): Promise<void> {
   const stored = await readOAuthNext();
@@ -276,24 +272,11 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   }
 
   try {
-    await signIn("oauth-dance", { code, proof, redirectTo: destination });
+    await signInWithDanceCode(code, proof);
   } catch (error) {
-    if (isNextRedirect(error)) {
-      throw error;
-    }
     redirectToLoginError(failureCode(error));
   }
 
-  // `signIn` normally leaves by throwing — a redirect on success, a
-  // `CredentialsSignin` on failure — but it has a path that simply returns:
-  // NextAuth builds its redirect from a `Location` header its own source calls
-  // possibly-unset ("if for some unexpected reason the responseUrl is not set").
-  //
-  // Falling off the end there would leave the browser on this document forever,
-  // showing "Signing you in…" under a disabled button, with the one-time code
-  // already spent so a reload cannot recover. Never end without leaving: the
-  // destination is already sanitized, and if no session was established the auth
-  // gate sends the user to /login rather than nowhere.
   redirect(destination);
 }
 

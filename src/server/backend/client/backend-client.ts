@@ -14,7 +14,7 @@ export type BackendRequestOptions = RequestInit & {
    * Optional access token. When provided, the request gains an
    * `Authorization: Bearer <accessToken>` header. The authenticated wrapper
    * in `authenticated-backend-request.ts` is responsible for sourcing the
-   * token from the active NextAuth session.
+   * token from the active session.
    */
   accessToken?: string;
   /**

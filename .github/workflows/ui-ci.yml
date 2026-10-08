@@ -89,8 +89,8 @@ jobs:
           cache: npm
       - run: npm ci
       # Build with the same placeholder build-time env the Dockerfile uses, so
-      # the page-data collection step (which initializes the NextAuth config
-      # and validates its env) passes. Real values come from --env-file at run.
+      # the page-data collection step (which loads the auth modules and
+      # validates their env) passes. Real values come from --env-file at run.
       - run: npm run build
         env:
           MAINTMODE_AUTH_SECRET: build-time-placeholder-secret-32chars-min

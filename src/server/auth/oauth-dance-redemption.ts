@@ -10,11 +10,7 @@ import {
 } from "@/server/auth/contracts";
 
 /**
- * Typed failure, rewrapped into NextAuth's `CredentialsSignin` by the caller.
- *
- * Thrown rather than returned, and defined here rather than imported, for the
- * reason `built-in-sign-in.ts` gives for its own: this module must not import
- * NextAuth, or its runtime is pulled into everything that touches a redemption.
+ * Typed failure, rewrapped into a `SignInError` by `sign-in.ts`.
  */
 export class OAuthDanceError extends Error {
   readonly code: AuthErrorCode;
