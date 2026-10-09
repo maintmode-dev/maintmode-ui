@@ -1,0 +1,64 @@
+{
+  "_recorded": "DECLARED, not recorded: transcribed 2026-10-09 from backend release/v0.3.1 @ 03e1621 — internal/services/auth/refresh.go (Refresh, reuseRevoked, refreshWithinGrace, rotateRefreshToken), internal/app/api/public/auth/refresh.go (Retry-After on ErrLockBusy), internal/app/api/httperrors/mapper.go (mapAuthError, unauthorizedErrors), internal/app/api/httperrors/error_resp.go (ErrorResponse {code, message}; ErrUnauthorized = \"unauthorized\", ErrLockBusy = \"lock is already held\") and internal/app/api/public/auth/models (TokenPairResponse: refresh_token carries omitempty). See the manifest entry for why this could not be captured.",
+  "_masked": "access_token and refresh_token are placeholders — on the wire they are live bearer tokens. expires_in is the prod/dev config's access_token_ttl (15m). Status codes, header and error envelopes are the backend's own as transcribed.",
+  "rotated": {
+    "_note": "A live refresh token: rotated, so the reply carries its successor.",
+    "status": 200,
+    "body": {
+      "access_token": "<access-token>",
+      "refresh_token": "<refresh-token>",
+      "expires_in": 900
+    }
+  },
+  "grace": {
+    "_note": "The token presented was rotated less than refresh_token_grace_period (30s) ago — a racing tab or request. refreshWithinGrace mints an access token and sets RefreshToken to \"\" (\"the client keeps the one it has\"); omitempty drops the key entirely.",
+    "status": 200,
+    "body": {
+      "access_token": "<access-token>",
+      "expires_in": 900
+    }
+  },
+  "reuse": {
+    "_note": "A rotated token presented past its grace window: reuseRevoked revokes the whole family and answers ErrTokenReuse.",
+    "status": 401,
+    "body": {
+      "code": "unauthorized",
+      "message": "token reuse detected"
+    }
+  },
+  "loggedOut": {
+    "_note": "Revoked without a successor (logout), or a grace reply for a family that is no longer live: ErrLogoutAlready.",
+    "status": 401,
+    "body": {
+      "code": "unauthorized",
+      "message": "logout already"
+    }
+  },
+  "expired": {
+    "_note": "Idle past session_inactive_lifetime (168h) or older than session_max_lifetime (720h from sign-in): ErrTokenExpired.",
+    "status": 401,
+    "body": {
+      "code": "unauthorized",
+      "message": "token expired"
+    }
+  },
+  "invalid": {
+    "_note": "No row for the token's hash: ErrInvalidRefreshToken.",
+    "status": 401,
+    "body": {
+      "code": "unauthorized",
+      "message": "invalid refresh token"
+    }
+  },
+  "lockBusy": {
+    "_note": "Another refresh of the same token holds the distributed lock, which does not wait. Swagger documents 409 here; the code answers 429 with Retry-After: 1.",
+    "status": 429,
+    "headers": {
+      "retry-after": "1"
+    },
+    "body": {
+      "code": "lock is already held",
+      "message": "lock is already held"
+    }
+  }
+}

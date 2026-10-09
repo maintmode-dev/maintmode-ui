@@ -8,7 +8,7 @@ import { bindWithinReissueCooldown, putBindingToSleep, setOtpBinding } from "@/s
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import { safeNext } from "@/server/auth/safe-next";
 import { signInWithBackendLogin } from "@/server/auth/sign-in";
-import { readActiveSession } from "@/server/auth/session-token";
+import { hasActiveSession } from "@/server/auth/session-token";
 
 /**
  * Server actions behind the built-in sign-in methods (RUK-288).
@@ -163,7 +163,7 @@ const INVITE_ACCEPT_ERRORS: ReadonlySet<string> = new Set([
  * accepting means BECOMING the invited person, and the backend claims the
  * invitation in the same transaction that creates the account — so a click from
  * someone already signed in (an admin checking the link) would spend it on the
- * wrong browser. `readActiveSession()` because an action may write the cookie
+ * wrong browser. `hasActiveSession()` because an action may write the cookie
  * its refresh rotates; the page uses `readSessionUser()` for the same reason it does there.
  *
  * Exported, so callable by action id with any token — which grants nothing the
@@ -176,7 +176,7 @@ export async function acceptInvitationWithPasswordAction(input: {
   invitationToken: string;
   password: string;
 }): Promise<SignInActionResult> {
-  if (await readActiveSession()) {
+  if (await hasActiveSession()) {
     redirect("/");
   }
   if (!input.invitationToken) {

@@ -58,6 +58,20 @@ describe("establishSession — starting a session from a fresh pair", () => {
     expect(jar.has("__Secure-authjs.session-token")).toBe(false);
   });
 
+  // The cookie ends with the session: refreshes cap it at this instant plus the
+  // backend's maximum lifetime, so it must be recorded at sign-in.
+  it("records the sign-in time and arms the cookie for the session's full lifetime", async () => {
+    const before = Date.now();
+    await establishSession(PAIR, USER);
+    const after = Date.now();
+
+    const cookie = jar.get("__Secure-authjs.session-token");
+    expect(cookie?.options).toMatchObject({ maxAge: 30 * 24 * 60 * 60 });
+    const stored = await decodeSession(cookie!.value, "__Secure-authjs.session-token", SECRET);
+    expect(stored?.sessionStartedAt).toBeGreaterThanOrEqual(before);
+    expect(stored?.sessionStartedAt).toBeLessThanOrEqual(after);
+  });
+
   it("removes a session cookie left under another name, so one browser holds one session", async () => {
     jar.set("next-auth.session-token", { value: "old", options: {} });
 

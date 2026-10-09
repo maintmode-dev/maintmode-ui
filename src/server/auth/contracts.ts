@@ -13,6 +13,20 @@ export type BackendTokenPair = {
   expires_in: number;
 };
 
+/**
+ * The reply to `POST /api/v1/refresh`. Unlike every call that MINTS a session,
+ * `refresh_token` is optional here: inside the backend's grace window (a token
+ * rotated less than 30s ago, presented again by a racing request) it answers
+ * with a new access token and no refresh token (`omitempty`), meaning "keep
+ * the one you have". A backend that returns the successor during grace sends
+ * it, and that is a rotation like any other.
+ */
+export type BackendRefreshReply = {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+};
+
 export type BackendOAuthCallbackJsonResponse = {
   token: BackendTokenPair;
   original_uri?: string;
@@ -44,6 +58,8 @@ export class BackendAuthError extends Error {
     readonly status: number,
     readonly responseBody: string,
     message?: string,
+    /** The response's `Retry-After` header, verbatim, when it carried one. */
+    readonly retryAfter?: string,
   ) {
     super(message ?? `Backend auth request failed with status ${status}`);
     this.name = "BackendAuthError";

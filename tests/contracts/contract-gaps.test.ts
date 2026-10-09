@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 /**
  * Executable registry — RUK-254, SPEC-RUK-254.md §4.4 (AC-4, AC-5).
@@ -112,6 +112,58 @@ describe("registry — class B: fields the calendar wants and the wire does not 
     const unregistered = stubbed.filter((field) => !registry.includes(`\`${field}\``));
 
     expect(`unregistered stubs: ${unregistered.join(", ") || "none"}`).toBe("unregistered stubs: none");
+  });
+});
+
+/**
+ * CLOSED — the BFF required `refresh_token` on every refresh reply, and the
+ * backend omits it inside the 30s grace window ("keep the one you have").
+ *
+ * Runs the REAL `refreshBackendToken` against the declared grace reply with only
+ * `fetch` stubbed. While the gap was open this asserted the reply was REFUSED,
+ * and it went red when the repair landed. It now asserts the opposite, so the
+ * gap cannot reopen unnoticed; `refresh.contract.test.ts` pins what the session
+ * code then does with the reply.
+ */
+describe("registry — closed: refresh grace reply without `refresh_token`", () => {
+  type WireCase = { status: number; body: Record<string, unknown> };
+  const grace = fixture("refresh.json").grace as WireCase;
+
+  it("records a grace reply that carries an access token and no refresh token", () => {
+    // Precondition, with literal field names: without it the assertion below
+    // could pass against a fixture that simply gained a refresh token.
+    expect(typeof grace.body.access_token).toBe("string");
+    expect("refresh_token" in grace.body).toBe(false);
+  });
+
+  it("is accepted by refreshBackendToken", async () => {
+    process.env.MAINTMODE_API_BASE_URL ??= "http://backend.test/maintmode";
+    const { refreshBackendToken } = await import("@/server/auth/backend-token-exchange");
+    const text = JSON.stringify(grace.body);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: grace.status, statusText: "OK", text: async () => text })),
+    );
+    try {
+      const outcome = await refreshBackendToken("<refresh-token>").then(
+        () => "accepted",
+        () => "refused",
+      );
+      expect(
+        outcome === "accepted"
+          ? "accepted"
+          : "GAP REOPENED: the BFF refuses a refresh reply without `refresh_token` again, " +
+              "which signs out every request that races a rotation. See docs/contract-gaps.md.",
+      ).toBe("accepted");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps its closed row in docs/contract-gaps.md", () => {
+    expect(`refresh grace row closed: ${registry.includes("on a grace refresh — CLOSED")}`).toBe(
+      "refresh grace row closed: true",
+    );
   });
 });
 
@@ -354,7 +406,7 @@ describe("the registry file itself", () => {
     // leaving them would have kept this assertion green (they are still named in
     // the registry, now under Class C) while claiming an enforcement that no
     // longer happens — a false statement no test would ever catch.
-    const enforced = ["resources", "details", "facets.integration"];
+    const enforced = ["resources", "details", "facets.integration", "refresh_token"];
     const undocumented = enforced.filter((field) => !registry.includes(field));
 
     expect(`undocumented enforced gaps: ${undocumented.join(", ") || "none"}`).toBe(

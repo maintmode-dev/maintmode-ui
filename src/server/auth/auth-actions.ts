@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { DEV_BYPASS_ENABLED } from "@/server/auth/dev-bypass";
 import { signInWithDevBypass } from "@/server/auth/sign-in";
 import { revokeBackendSession } from "@/server/auth/backend-token-exchange";
-import { clearActiveSession, readActiveSession } from "@/server/auth/session-token";
+import { clearActiveSession, readActiveSessionForSignOut } from "@/server/auth/session-token";
 import { isRole } from "@/domain/auth/permissions";
 
 /**
@@ -25,7 +25,7 @@ import { isRole } from "@/domain/auth/permissions";
  * the session cookie.
  */
 export async function signOutAction(): Promise<void> {
-  const session = await readActiveSession();
+  const session = await readActiveSessionForSignOut();
   if (session) {
     try {
       await revokeBackendSession(session.accessToken, session.refreshToken);

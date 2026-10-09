@@ -2,7 +2,12 @@ import "server-only";
 
 import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
-import { BackendAuthError, type BackendMeResponse, type BackendTokenPair } from "@/server/auth/contracts";
+import {
+  BackendAuthError,
+  type BackendMeResponse,
+  type BackendRefreshReply,
+  type BackendTokenPair,
+} from "@/server/auth/contracts";
 
 const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
 const DANCE_CODE_EXCHANGE_PATH = "/api/v1/login/oauth/code/exchange";
@@ -377,12 +382,23 @@ export async function changeBackendPassword(args: {
 }
 
 /**
- * Rotates the refresh token via `POST /api/v1/refresh`. Returns the new
- * `TokenPairResponse`.
+ * Rotates the refresh token via `POST /api/v1/refresh`.
+ *
+ * Requires the access token only. An absent or empty `refresh_token` is the
+ * backend's grace reply — "keep the one you have" — and is passed on as such;
+ * demanding it here signed out every request that raced a rotation
+ * (docs/contract-gaps.md). What to do with each reply and each refusal is
+ * `session-token.ts`'s decision, so a refusal is thrown with its status and
+ * `Retry-After` untouched.
  */
-export async function refreshBackendToken(refreshToken: string): Promise<BackendTokenPair> {
-  return postBackendJson<BackendTokenPair>(REFRESH_PATH, { refresh_token: refreshToken }, (parsed) =>
-    Boolean(parsed?.access_token && parsed?.refresh_token),
+export async function refreshBackendToken(refreshToken: string): Promise<BackendRefreshReply> {
+  return postBackendJson<BackendRefreshReply>(
+    REFRESH_PATH,
+    { refresh_token: refreshToken },
+    (parsed) =>
+      typeof parsed?.access_token === "string" &&
+      parsed.access_token !== "" &&
+      (parsed.refresh_token === undefined || typeof parsed.refresh_token === "string"),
   );
 }
 
@@ -525,7 +541,12 @@ async function postBackendJson<TResponse>(
     async (response) => {
       const text = await response.text();
       if (!response.ok) {
-        throw new BackendAuthError(response.status, text || response.statusText);
+        throw new BackendAuthError(
+          response.status,
+          text || response.statusText,
+          undefined,
+          response.headers?.get("retry-after") ?? undefined,
+        );
       }
       const parsed = safeJsonParse<TResponse>(text);
       if (!isShapeValid(parsed)) {

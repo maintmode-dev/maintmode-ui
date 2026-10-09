@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 
 import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
-import { readActiveSession } from "@/server/auth/session-token";
+import { hasActiveSession } from "@/server/auth/session-token";
 import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
 import {
   clearOAuthBinding,
@@ -89,7 +89,7 @@ export async function startOAuthDanceAction(
   // the backend claims the invitation in phase 2, INSIDE the dance — the
   // invitation is spent before our receiver ever sees the code.
   //
-  // `readActiveSession()`, matching `completeOAuthDanceAction` below: a Server
+  // `hasActiveSession()`, matching `completeOAuthDanceAction` below: a Server
   // Action may write cookies, so its refresh-and-persist is legitimate here. A
   // page render may not, which is why the page uses `readSessionUser()` instead.
   //
@@ -100,7 +100,7 @@ export async function startOAuthDanceAction(
   // Still a `redirect()`, unlike the success path: `/` is this app's own route,
   // so the router's soft navigation is exactly right, and the throw means the
   // button never reaches its `assign`.
-  if (await readActiveSession()) {
+  if (await hasActiveSession()) {
     redirect("/");
   }
 
@@ -243,7 +243,7 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   // link" copy. Misleading at worst — the copy is a closed set, nothing from
   // the URL is rendered — and telling the two apart would take a "link
   // pending" cookie for a stale-tab edge case.
-  if (await readActiveSession()) {
+  if (await hasActiveSession()) {
     // A pending link (backend M1): the callback no longer links, it hands back
     // a one-time `link_code` that only this session, with this browser's
     // nonce, can complete. No nonce means this browser did not start it.

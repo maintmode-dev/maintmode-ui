@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { POST } from "@/app/api/me/password/route";
+import { BackendUnavailableError } from "@/server/backend/errors/backend-request-error";
 
 const readActiveSession = vi.fn();
 const changeBackendPassword = vi.fn();
@@ -147,6 +148,19 @@ describe("the guards every mutating route here carries", () => {
 
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ code: "AUTH_REQUIRED" });
+  });
+
+  // A refresh the backend could not complete right now (lock busy, 5xx,
+  // network) keeps the session; a 401 here would send a signed-in browser to
+  // /login, so it is an outage answer and nothing is sent.
+  it("answers 503, not 401, when the session refresh is momentarily unavailable", async () => {
+    readActiveSession.mockRejectedValue(new BackendUnavailableError(new Error("refresh unavailable")));
+
+    const response = await POST(post({ new_password: "new-password-here" }));
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({ code: "BACKEND_UNAVAILABLE" });
+    expect(changeBackendPassword).not.toHaveBeenCalled();
   });
 
   it("answers a malformed body with a 400, not a 500", async () => {

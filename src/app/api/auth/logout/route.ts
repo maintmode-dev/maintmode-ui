@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { revokeBackendSession } from "@/server/auth/backend-token-exchange";
-import { clearActiveSession, readActiveSession } from "@/server/auth/session-token";
+import { clearActiveSession, readActiveSessionForSignOut } from "@/server/auth/session-token";
 import { safeNext } from "@/server/auth/safe-next";
 import { isSameOriginRequest } from "@/server/backend/security/csrf";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const session = await readActiveSession();
+  const session = await readActiveSessionForSignOut();
   if (session) {
     try {
       await revokeBackendSession(session.accessToken, session.refreshToken);

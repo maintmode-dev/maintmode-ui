@@ -37,7 +37,10 @@ vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   putBindingToSleep: (...args: unknown[]) => putBindingToSleep(...args),
 }));
 
-vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+// The action asks `hasActiveSession`, which is `readActiveSession` read as a boolean.
+vi.mock("@/server/auth/session-token", () => ({
+  hasActiveSession: async () => Boolean(await readActiveSession()),
+}));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => redirect(to) }));
 
 const {
