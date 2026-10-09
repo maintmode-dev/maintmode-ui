@@ -106,7 +106,7 @@ rotation like any other. Each settled refresh stays the answer for the token it
 spent for 60s, so a straggler still carrying the old cookie gets the identical
 pair instead of spending the token again.
 
-The same failure path hid three neighbouring discrepancies:
+The same failure path hid three neighbouring discrepancies, closed together:
 
 - **Lock busy is 429, not 409.** The swagger on `Refresh` documents 409 "Refresh
   lock busy or token reuse"; the code answers `ErrLockBusy` with **429**
@@ -119,11 +119,12 @@ The same failure path hid three neighbouring discrepancies:
   and an unknown token all answer **401 `unauthorized`** (`unauthorizedErrors`
   in `httperrors/mapper.go`). That is now the only refresh answer that clears
   the cookie; it used to be every failure.
-- **The cookie outlives the session — still open.** The backend ends a session
+- **The cookie outlived the session.** The backend ends a session
   `session_max_lifetime` (720h) after sign-in, carried across rotations as
   `SessionStartedAt`, and exposes that instant nowhere (no claim, no response
-  field); the BFF re-arms the session cookie for 30 days on every refresh, so
-  its lifetime has no relation to the session's. Repaired separately.
+  field). The BFF now records its own sign-in time in the sealed session
+  (`sessionStartedAt`) and caps every cookie it writes at that plus 30 days. A
+  cookie from before the field existed keeps the old 30-days-from-now lifetime.
 
 Kept executable by `contract-gaps.test.ts` ("refresh grace reply", now asserting
 the reply is ACCEPTED, so the gap cannot quietly reopen) and by

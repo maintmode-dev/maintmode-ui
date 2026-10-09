@@ -7,14 +7,17 @@ import type { BackendRefreshReply } from "@/server/auth/contracts";
 
 const SECRET = "test-secret-at-least-thirty-two-characters-long";
 const COOKIE = "authjs.session-token";
+const DAY_MS = 24 * 60 * 60 * 1000;
+const THIRTY_DAYS_S = 30 * 24 * 60 * 60;
 
 // One cookie jar per simulated request. `cookies()` resolves against whichever
 // request the calling code is running in, the way Next's request-scoped storage
 // does — which is what lets a refresh write land on the wrong user's response.
-// `writes` records what the code under test set, so a test can tell
+// `writes` and `maxAge` record what the code under test set, so a test can tell
 // "the cookie was not rewritten" from "it was rewritten with the same tokens".
 class Jar extends Map<string, string> {
   writes = 0;
+  maxAge: number | undefined;
 }
 const requestJar = new AsyncLocalStorage<Jar>();
 
@@ -24,9 +27,10 @@ vi.mock("next/headers", () => ({
     if (!jar) throw new Error("cookies() called outside a request");
     return Promise.resolve({
       get: (name: string) => (jar.has(name) ? { name, value: jar.get(name) } : undefined),
-      set: ({ name, value }: { name: string; value: string }) => {
+      set: ({ name, value, maxAge }: { name: string; value: string; maxAge?: number }) => {
         jar.set(name, value);
         jar.writes += 1;
+        jar.maxAge = maxAge;
       },
     });
   },
@@ -103,13 +107,14 @@ function backendError(status: number, message = "", retryAfter?: string) {
 async function jarFor(
   userId: string,
   refreshToken: string,
-  { expiresAt = 0 }: { expiresAt?: number } = {},
+  { expiresAt = 0, sessionStartedAt }: { expiresAt?: number; sessionStartedAt?: number } = {},
 ): Promise<Jar> {
   const payload: SessionPayload = {
     accessToken: `access-${userId}-old`,
     refreshToken,
     accessTokenExpiresAt: expiresAt,
     user: { id: userId, email: `${userId}@example.test`, displayName: userId, roles: [] },
+    ...(sessionStartedAt !== undefined ? { sessionStartedAt } : {}),
   };
   const jar = new Jar();
   jar.set(COOKIE, await encodeSession(payload, COOKIE, SECRET));
@@ -564,6 +569,44 @@ describe("a definitive backend answer ends the session", () => {
       expect(await requestJar.run(jar, session.hasActiveSession)).toBe(false);
     },
   );
+});
+
+describe("the session cookie ends with the session", () => {
+  it("caps the rotated cookie at the session's absolute end, not 30 days from now", async () => {
+    refreshBackendToken.mockResolvedValue(ROTATED);
+    const startedAt = Date.now() - 29 * DAY_MS;
+    const jar = await jarFor("user-a", "refresh-a", { sessionStartedAt: startedAt });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    const remainingS = (startedAt + THIRTY_DAYS_S * 1000 - Date.now()) / 1000;
+    expect(jar.maxAge).toBeLessThanOrEqual(Math.ceil(remainingS));
+    expect(jar.maxAge).toBeGreaterThan(remainingS - 60);
+    // Carried, never restarted: restarting it would make the cap no cap at all.
+    expect(await cookiePayload(jar)).toMatchObject({
+      refreshToken: "refresh-a-2",
+      sessionStartedAt: startedAt,
+    });
+  });
+
+  it("writes a cookie that is already over when the session is past its end", async () => {
+    refreshBackendToken.mockResolvedValue(ROTATED);
+    const jar = await jarFor("user-a", "refresh-a", { sessionStartedAt: Date.now() - 31 * DAY_MS });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    expect(jar.maxAge).toBe(0);
+  });
+
+  it("keeps the old 30-day lifetime for a cookie written before the sign-in time was recorded", async () => {
+    refreshBackendToken.mockResolvedValue(ROTATED);
+    const jar = await jarFor("user-a", "refresh-a");
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    expect(jar.maxAge).toBe(THIRTY_DAYS_S);
+    expect((await cookiePayload(jar))?.sessionStartedAt).toBeUndefined();
+  });
 });
 
 describe("readActiveSession refreshes only near expiry", () => {

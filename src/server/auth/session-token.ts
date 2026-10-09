@@ -12,10 +12,10 @@ import {
 } from "@/server/auth/contracts";
 import {
   SESSION_COOKIE_NAMES,
-  SESSION_MAX_AGE_SECONDS,
   decodeSession,
   encodeSession,
   sessionCookieAttributes,
+  sessionCookieMaxAgeSeconds,
   sessionCookieNameFor,
   type SessionPayload,
 } from "@/server/auth/session-cookie";
@@ -137,11 +137,15 @@ export async function establishSession(
   if (!pair.access_token || !pair.refresh_token || expiresIn <= 0) {
     throw new Error("token pair cannot sustain a session");
   }
+  const now = Date.now();
   const payload: SessionPayload = {
     accessToken: pair.access_token,
     refreshToken: pair.refresh_token,
-    accessTokenExpiresAt: Date.now() + expiresIn * 1000,
+    accessTokenExpiresAt: now + expiresIn * 1000,
     user,
+    // The sign-in instant, carried through every refresh: the cookie ends when
+    // the session does (`sessionCookieMaxAgeSeconds`).
+    sessionStartedAt: now,
   };
   const name = sessionCookieNameFor(getAuthConfig().appBaseUrl);
   await clearActiveSession();
@@ -392,6 +396,7 @@ async function refreshAndPersist(
     refreshToken: rotatedRefreshToken ?? current.refreshToken,
     accessTokenExpiresAt: receivedAt + expiresIn * 1000,
     user: current.user,
+    ...(current.sessionStartedAt !== undefined ? { sessionStartedAt: current.sessionStartedAt } : {}),
   };
   if (rotatedRefreshToken) {
     // Under the name it was found under: the name is the encryption key's salt.
@@ -480,11 +485,14 @@ async function requestRefresh(refreshToken: string): Promise<RefreshResult> {
 }
 
 async function writeSessionCookie(name: string, payload: SessionPayload): Promise<void> {
+  // The cookie and the sealed JWT inside it both end with the session: never
+  // past `sessionStartedAt` + the backend's maximum lifetime.
+  const maxAge = sessionCookieMaxAgeSeconds(payload);
   const cookieStore = await cookies();
   cookieStore.set({
     name,
-    value: await encodeSession(payload, name, getAuthConfig().authSecret),
+    value: await encodeSession(payload, name, getAuthConfig().authSecret, maxAge),
     ...sessionCookieAttributes(name),
-    maxAge: SESSION_MAX_AGE_SECONDS,
+    maxAge,
   });
 }

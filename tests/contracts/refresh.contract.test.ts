@@ -94,6 +94,7 @@ async function signedInJar(refreshToken = "refresh-current"): Promise<Jar> {
         refreshToken,
         accessTokenExpiresAt: 0,
         user: { id: "u-1", email: "u-1@example.test", displayName: "U", roles: [] },
+        sessionStartedAt: Date.now(),
       },
       COOKIE,
       SECRET,

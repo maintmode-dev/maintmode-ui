@@ -26,6 +26,15 @@ export type SessionPayload = {
   /** Epoch ms. 0 when unknown, which the reader treats as "refresh now". */
   accessTokenExpiresAt: number;
   user: AuthSessionUser;
+  /**
+   * Epoch ms of the sign-in that started this session, carried unchanged
+   * through every refresh. The backend ends a session a fixed time after
+   * sign-in (`jwt.session_max_lifetime`, its `SessionStartedAt`) and exposes
+   * that instant nowhere — no claim, no response field — so the BFF keeps its
+   * own copy to end the cookie with the session. Absent in a cookie written
+   * before the field existed.
+   */
+  sessionStartedAt?: number;
 };
 
 /** Under https the cookie carries `__Secure-`, which a browser only accepts with `Secure`. */
@@ -43,7 +52,32 @@ export const SESSION_COOKIE_NAMES = [
   "__Secure-next-auth.session-token",
 ] as const;
 
+/**
+ * The longest a session lives, from sign-in. Matches the backend's default
+ * `jwt.session_max_lifetime` (720h, the same in every shipped deployment
+ * config); the BFF has no setting of its own for it. A backend configured
+ * shorter (or the 24h break-glass session) still ends the session first: its
+ * refresh answers 401 and the cookie is cleared then.
+ */
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * Seconds the session cookie may live when written at `now`: until the
+ * session's absolute end, never past it (RFC 10017 §6.1.2.2 — the BFF session
+ * ends with the refresh token's maximum lifetime). A refresh therefore no longer
+ * re-arms a fresh 30 days. A cookie from before `sessionStartedAt` existed keeps
+ * the old behaviour, a full `SESSION_MAX_AGE_SECONDS` from now.
+ */
+export function sessionCookieMaxAgeSeconds(
+  payload: Pick<SessionPayload, "sessionStartedAt">,
+  now = Date.now(),
+): number {
+  if (typeof payload.sessionStartedAt !== "number" || !Number.isFinite(payload.sessionStartedAt)) {
+    return SESSION_MAX_AGE_SECONDS;
+  }
+  const remaining = Math.floor((payload.sessionStartedAt + SESSION_MAX_AGE_SECONDS * 1000 - now) / 1000);
+  return Math.min(SESSION_MAX_AGE_SECONDS, Math.max(0, remaining));
+}
 
 const ALG = "dir";
 const ENC = "A256CBC-HS512";
@@ -127,7 +161,7 @@ export async function decodeSession(
     return null;
   }
 
-  const { accessToken, refreshToken, accessTokenExpiresAt, user, error } =
+  const { accessToken, refreshToken, accessTokenExpiresAt, user, sessionStartedAt, error } =
     claims as Partial<SessionPayload> & {
       error?: unknown;
     };
@@ -140,6 +174,9 @@ export async function decodeSession(
     refreshToken,
     accessTokenExpiresAt: typeof accessTokenExpiresAt === "number" ? accessTokenExpiresAt : 0,
     user,
+    ...(typeof sessionStartedAt === "number" && Number.isFinite(sessionStartedAt)
+      ? { sessionStartedAt }
+      : {}),
   };
 }
 
