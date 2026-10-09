@@ -7,6 +7,7 @@ import {
   auditActionInCategory,
   auditActionLabel,
   auditCategoryActions,
+  auditRevokeReasonLabel,
   isSignInShaped,
   UNKNOWN_ACTION_TOKEN,
 } from "@/domain/audit/audit-presentation";
@@ -38,6 +39,11 @@ describe("auditActionLabel / auditActionDotToken", () => {
     expect(auditActionLabel("invitation.revoked")).toBe("Invitation revoked");
     expect(auditActionLabel("resource.archived")).toBe("Resource archived");
     expect(auditActionLabel("notify_channel.unarchived")).toBe("Channel unarchived");
+  });
+
+  it("labels a session revocation and colours it like a block, not a routine event", () => {
+    expect(auditActionLabel("session.revoked")).toBe("Session revoked");
+    expect(auditActionDotToken("session.revoked")).toBe("--impact-full-fg");
   });
 
   it("renders an action the UI does not model with its raw value and the neutral dot, without throwing", () => {
@@ -107,7 +113,7 @@ describe("auditCategoryActions", () => {
     );
   });
 
-  it("maps `users` to the account-change and invitation events", () => {
+  it("maps `users` to the account-change, session and invitation events", () => {
     expect(new Set(auditCategoryActions("users"))).toEqual(
       new Set([
         "roles.changed",
@@ -117,6 +123,7 @@ describe("auditCategoryActions", () => {
         "password.changed",
         "password.reset",
         "provider.linked",
+        "session.revoked",
         "invitation.created",
         "invitation.revoked",
       ]),
@@ -167,11 +174,22 @@ describe("isSignInShaped", () => {
       "password.changed",
       "password.reset",
       "provider.linked",
+      "session.revoked",
     ]) {
       expect(isSignInShaped(action)).toBe(true);
     }
     expect(isSignInShaped("logout.success")).toBe(false);
     expect(isSignInShaped("auth_method.toggled")).toBe(false);
     expect(isSignInShaped("something.new")).toBe(false);
+  });
+});
+
+describe("auditRevokeReasonLabel", () => {
+  it("words the backend's token_reuse reason for an operator", () => {
+    expect(auditRevokeReasonLabel("token_reuse")).toBe("Refresh token reused");
+  });
+
+  it("shows a reason this build does not know as its raw value", () => {
+    expect(auditRevokeReasonLabel("something_new")).toBe("something_new");
   });
 });

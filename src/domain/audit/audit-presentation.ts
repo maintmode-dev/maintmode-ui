@@ -25,6 +25,10 @@ import { type AuditAction, type AuditEventAction, isKnownAuditAction } from "./a
  * Archiving a resource or channel is soft and reversible, so it takes the
  * neutral logout grey rather than a destructive red, and unarchiving reads as
  * a recovery, like `user.unblocked`.
+ *
+ * `session.revoked` takes `user.blocked`'s red: both are an account's access
+ * being cut off, and a revocation for token reuse is a possible compromise —
+ * the row an operator scanning the Users chip must not miss.
  */
 const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
   "login.success": { label: "Login success", token: "--status-completed-fg" },
@@ -33,6 +37,7 @@ const ACTION_META: Record<AuditAction, { label: string; token: string }> = {
   "password.changed": { label: "Password changed", token: "--status-in_progress-fg" },
   "password.reset": { label: "Password reset", token: "--status-in_progress-fg" },
   "provider.linked": { label: "Provider linked", token: "--status-planned-fg" },
+  "session.revoked": { label: "Session revoked", token: "--impact-full-fg" },
   "auth_method.toggled": { label: "Sign-in method toggled", token: "--status-planned-fg" },
   "roles.changed": { label: "Roles changed", token: "--status-planned-fg" },
   "user.tags_changed": { label: "User tags changed", token: "--status-planned-fg" },
@@ -85,11 +90,12 @@ export function auditActionDotToken(action: AuditEventAction): string {
 
 /**
  * Actions whose metadata is a sign-in context — IP / user agent / session, plus
- * a failure reason when the attempt was refused. Password changes and provider
- * links are written with the same payload as a login (the backend copies the
- * request's sign-in metadata onto them), so the table and the expanded detail
- * read them the same way. This is about the PAYLOAD, not the chip: those three
- * sit under Users, because they change an account rather than open a session.
+ * a reason when the attempt was refused or the session revoked. Password
+ * changes, provider links and session revocations are written with the same
+ * payload as a login (the request's IP and user agent), so the table and the
+ * expanded detail read them the same way. This is about the PAYLOAD, not the
+ * chip: those four sit under Users, because they act on an account rather than
+ * open a session.
  */
 const SIGN_IN_SHAPED: ReadonlySet<AuditAction> = new Set<AuditAction>([
   "login.success",
@@ -97,10 +103,24 @@ const SIGN_IN_SHAPED: ReadonlySet<AuditAction> = new Set<AuditAction>([
   "password.changed",
   "password.reset",
   "provider.linked",
+  "session.revoked",
 ]);
 
 export function isSignInShaped(action: AuditEventAction): boolean {
   return isKnownAuditAction(action) && SIGN_IN_SHAPED.has(action);
+}
+
+/**
+ * Human wording for a `session.revoked` reason. The backend writes a fixed
+ * vocabulary; a value this build does not know is shown raw rather than
+ * hidden, the same rule as an unknown action.
+ */
+const REVOKE_REASON_LABELS: Record<string, string> = {
+  token_reuse: "Refresh token reused",
+};
+
+export function auditRevokeReasonLabel(reason: string): string {
+  return REVOKE_REASON_LABELS[reason] ?? reason;
 }
 
 /**
@@ -134,8 +154,8 @@ const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditA
   // Sessions starting, being refused, and ending.
   sign_in: new Set<AuditAction>(["login.success", "login.failed", "logout.success"]),
   // One account changing — its roles, tags, block state, credentials or linked
-  // providers. Password and provider events are here rather than under
-  // Sign-ins: they change an account, they do not open a session.
+  // providers, or a session the system revoked. Password, provider and session
+  // events are here rather than under Sign-ins: nobody signed in or out.
   users: new Set<AuditAction>([
     "roles.changed",
     "user.tags_changed",
@@ -144,6 +164,7 @@ const CATEGORY_ACTIONS: Record<Exclude<AuditCategory, "all">, ReadonlySet<AuditA
     "password.changed",
     "password.reset",
     "provider.linked",
+    "session.revoked",
     // A pending account: who may get in, and with which roles.
     "invitation.created",
     "invitation.revoked",

@@ -1,0 +1,29 @@
+{
+  "logs": [
+    {
+      "id": "<uuid-1>",
+      "action": "session.revoked",
+      "actor": "<email-1>",
+      "actor_id": "<uuid-2>",
+      "actor_display_name": "<email-1>",
+      "entity_type": "user",
+      "entity_id": "<uuid-2>",
+      "details": "session of <email-1> revoked: refresh token reused",
+      "metadata": {
+        "ip": "<redacted-ip>",
+        "user_agent": "<redacted-user_agent>",
+        "session_id": "<redacted-session_id>",
+        "revoke_reason": "token_reuse"
+      },
+      "created_at": "<ts-1>"
+    }
+  ],
+  "total": 1,
+  "facets": {
+    "all": 115,
+    "sign_in": 91,
+    "users": 9,
+    "settings": 3,
+    "maintenance": 12
+  }
+}

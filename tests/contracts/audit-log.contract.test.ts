@@ -371,6 +371,48 @@ describe("GET /api/audit — RUK-297 security events", () => {
   });
 });
 
+/**
+ * `session.revoked` — the backend revoking a session on its own because a
+ * rotated refresh token was replayed after its grace window. Captured from the
+ * self-host stand after triggering exactly that; see the fixture's manifest
+ * entry. The row is the trail's only record of a possible token theft, so the
+ * fields an operator reads it by must survive the route.
+ */
+describe("GET /api/audit — session.revoked", () => {
+  const revokedWire = readWireFixture<AuditLogResponseDto>("audit-log-session-revoked.json");
+
+  async function revokedBody() {
+    backendRequest.mockResolvedValueOnce(revokedWire);
+    return (await GET(new Request("http://localhost/api/audit?action=session.revoked"))).json() as Promise<{
+      events: {
+        action: string;
+        entity_type?: string;
+        metadata?: { ip?: string; user_agent?: string; session_id?: string; revoke_reason?: string };
+      }[];
+    }>;
+  }
+
+  it("delivers the revocation instead of dropping it as an unknown action", async () => {
+    const body = await revokedBody();
+
+    expect(body.events.length).toBeGreaterThan(0);
+    expect(body.events.length).toBe((revokedWire.logs ?? []).length);
+    for (const row of body.events) expect(row.action).toBe("session.revoked");
+  });
+
+  it("keeps the replaying request's context and the reason the backend names", async () => {
+    for (const row of (await revokedBody()).events) {
+      expect(row.entity_type).toBe("user");
+      expect(row.metadata?.ip).toEqual(expect.any(String));
+      expect(row.metadata?.user_agent).toEqual(expect.any(String));
+      expect(row.metadata?.session_id).toEqual(expect.any(String));
+      // The backend's enum value (apiauthmodels.AuditLogMetadata.revoke_reason),
+      // a literal rather than read back out of the fixture.
+      expect(row.metadata?.revoke_reason).toBe("token_reuse");
+    }
+  });
+});
+
 describe("GET /api/audit — errors must not degrade into an empty history", () => {
   it("answers with an error status when the backend fails", async () => {
     // An empty audit log tells an operator "nothing ever happened" — the single
