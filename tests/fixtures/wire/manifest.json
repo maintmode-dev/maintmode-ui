@@ -313,11 +313,11 @@
       "url": "maintmode:docs/auth/swagger.json#/components/schemas/entity.AuditAction",
       "method": "SPEC",
       "status": "n/a",
-      "capturedAt": "2026-10-08",
+      "capturedAt": "2026-10-09",
       "why": "RUK-297: AUDIT_ACTIONS fell five actions behind the backend and the route dropped those rows silently. audit-actions.contract.test.ts compares the UI list with this published enum, so the next new action fails CI instead of vanishing from the security log.",
       "handEdited": false,
       "capturedBy": "npm run fixtures:audit-actions (scripts/sync-audit-actions.mjs) — copied verbatim from the backend checkout, not from the wire: the spec is served on the backend's infra port, which no gateway exposes.",
-      "backendCommit": "0ec0d2e"
+      "backendCommit": "03e1621"
     },
     "audit-log-session-revoked": {
       "url": "http://maintmode:8000/api/v1/audit/log?action=session.revoked&limit=20",
