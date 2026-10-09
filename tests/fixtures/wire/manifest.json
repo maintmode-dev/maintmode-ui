@@ -359,6 +359,15 @@
           ]
         }
       }
+    },
+    "refresh": {
+      "url": "http://localhost:9000/auth/api/v1/refresh",
+      "method": "POST",
+      "status": "200 / 401 / 429 (seven shapes, see the file)",
+      "capturedAt": "2026-10-09",
+      "why": "POST /api/v1/refresh rotates on every call. A request that races the rotation inside the 30s grace window gets an access token and NO refresh_token (omitempty), and the lock answers 429 rather than the documented 409. The BFF must tell \"keep your refresh token\" and \"try again\" apart from \"the session is over\" (401 unauthorized), so every shape it branches on is pinned here.",
+      "handEdited": true,
+      "handEditedReason": "NOT RECORDED — transcribed. scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, and the shapes that matter here are a POST whose interesting answers are a 200 missing a field, four 401 envelopes and a 429. Producing them on a stand means signing in, spending a refresh token twice inside and past the grace window (which revokes the session) and racing the lock. Transcribed from backend release/v0.3.1 @ 03e1621 (files and lines named in the fixture _recorded field); tokens are placeholders. Re-record from a stand once a capture path for POST/non-2xx exists, and re-check after the backend change that returns the successor during grace and lets the lock wait."
     }
   },
   "gateway": "http://localhost:9000"

@@ -82,6 +82,47 @@ protected by a mechanism it does not have.
 
 ---
 
+### `refresh_token` on a grace refresh — the BFF requires it, the backend omits it
+
+| Field           | Where it is needed                                                                             | What is on the wire                                                                                | Ticket | Stub |
+| --------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------ | ---- |
+| `refresh_token` | `refreshBackendToken` (`backend-token-exchange.ts:384-386`) requires it on every refresh reply | absent (`omitempty`) when the token presented was rotated less than 30s ago (`refreshWithinGrace`) | —      | —    |
+
+`POST /api/v1/refresh` rotates on every call. A second request presenting the
+just-rotated token inside `refresh_token_grace_period` (30s) — a parallel tab,
+or a request that left the browser before the winner's cookie came back — gets
+a fresh access token and an EMPTY refresh token, meaning "keep the one you
+have". The BFF's shape check demands both tokens, throws, and
+`refreshAndPersist` answers every throw with `clearActiveSession()`: the losing
+request signs the user out, and its cookie-clear can land in the browser after
+the winner's fresh cookie. Pinned by the declared fixture
+[`refresh.json`](../tests/fixtures/wire/refresh.json) (`grace`).
+
+The same failure treatment hides three neighbouring discrepancies, recorded here
+so the repair addresses them together rather than as drive-bys:
+
+- **Lock busy is 429, not 409.** The swagger on `Refresh` documents 409 "Refresh
+  lock busy or token reuse"; the code answers `ErrLockBusy` with **429**
+  `lock is already held` and `Retry-After: 1`, and reuse with **401**. The BFF
+  treats a 429 — "try again in a second" — as a dead session.
+- **Only a 401 ends a session.** Reuse past grace, logout, idle/absolute expiry
+  and an unknown token all answer **401 `unauthorized`** (`unauthorizedErrors`
+  in `httperrors/mapper.go`). The BFF clears the cookie on any failure,
+  including 5xx and a network error.
+- **The cookie outlives the session.** The backend ends a session
+  `session_max_lifetime` (720h) after sign-in, carried across rotations as
+  `SessionStartedAt`; the BFF re-arms the session cookie for 30 days on every
+  refresh (`session-token.ts:258`), so its lifetime has no relation to the
+  session's. The backend does not expose the sign-in time (no claim, no response
+  field).
+
+Executed by `contract-gaps.test.ts` ("refresh grace reply"): it feeds the
+recorded grace reply to the real `refreshBackendToken` and asserts it is
+REFUSED, so it fails — asking for this row to be closed — the moment the BFF
+accepts it.
+
+---
+
 ## Class C — the frontend no longer requests the field
 
 The gap was not closed — it became **unreachable**: the frontend stopped reading
