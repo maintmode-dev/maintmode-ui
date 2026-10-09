@@ -162,15 +162,47 @@ describe("refresh — as declared", () => {
     },
   );
 
+  /** Wraps a reply so a test can await the BFF reading its body. */
+  function readTracked(reply: ReturnType<typeof respond>) {
+    let markRead!: () => void;
+    const read = new Promise<void>((resolve) => {
+      markRead = resolve;
+    });
+    const text = reply.text;
+    reply.text = async () => {
+      markRead();
+      return text();
+    };
+    return { reply, read };
+  }
+
+  /**
+   * Resolves once the retry's timer is armed. Waiting for the fetch alone is
+   * not enough: the BFF arms the retry only after it has read the 429's body,
+   * cleared the request's own timeout and classified the refusal. Advancing the
+   * fake clock before that moves time past nothing, the timer is armed later
+   * and never fires, and the test hangs until vitest's timeout (seen on CI).
+   * Awaited on a promise, not polled for a number of event-loop turns: reaching
+   * the fetch involves real I/O whose duration a turn count cannot bound.
+   * Everything after the body read is microtasks, so one more turn settles it;
+   * the timer count then holds the retry alone, the request's timeout cleared.
+   * `setImmediate` is real under these fake timers.
+   */
+  async function untilRetryScheduled(busy: { read: Promise<void> }): Promise<void> {
+    await busy.read;
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+  }
+
   it("retries the declared lock-busy refusal after its Retry-After, keeping the session", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    fetchMock.mockResolvedValueOnce(respond(wire.lockBusy)).mockResolvedValueOnce(respond(wire.grace));
+    const busy = readTracked(respond(wire.lockBusy));
+    fetchMock.mockResolvedValueOnce(busy.reply).mockResolvedValueOnce(respond(wire.grace));
     const jar = await signedInJar();
 
     const pending = requestJar.run(jar, () => session.readActiveSession());
-    for (let i = 0; i < 1_000 && fetchMock.mock.calls.length < 1; i += 1) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+    await untilRetryScheduled(busy);
     await vi.advanceTimersByTimeAsync(999);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
@@ -183,7 +215,8 @@ describe("refresh — as declared", () => {
   it("keeps the session when lock-busy persists, failing the request as unavailable", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     vi.spyOn(console, "error").mockImplementation(() => {});
-    fetchMock.mockResolvedValue(respond(wire.lockBusy));
+    const busy = readTracked(respond(wire.lockBusy));
+    fetchMock.mockResolvedValue(busy.reply);
     const jar = await signedInJar();
     const before = jar.get(COOKIE);
 
@@ -193,9 +226,7 @@ describe("refresh — as declared", () => {
         () => null,
         (error: unknown) => error,
       );
-    for (let i = 0; i < 1_000 && fetchMock.mock.calls.length < 1; i += 1) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
+    await untilRetryScheduled(busy);
     await vi.advanceTimersByTimeAsync(2_000);
 
     const error = await settled;
