@@ -23,6 +23,11 @@ import { readActiveSession, forceSessionRefresh } from "@/server/auth/session-to
  *  - When there is no session, or the refresh still yields `401`, throws
  *    `BackendUnauthorizedError` so `routeErrorResponse` returns a
  *    normalized `{ status: 401, code: "AUTH_REQUIRED" }` payload.
+ *  - When a refresh could not be completed for a transient reason (lock busy,
+ *    backend 5xx, network), `SessionRefreshUnavailableError` propagates from
+ *    either call: the session cookie is kept and `routeErrorResponse` answers
+ *    503 `BACKEND_UNAVAILABLE` — not a 401, which would send a browser that
+ *    still holds a live session to /login.
  */
 export async function authenticatedBackendRequest<TResponse>(
   options: Omit<BackendRequestOptions, "accessToken">,

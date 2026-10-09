@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 /**
  * Executable registry — RUK-254, SPEC-RUK-254.md §4.4 (AC-4, AC-5).
@@ -30,7 +30,6 @@ const REGISTRY_PATH = join(process.cwd(), "docs/contract-gaps.md");
 const MAPPER_PATH = join(process.cwd(), "src/server/backend/contracts/maintenance-mapper.ts");
 const DTO_PATH = join(process.cwd(), "src/server/backend/contracts/maintmode-dto.ts");
 const DOMAIN_AUDIT_PATH = join(process.cwd(), "src/domain/audit/audit-log.ts");
-const AUDIT_PRESENTATION_PATH = join(process.cwd(), "src/domain/audit/audit-presentation.ts");
 
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIXTURE_DIR, name), "utf8"));
 const registry = readFileSync(REGISTRY_PATH, "utf8");
@@ -117,6 +116,58 @@ describe("registry — class B: fields the calendar wants and the wire does not 
 });
 
 /**
+ * CLOSED — the BFF required `refresh_token` on every refresh reply, and the
+ * backend omits it inside the 30s grace window ("keep the one you have").
+ *
+ * Runs the REAL `refreshBackendToken` against the declared grace reply with only
+ * `fetch` stubbed. While the gap was open this asserted the reply was REFUSED,
+ * and it went red when the repair landed. It now asserts the opposite, so the
+ * gap cannot reopen unnoticed; `refresh.contract.test.ts` pins what the session
+ * code then does with the reply.
+ */
+describe("registry — closed: refresh grace reply without `refresh_token`", () => {
+  type WireCase = { status: number; body: Record<string, unknown> };
+  const grace = fixture("refresh.json").grace as WireCase;
+
+  it("records a grace reply that carries an access token and no refresh token", () => {
+    // Precondition, with literal field names: without it the assertion below
+    // could pass against a fixture that simply gained a refresh token.
+    expect(typeof grace.body.access_token).toBe("string");
+    expect("refresh_token" in grace.body).toBe(false);
+  });
+
+  it("is accepted by refreshBackendToken", async () => {
+    process.env.MAINTMODE_API_BASE_URL ??= "http://backend.test/maintmode";
+    const { refreshBackendToken } = await import("@/server/auth/backend-token-exchange");
+    const text = JSON.stringify(grace.body);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: grace.status, statusText: "OK", text: async () => text })),
+    );
+    try {
+      const outcome = await refreshBackendToken("<refresh-token>").then(
+        () => "accepted",
+        () => "refused",
+      );
+      expect(
+        outcome === "accepted"
+          ? "accepted"
+          : "GAP REOPENED: the BFF refuses a refresh reply without `refresh_token` again, " +
+              "which signs out every request that races a rotation. See docs/contract-gaps.md.",
+      ).toBe("accepted");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps its closed row in docs/contract-gaps.md", () => {
+    expect(`refresh grace row closed: ${registry.includes("on a grace refresh — CLOSED")}`).toBe(
+      "refresh grace row closed: true",
+    );
+  });
+});
+
+/**
  * Class C — the frontend stopped asking, so the gap became unreachable.
  *
  * These rows describe fields the calendar type no longer declares (RUK-258).
@@ -192,11 +243,14 @@ describe("registry — class B: audit `details` is flat, not structured (RUK-171
  * reconciliation rather than by anyone noticing, and the count is 0 on the dev
  * seed — so there was no symptom available to notice.
  *
- * The gap is now closed, and the assertion is INVERTED to match: it fails if the
- * field is ever dropped from the DTO or the domain type again. A closed gap that
- * stops being checked is just a gap waiting to reopen.
+ * The v0.3.1 regroup retired that key (integration events now count under
+ * `settings`, which has a chip), so the check is generalised to the class: EVERY
+ * facet key in the recorded response must be declared in the DTO and in the
+ * domain type. It fails if the next counter the backend adds, or a renamed one,
+ * is dropped the same way. A closed gap that stops being checked is just a gap
+ * waiting to reopen.
  */
-describe("registry — class B′ (closed): `facets.integration` reaches the domain", () => {
+describe("registry — class B′ (closed): every wire facet reaches the domain", () => {
   it("is declared in AuditFacetsDto and in the domain AuditFacets", () => {
     const facets = (fixture("audit-log.json").facets ?? {}) as Record<string, unknown>;
     const dto = readFileSync(DTO_PATH, "utf8");
@@ -211,33 +265,21 @@ describe("registry — class B′ (closed): `facets.integration` reaches the dom
     );
 
     // Preconditions, so a failed lookup cannot masquerade as a passing check.
-    expect("integration" in facets).toBe(true);
+    // The anchors are literals, not read from the fixture.
+    expect(Object.keys(facets)).toEqual(expect.arrayContaining(["all", "settings"]));
     expect(dtoBlock.length).toBeGreaterThan(0);
     expect(domainBlock.length).toBeGreaterThan(0);
 
-    expect(`declared in DTO: ${dtoBlock.includes("integration")}`).toBe("declared in DTO: true");
-    expect(`declared in domain: ${domainBlock.includes("integration")}`).toBe("declared in domain: true");
-  });
+    const declared = (block: string, key: string) => new RegExp(`\\b${key}\\??:`).test(block);
+    const missingInDto = Object.keys(facets).filter((key) => !declared(dtoBlock, key));
+    const missingInDomain = Object.keys(facets).filter((key) => !declared(domainBlock, key));
 
-  it("is NOT yet a rendered category — that needs the category vocabulary", () => {
-    // Deliberate scope line. The counter now reaches the domain, but a visible
-    // "Integration" tab needs `AuditCategory`, `AUDIT_CATEGORIES` and
-    // `CATEGORY_ACTIONS` extended with integration actions the domain enum does
-    // not yet contain. That is a product decision, so it is recorded rather than
-    // quietly done. This assertion inverts when the tab ships.
-    const presentation = readFileSync(AUDIT_PRESENTATION_PATH, "utf8");
-    const categories = presentation.slice(
-      presentation.indexOf("export type AuditCategory"),
-      presentation.indexOf("const CATEGORY_ACTIONS"),
+    expect(`wire facets missing from the DTO: ${missingInDto.join(", ") || "none"}`).toBe(
+      "wire facets missing from the DTO: none",
     );
-    expect(categories.length).toBeGreaterThan(0);
-
-    expect(
-      categories.includes('"integration"')
-        ? "TAB SHIPPED: `integration` is now an AuditCategory. Update the note in " +
-            "docs/contract-gaps.md — the facet is fully rendered."
-        : "counter only",
-    ).toBe("counter only");
+    expect(`wire facets missing from the domain: ${missingInDomain.join(", ") || "none"}`).toBe(
+      "wire facets missing from the domain: none",
+    );
   });
 });
 
@@ -364,7 +406,7 @@ describe("the registry file itself", () => {
     // leaving them would have kept this assertion green (they are still named in
     // the registry, now under Class C) while claiming an enforcement that no
     // longer happens — a false statement no test would ever catch.
-    const enforced = ["resources", "details", "facets.integration"];
+    const enforced = ["resources", "details", "facets.integration", "refresh_token"];
     const undocumented = enforced.filter((field) => !registry.includes(field));
 
     expect(`undocumented enforced gaps: ${undocumented.join(", ") || "none"}`).toBe(

@@ -47,7 +47,7 @@ describe("public pages render without a QueryClientProvider", () => {
           <AcceptInvitePage
             token={status === "missing" ? undefined : "tok-1"}
             preview={{ status }}
-            acceptAction={async () => {}}
+            acceptAction={async () => ""}
             providers={[{ id: "google", type: "redirect", display_name: "Google" }]}
             passwordOffered
             passwordAcceptAction={async () => ({})}
@@ -64,7 +64,7 @@ describe("public pages render without a QueryClientProvider", () => {
     // Same hazard as accept-invite: `(public)` mounts ThemeProvider only, so a
     // `useQuery` anywhere under the login page white-screens every sign-in.
     const inert = {
-      signInAction: async () => {},
+      signInAction: async () => "",
       requestOtpAction: async () => ({}),
       otpSignInAction: async () => ({}),
       passwordSignInAction: async () => ({}),

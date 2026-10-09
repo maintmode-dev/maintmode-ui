@@ -8,7 +8,7 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
   revokeAllBackendSessions: vi.fn(async () => undefined),
 }));
 vi.mock("@/server/auth/session-token", () => ({
-  readActiveSession: vi.fn(async () => ({ accessToken: "access-1", refreshToken: "refresh-1" })),
+  readActiveSessionForSignOut: vi.fn(async () => ({ accessToken: "access-1", refreshToken: "refresh-1" })),
   clearActiveSession: vi.fn(async () => undefined),
 }));
 vi.mock("@/server/backend/security/csrf", () => ({

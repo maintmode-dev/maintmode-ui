@@ -79,7 +79,7 @@ describe("RecoverySignInPage", () => {
  */
 describe("/login never links to the recovery page", () => {
   const actions = {
-    signInAction: async () => {},
+    signInAction: async () => "",
     requestOtpAction: async () => ({}),
     otpSignInAction: async () => ({}),
     passwordSignInAction: async () => ({}),

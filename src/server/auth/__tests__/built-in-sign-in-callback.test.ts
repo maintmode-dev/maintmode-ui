@@ -257,7 +257,10 @@ describe("failures are attributed to the stage that actually failed", () => {
       ),
     );
 
-    expect(code).toBe(AUTH_ERROR_CODES.otpRateLimited);
+    // The literal, not the constant: the bug was the wrong NAME on the wire to
+    // /login (`otp_rate_limited` for a password form), which a constant read
+    // back out of the module under test cannot catch.
+    expect(code).toBe("rate_limited");
   });
 
   it("distinguishes a profile-load failure from a credential failure", async () => {

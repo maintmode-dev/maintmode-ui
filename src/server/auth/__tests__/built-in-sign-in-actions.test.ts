@@ -37,7 +37,10 @@ vi.mock("@/server/auth/otp-nonce-cookie", () => ({
   putBindingToSleep: (...args: unknown[]) => putBindingToSleep(...args),
 }));
 
-vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+// The action asks `hasActiveSession`, which is `readActiveSession` read as a boolean.
+vi.mock("@/server/auth/session-token", () => ({
+  hasActiveSession: async () => Boolean(await readActiveSession()),
+}));
 vi.mock("next/navigation", () => ({ redirect: (to: string) => redirect(to) }));
 
 const {
@@ -192,12 +195,12 @@ describe("credentialsSignInAction — the destination is sanitized here too", ()
     expect(result.error).toBe("otp_rate_limited");
   });
 
-  it("passes a rate limit through for a password too", async () => {
-    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "otp_rate_limited" }));
+  it("passes a rate limit through for a password too, under its own name", async () => {
+    signIn.mockRejectedValue(Object.assign(new Error("x"), { code: "rate_limited" }));
 
     const result = await credentialsSignInAction({ kind: "password", email: "a@b.test", password: "right" });
 
-    expect(result.error).toBe("otp_rate_limited");
+    expect(result.error).toBe("rate_limited");
   });
 
   it("still answers every other password failure with the uniform one", async () => {

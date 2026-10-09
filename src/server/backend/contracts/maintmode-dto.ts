@@ -512,7 +512,8 @@ export interface AuditLogFieldChangeDto {
  * (+failure_reason on `login.failed`); logout → session_id/logout_kind;
  * `roles.changed`/`user.blocked`/`user.unblocked` → roles_added/removed/roles
  * + target_*; `maintenance.*`/`maintenance_step.*` → maint_title (+ changes on
- * `maintenance.updated`).
+ * `maintenance.updated`); `session.revoked` → ip/user_agent/session_id +
+ * revoke_reason.
  */
 export interface AuditLogMetadataDto {
   ip?: string;
@@ -520,6 +521,8 @@ export interface AuditLogMetadataDto {
   session_id?: string;
   failure_reason?: string;
   logout_kind?: string;
+  /** `session.revoked` only; backend enum `token_reuse`. */
+  revoke_reason?: string;
   roles?: string[];
   roles_added?: string[];
   roles_removed?: string[];
@@ -531,21 +534,24 @@ export interface AuditLogMetadataDto {
   changes?: AuditLogFieldChangeDto[];
 }
 
-/** `apiauthmodels.AuditFacets` — category counts over the actor/date window. */
+/**
+ * `apiauthmodels.AuditFacets` — category counts over the actor/date window.
+ *
+ * Keys changed in v0.3.1 (backend feat/audit-categories-regroup): the old
+ * `auth` / `roles` / `block` / `integration` counters are gone. Integration
+ * events — which this type once failed to declare, so their count was dropped
+ * (RUK-254 reconciliation) — now count under `settings`.
+ */
 export interface AuditFacetsDto {
   all?: number;
-  auth?: number;
-  roles?: number;
-  block?: number;
+  /** login.success, login.failed, logout.success. */
+  sign_in?: number;
+  /** Roles, tags, block/unblock, password changes and resets, provider links. */
+  users?: number;
+  /** auth_method.toggled and integration.created/updated/deleted. */
+  settings?: number;
+  /** maintenance.* and maintenance_step.*. */
   maintenance?: number;
-  /**
-   * Integration events. The backend has been counting these all along; this
-   * type did not declare the field, so `mapAuditFacets` dropped it and the
-   * category could not render. Found by the RUK-254 DTO↔wire reconciliation,
-   * not by anyone noticing a missing tab — the count is 0 on the dev seed, so
-   * there was no visible symptom to notice.
-   */
-  integration?: number;
 }
 
 /** `apiauthmodels.AuditLogResponse` — `{ logs, total, facets }`. */

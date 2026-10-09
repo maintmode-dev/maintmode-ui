@@ -81,17 +81,14 @@ function mockAuditPage(params: AuditQueryParams): AuditPage {
       auditActionInCategory(e.action, params.category) &&
       (!actor || (e.actor ?? "").toLowerCase().includes(actor)),
   );
+  const count = (category: AuditCategory) =>
+    MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, category)).length;
   const facets: AuditFacets = {
     all: MOCK_GLOBAL_AUDIT.length,
-    auth: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "auth")).length,
-    roles: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "roles")).length,
-    block: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "block")).length,
-    maintenance: MOCK_GLOBAL_AUDIT.filter((e) => auditActionInCategory(e.action, "maintenance")).length,
-    // Always 0 in mock mode: `integration` is a facet the BACKEND counts, and no
-    // mock fixture produces integration events. It is not an `AuditCategory`
-    // either — rendering a tab for it needs the category vocabulary extended,
-    // which is a product decision, not a mapping fix.
-    integration: 0,
+    sign_in: count("sign_in"),
+    users: count("users"),
+    settings: count("settings"),
+    maintenance: count("maintenance"),
   };
   return {
     events: filtered.slice(params.offset, params.offset + params.limit),

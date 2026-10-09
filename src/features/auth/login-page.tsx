@@ -31,9 +31,10 @@ export interface LoginPageProps {
    * Supplied by the server page (`src/app/(public)/login/page.tsx`) so this
    * browser-owned component never imports the server auth boundary. A server
    * action, so Next checks its Origin and the destination stays closed over on
-   * the server.
+   * the server. Resolves to the backend's `/start` URL, which the button
+   * leaves for with a full navigation.
    */
-  signInAction: (providerId: string) => Promise<void>;
+  signInAction: (providerId: string) => Promise<string>;
   /** Step one of the OTP flow: mails a code and binds it to this browser. */
   requestOtpAction: (email: string) => Promise<{ error?: string; expiresAt?: number; refused?: number }>;
   /** Step two, and the password form: establishes the session. */
@@ -114,6 +115,7 @@ const BUILT_IN_ERROR_CODES: ReadonlySet<string> = new Set([
   "invalid_credentials",
   "otp_verification_failed",
   "otp_rate_limited",
+  "rate_limited",
   "password_reset_failed",
   "password_reset_unavailable",
   "password_policy_violation",
@@ -189,6 +191,11 @@ export function LoginPage({
   // touched yet.
   const [focusForm, setFocusForm] = useState(false);
   const refocusContinue = useRef(false);
+  // The address typed into whichever email form is showing. Password and
+  // emailed code share it, and so does "Forgot password?": the page swaps
+  // forms by remounting them (and Back unmounts them), so an address held only
+  // inside a form was wiped by every switch, and the user typed it again.
+  const [typedEmail, setTypedEmail] = useState("");
   // Which of the two screens renders. Without a step the forms are the page when
   // there is no provider, and the provider list is the page when there is no
   // form.
@@ -225,7 +232,7 @@ export function LoginPage({
 
         {resetting ? (
           <PasswordResetFlow
-            initialEmail={resumeEmail}
+            initialEmail={resumeEmail ?? typedEmail}
             initialStep={resumeEmail ? "code" : "email"}
             initialExpiresAt={resetInProgressExpiresAt}
             requestCode={requestPasswordResetAction}
@@ -251,6 +258,8 @@ export function LoginPage({
                 key={activeForm.id}
                 method={activeForm}
                 autoFocus={focusForm}
+                email={typedEmail}
+                onEmailChange={setTypedEmail}
                 onForgotPassword={() => {
                   setResetDone(false);
                   setResetting(true);
@@ -370,7 +379,15 @@ function BuiltInMethod({
   changeEmailAction,
   onForgotPassword,
   autoFocus,
-}: BuiltInMethodActions & { method: SignInMethod; onForgotPassword: () => void; autoFocus: boolean }) {
+  email,
+  onEmailChange,
+}: BuiltInMethodActions & {
+  method: SignInMethod;
+  onForgotPassword: () => void;
+  autoFocus: boolean;
+  email: string;
+  onEmailChange: (email: string) => void;
+}) {
   if (method.type === "password") {
     return (
       <div data-method-type="password">
@@ -379,6 +396,8 @@ function BuiltInMethod({
           submit={passwordSignInAction}
           onForgotPassword={onForgotPassword}
           autoFocus={autoFocus}
+          initialEmail={email}
+          onEmailChange={onEmailChange}
         />
       </div>
     );
@@ -393,6 +412,8 @@ function BuiltInMethod({
           submitCode={otpSignInAction}
           onChangeEmail={changeEmailAction}
           autoFocus={autoFocus}
+          initialEmail={email}
+          onEmailChange={onEmailChange}
         />
       </div>
     );

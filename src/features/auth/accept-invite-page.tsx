@@ -27,8 +27,9 @@ export interface AcceptInvitePageProps {
    * Server action that starts the backend OAuth dance for one provider,
    * carrying the invitation. The token is closed over on the server, mirroring
    * `/login`'s `signInAction`, so a client can never supply a token of its own.
+   * Resolves to the backend's `/start` URL, as `signInAction` does.
    */
-  acceptAction: (providerId: string) => Promise<void>;
+  acceptAction: (providerId: string) => Promise<string>;
   /**
    * The providers to offer, resolved on the server (`signInProviders`): every
    * one the backend advertises, or the Google fallback when the list could not

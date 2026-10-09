@@ -9,7 +9,7 @@ import type { SignInMethod } from "@/domain/auth/sign-in-method";
 // tests to keep the document free of stale renders.
 afterEach(() => cleanup());
 
-const noopAccept = vi.fn<(providerId: string) => Promise<void>>(async () => {});
+const noopAccept = vi.fn<(providerId: string) => Promise<string>>(async () => "");
 
 const GOOGLE: SignInMethod = { id: "google", type: "redirect", display_name: "Google" };
 const CUSTOM: SignInMethod = { id: "custom", type: "redirect", display_name: "Corporate SSO" };
@@ -20,7 +20,7 @@ function renderPage(
   extra: {
     signedInAs?: string;
     providers?: SignInMethod[];
-    acceptAction?: (providerId: string) => Promise<void>;
+    acceptAction?: (providerId: string) => Promise<string>;
     passwordOffered?: boolean;
     passwordAcceptAction?: (password: string) => Promise<{ error?: string }>;
   } = {},
@@ -241,13 +241,35 @@ describe("BUG-4 — an invitation can be accepted through any advertised provide
   it("starts the dance for the provider that was clicked", async () => {
     // Two providers, so a button wired to the other one — or to a literal —
     // cannot pass by coincidence.
-    const acceptAction = vi.fn<(providerId: string) => Promise<void>>(async () => {});
-    renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE, CUSTOM], acceptAction });
+    const START = "http://localhost:9000/auth/api/v1/login/oauth/custom/start?binding=B&invitation=tok-1";
+    const acceptAction = vi.fn<(providerId: string) => Promise<string>>(async () => START);
+    const assign = vi.fn();
+    const originalLocation = window.location;
+    // jsdom's `window.location` is sealed; replace the property to spy on
+    // `.assign()`, as `organization-suspended-page.test.tsx` does.
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: { ...originalLocation, assign } as unknown as Location,
+    });
+    try {
+      renderPage({ status: "valid" }, "tok-1", { providers: [GOOGLE, CUSTOM], acceptAction });
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue with Corporate SSO" }));
+      fireEvent.click(screen.getByRole("button", { name: "Continue with Corporate SSO" }));
 
-    await waitFor(() => expect(acceptAction).toHaveBeenCalledTimes(1));
-    expect(acceptAction.mock.calls[0]?.[0]).toBe("custom");
+      await waitFor(() => expect(acceptAction).toHaveBeenCalledTimes(1));
+      expect(acceptAction.mock.calls[0]?.[0]).toBe("custom");
+      // A FULL navigation to the URL the action answered, not the action's own
+      // `redirect()`: on a same-origin auth base Next soft-navigates that and
+      // `/start` is never requested — the invite button did nothing.
+      await waitFor(() => expect(assign).toHaveBeenCalledWith(START));
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        writable: true,
+        value: originalLocation,
+      });
+    }
   });
 
   it("still offers nothing to a signed-in visitor, whatever is configured", () => {

@@ -8,7 +8,7 @@ import { LoginPage } from "../login-page";
 // tests to keep the document free of stale renders.
 afterEach(() => cleanup());
 
-const noopSignIn = vi.fn(async () => {});
+const noopSignIn = vi.fn(async () => "");
 
 function renderLogin(error?: string) {
   render(

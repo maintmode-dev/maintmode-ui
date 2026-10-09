@@ -8,7 +8,7 @@ import { bindWithinReissueCooldown, putBindingToSleep, setOtpBinding } from "@/s
 import { AUTH_ERROR_CODES } from "@/server/auth/contracts";
 import { safeNext } from "@/server/auth/safe-next";
 import { signInWithBackendLogin } from "@/server/auth/sign-in";
-import { readActiveSession } from "@/server/auth/session-token";
+import { hasActiveSession } from "@/server/auth/session-token";
 
 /**
  * Server actions behind the built-in sign-in methods (RUK-288).
@@ -120,10 +120,9 @@ export async function credentialsSignInAction(
     // a moment"). Collapsed into the uniform failure it told a throttled user
     // their code was wrong and spent their local attempt budget.
     // The same holds for a password: retyping a correct one into the limiter
-    // only keeps it refusing. One code for both, as the backend's per-address
-    // budget is one for both.
-    if (code === AUTH_ERROR_CODES.otpRateLimited) {
-      return { error: AUTH_ERROR_CODES.otpRateLimited };
+    // only keeps it refusing. Each flow keeps its own name for it.
+    if (code === AUTH_ERROR_CODES.otpRateLimited || code === AUTH_ERROR_CODES.rateLimited) {
+      return { error: code };
     }
     if (input.kind === "password") {
       return { error: AUTH_ERROR_CODES.invalidCredentials };
@@ -164,7 +163,7 @@ const INVITE_ACCEPT_ERRORS: ReadonlySet<string> = new Set([
  * accepting means BECOMING the invited person, and the backend claims the
  * invitation in the same transaction that creates the account — so a click from
  * someone already signed in (an admin checking the link) would spend it on the
- * wrong browser. `readActiveSession()` because an action may write the cookie
+ * wrong browser. `hasActiveSession()` because an action may write the cookie
  * its refresh rotates; the page uses `readSessionUser()` for the same reason it does there.
  *
  * Exported, so callable by action id with any token — which grants nothing the
@@ -177,7 +176,7 @@ export async function acceptInvitationWithPasswordAction(input: {
   invitationToken: string;
   password: string;
 }): Promise<SignInActionResult> {
-  if (await readActiveSession()) {
+  if (await hasActiveSession()) {
     redirect("/");
   }
   if (!input.invitationToken) {

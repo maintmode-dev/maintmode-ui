@@ -687,6 +687,45 @@ describe("transport status copy is preserved verbatim", () => {
 });
 
 /**
+ * DEF-7 (2026-10-08 self-host acceptance). Email is not a channel transport —
+ * the backend offers only Slack and Telegram for channels — yet the Email
+ * dialog promised maintenance notifications and "channels using this
+ * transport". Its copy must name what email actually carries, and the disabled
+ * state must say what stops working.
+ */
+describe("email status copy names what email carries", () => {
+  const renderEmail = () => renderDialog({ name: "email", integration: EMAIL_CONFIGURED("mandatory") });
+
+  // The kind's description is the subtitle of the SET-UP dialog; an edit dialog
+  // shows "Updated …" there instead.
+  it("describes email by its three kinds of mail, not by notifications", () => {
+    renderDialog({ name: "email" });
+    expect(
+      screen.getByText("Sends invitations, sign-in codes and password-reset codes over SMTP."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/maintenance notifications/i)).toBeNull();
+  });
+
+  it("does not speak of channels when enabled", () => {
+    renderEmail();
+    expect(
+      screen.getByText("Invitations, sign-in codes and password resets are sent through this server."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/channels using this transport/i)).toBeNull();
+  });
+
+  it("says what stops working when disabled", () => {
+    renderEmail();
+    fireEvent.click(screen.getByLabelText("Integration enabled"));
+    expect(
+      screen.getByText(
+        "Invitations, sign-in codes and password resets are not sent — email-code sign-in and password reset stop working. Settings are kept.",
+      ),
+    ).toBeTruthy();
+  });
+});
+
+/**
  * UX-8 (v0.2.0-rc), the dialog's half. A turned-off provider reports
  * `health: "disabled"`, and the edit dialog drew "Sign-in status: Turned off"
  * right above a Status switch already reading "Disabled". The row's half is in

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApprovalRow, ApprovalsPage as ApprovalsPageData } from "@/domain/maintenance/approval";
@@ -31,6 +31,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock("@/features/_shared/timezone/use-timezone", () => ({
   useTimezone: () => ({ zone: "UTC", ready: true }),
 }));
+
+import { toast } from "sonner";
 
 import { ApprovalsPage } from "../approvals-page";
 
@@ -373,5 +375,66 @@ describe("ApprovalsPage — row click", () => {
     await waitFor(() =>
       expect(bffFetchMock.mock.calls.some(([p]) => String(p).startsWith("/api/maintenance/m-42"))).toBe(true),
     );
+  });
+});
+
+describe("ApprovalsPage — approving from the quick-sheet", () => {
+  const approvable = {
+    id: "m-42",
+    title: "Cluster upgrade",
+    status: "draft",
+    impact: "partial_outage",
+    scope: "resource",
+    planned_period: { start: "2026-08-01T10:00:00Z", end: "2026-08-01T12:00:00Z" },
+    resources: [],
+    notify_targets: [],
+    steps: [],
+    conflicts: [],
+    actions: { can_edit: false, can_cancel: false, can_approve: true, can_start: false, can_complete: false },
+    revision: 3,
+    created_at: "2026-07-30T09:15:00Z",
+  };
+
+  /** Serves the queue and the detail; the approve POST resolves or rejects. */
+  function serveApprove(outcome: "ok" | "conflict") {
+    vi.mocked(toast.error).mockClear();
+    bffFetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path.startsWith("/api/approvals")) return page([approval({ id: "m-42" })]);
+      if (path === "/api/maintenance/m-42/actions/approve" && init?.method === "POST") {
+        if (outcome === "conflict") throw new BffError(409, "maintenance changed since preview");
+        return {};
+      }
+      if (path === "/api/maintenance/m-42") return approvable;
+      throw new Error(`unexpected bffFetch: ${path}`);
+    });
+  }
+
+  async function openAndApprove() {
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    bodyRows()[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
+    await waitFor(() =>
+      expect(bffFetchMock.mock.calls.some(([p]) => p === "/api/maintenance/m-42/actions/approve")).toBe(true),
+    );
+  }
+
+  // Left open, the sheet showed the now-PLANNED item over a queue it had left,
+  // and its modal overlay swallowed the next click on the list.
+  it("closes the sheet once the approval succeeds", async () => {
+    serveApprove("ok");
+    await openAndApprove();
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("keeps the sheet open when the approval is refused", async () => {
+    serveApprove("conflict");
+    await openAndApprove();
+
+    // The refusal is explained by a toast and the detail refetches; the
+    // reviewer stays on the item to look again.
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(screen.getByRole("dialog")).toBeDefined();
   });
 });

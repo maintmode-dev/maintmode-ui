@@ -83,9 +83,12 @@ describe("GET /api/audit — request forwarding", () => {
  * times because a claim about the contract met a different capture.
  *
  * `actor_id` / `actor_display_name` were here first: one capture had them on all
- * 12 rows. They are in fact conditional — `login.success` and the `prune-*`
- * housekeeping rows are system-generated and name nobody. Then `entity_type`
- * went, because the `prune-*` rows omit it too.
+ * 12 rows. They are in fact conditional — `login.success` rows name nobody by
+ * display name. Then `entity_type` went, because two `prune-*` rows omitted it.
+ * Those rows later turned out to be residue of the BACKEND'S OWN TEST
+ * (`prune_test.go` writes them into the database the capture read) and were
+ * removed from the fixture (RUK-297), but `entity_type` stays out: the wire
+ * model marks it `omitempty`, so it is not a universal either.
  *
  * The lesson is worth more than the list: a tally observed in one capture
  * ("present on all 12 rows") is not an invariant, and asserting it produces a
@@ -117,8 +120,8 @@ describe("GET /api/audit — the recorded response still matches the contract", 
     //
     // What it deliberately does NOT claim is how MANY rows carry it. Two earlier
     // versions did — "all 12 rows", then "every row with an `actor_id`" — and a
-    // later capture broke both: system rows (`login.success`, `prune-*`) name
-    // nobody, and one `roles.changed` row carries an `actor_id` with an empty
+    // later capture broke both: system rows (`login.success`) name nobody, and
+    // one `roles.changed` row carries an `actor_id` with an empty
     // `actor` and no display name. Both claims were tallies from one capture
     // dressed up as invariants. The refutable claim is existence, so that is
     // what is asserted: it fails only if the backend stops sending the field
@@ -129,7 +132,8 @@ describe("GET /api/audit — the recorded response still matches the contract", 
     // next capture: "on every row", "on every row with an actor_id", "on at
     // least one row". The wire says the field rides on the ACTION: `roles.changed`
     // and `maintenance.*` rows carry it, `login.success` carries an `actor_id`
-    // without it, and `prune-*` rows carry neither. So there is no pairing rule
+    // without it (and the omitempty wire model allows neither). So there is no
+    // pairing rule
     // to assert, and which of those a capture contains is decided by whatever
     // happened most recently — including this script's own dev-bypass logins,
     // which flood the window with `login.success`.
@@ -177,50 +181,81 @@ describe("GET /api/audit — response pass-through", () => {
     expect(typeof body.total).toBe("number");
   });
 
-  it("does not silently drop recorded rows the domain enum has not heard of", async () => {
-    // This assertion caught drift arriving, which is what it was written for.
+  it("drops no recorded row", async () => {
+    // This assertion caught drift arriving, which is what it was written for:
+    // an allowlist in the mapper dropped every row whose action the domain enum
+    // had not heard of — five real security events among them (RUK-297).
+    // Unknown actions are now rendered as neutral rows, so NOTHING with an id
+    // and an action may vanish between the wire and the client. No exception
+    // list: the `prune-*` exception that used to live here guarded rows that
+    // were never a contract (backend test residue, see docs/contract-gaps.md).
     //
-    // `mapAuditAction` (audit-mapper.ts:36) whitelists the wire action against
-    // the domain enum and answers `undefined` for anything unknown, and the
-    // route drops those rows. The backend has since started emitting `prune-*`
-    // housekeeping actions, so 2 of 12 recorded rows now vanish between the wire
-    // and the screen — an audit log quietly showing less than happened, which on
-    // a security screen is the worst kind of wrong. Recorded in
-    // docs/contract-gaps.md; fixing it is out of scope here (SPEC §5).
-    //
-    // The assertion is written as the DROPPED SET rather than a count, so when
-    // it fails it names the actions to add to the enum.
+    // Written as the DROPPED SET rather than a count, so a failure names what
+    // went missing.
     const body = await (await GET(new Request("http://localhost/api/audit?limit=20"))).json();
 
     const recorded = wire.logs ?? [];
+    expect(recorded.length).toBeGreaterThan(0);
     const survivingIds = new Set((body.events as { id: string }[]).map((event) => event.id));
     const droppedActions = [
       ...new Set(recorded.filter((log) => !survivingIds.has(log.id as string)).map((log) => log.action)),
     ];
 
-    // Known-dropped today. Anything NEW appearing here is fresh drift.
-    const KNOWN_UNMODELLED = /^prune-/;
-    const unexpected = droppedActions.filter((action) => !KNOWN_UNMODELLED.test(String(action)));
+    expect(`dropped actions: ${droppedActions.join(", ") || "none"}`).toBe("dropped actions: none");
+  });
 
-    expect(`unexpectedly dropped actions: ${unexpected.join(", ") || "none"}`).toBe(
-      "unexpectedly dropped actions: none",
-    );
-    // Everything with a modelled action must survive with its id intact.
-    const modelled = recorded.filter((log) => !KNOWN_UNMODELLED.test(String(log.action)));
-    expect(`modelled rows reaching the client: ${survivingIds.size} of ${modelled.length}`).toBe(
-      `modelled rows reaching the client: ${modelled.length} of ${modelled.length}`,
-    );
+  it("keeps a row whose action this build has never heard of", async () => {
+    // The class fix, not the five-action fix: the next action the backend adds
+    // reaches the screen as a neutral row before anyone models it. The row is a
+    // recorded one with only its action swapped for a literal no enum contains.
+    const [row] = (wire.logs ?? []).filter((log) => log.action === "login.success");
+    expect(row).toBeDefined();
+    backendRequest.mockResolvedValueOnce({ ...wire, logs: [{ ...row, action: "brand.new_action" }] });
+
+    const body = await (await GET(new Request("http://localhost/api/audit?limit=20"))).json();
+
+    expect(body.events.map((e: { action: string }) => e.action)).toEqual(["brand.new_action"]);
+    expect(body.events[0].id).toBe(row.id);
   });
 
   it("passes the facet counts through so the category tabs can render", async () => {
     const body = await (await GET(new Request("http://localhost/api/audit?limit=20"))).json();
 
     // Field NAMES are independent literals: the mapper renaming or dropping a
-    // facet fails here regardless of what the fixture holds.
-    expect(Object.keys(body.facets)).toEqual(
-      expect.arrayContaining(["all", "auth", "roles", "block", "maintenance"]),
-    );
-    expect(typeof body.facets.all).toBe("number");
+    // facet fails here regardless of what the fixture holds. Exact set, not
+    // `arrayContaining`: a leftover pre-v0.3.1 key (`auth`, `roles`, `block`,
+    // `integration`) is a chip count nothing renders.
+    expect(Object.keys(body.facets).sort()).toEqual(["all", "maintenance", "settings", "sign_in", "users"]);
+    for (const [key, value] of Object.entries(body.facets)) {
+      expect(typeof value, `facets.${key}`).toBe("number");
+    }
+  });
+
+  it("records the regrouped facet keys on the wire, every one a number", () => {
+    // The backend side of the same contract, read from the capture itself: the
+    // v0.3.1 regroup renamed the keys, and a capture still carrying the old ones
+    // means the fixture predates the backend the UI ships with. A string here is
+    // the normaliser masking a count (it once turned `auth` into
+    // "<redacted-auth>"), which would make the fixture describe a wire that
+    // never existed.
+    const facets = (wire.facets ?? {}) as Record<string, unknown>;
+
+    expect(Object.keys(facets).sort()).toEqual(["all", "maintenance", "settings", "sign_in", "users"]);
+    for (const [key, value] of Object.entries(facets)) {
+      expect(typeof value, `facets.${key}`).toBe("number");
+    }
+  });
+
+  it("counts every recorded action under exactly one category, so the categories sum to `all`", () => {
+    // Since the regroup no action is All-only on the backend: the four category
+    // counters partition `all`. If this breaks on a fresh capture, the backend
+    // writes an action its category map does not know (or the UI now ships
+    // against a backend that left one out) — a row the operator can only find
+    // under All.
+    const { all, sign_in, users, settings, maintenance } = wire.facets ?? {};
+
+    expect(all).toBeGreaterThan(0);
+    expect((sign_in ?? 0) + (users ?? 0) + (settings ?? 0) + (maintenance ?? 0)).toBe(all);
   });
 });
 
@@ -258,6 +293,123 @@ describe("GET /api/audit — integration rows", () => {
         { field: "secrets.bot_token" },
       ]),
     );
+  });
+});
+
+/**
+ * RUK-297. Five actions the backend writes were dropped by the route as unknown:
+ * the security log never showed a password change, a reset, a provider link, a
+ * sign-in method toggle, or an admin editing someone's messenger tags. Captured
+ * from the self-host stand — see the fixture's manifest entry for which row came
+ * from where (the provider link is the REFUSED variant).
+ */
+describe("GET /api/audit — RUK-297 security events", () => {
+  const securityWire = readWireFixture<AuditLogResponseDto>("audit-log-security-events.json");
+
+  async function securityBody() {
+    backendRequest.mockResolvedValueOnce(securityWire);
+    return (await GET(new Request("http://localhost/api/audit?limit=20"))).json() as Promise<{
+      events: {
+        id: string;
+        action: string;
+        entity_id?: string;
+        details?: string;
+        metadata?: { ip?: string; failure_reason?: string; target_email?: string; changes?: unknown[] };
+      }[];
+      total: number;
+    }>;
+  }
+
+  it("delivers every one of the five actions, and every recorded row", async () => {
+    const body = await securityBody();
+
+    // Literal action names — the set this ticket is about, not read back out of
+    // the fixture.
+    expect(new Set(body.events.map((e) => e.action))).toEqual(
+      new Set([
+        "auth_method.toggled",
+        "password.changed",
+        "password.reset",
+        "provider.linked",
+        "user.tags_changed",
+      ]),
+    );
+    expect(body.events).toHaveLength((securityWire.logs ?? []).length);
+  });
+
+  it("carries the tag diff of user.tags_changed, both one-sided and two-sided", async () => {
+    const tags = (await securityBody()).events.filter((e) => e.action === "user.tags_changed");
+
+    expect(tags.length).toBeGreaterThan(0);
+    for (const row of tags) expect(row.metadata?.target_email).toEqual(expect.any(String));
+    const changes = tags.flatMap((row) => row.metadata?.changes ?? []);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "telegram_tag", old: expect.any(String), new: expect.any(String) }),
+        expect.objectContaining({ field: "slack_tag", new: expect.any(String) }),
+      ]),
+    );
+  });
+
+  it("keeps the sign-in context on credential events and the reason on a refused link", async () => {
+    const events = (await securityBody()).events;
+
+    for (const action of ["password.changed", "password.reset", "provider.linked"]) {
+      const row = events.find((e) => e.action === action);
+      expect(row?.metadata?.ip, action).toEqual(expect.any(String));
+    }
+    expect(events.find((e) => e.action === "provider.linked")?.metadata?.failure_reason).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it("names the method a sign-in method toggle acted on", async () => {
+    const toggled = (await securityBody()).events.find((e) => e.action === "auth_method.toggled");
+
+    // `entity_id` is the method; the UI shows it as the target.
+    expect(toggled?.entity_id).toMatch(/^email_(otp|password)$/);
+  });
+});
+
+/**
+ * `session.revoked` — the backend revoking a session on its own because a
+ * rotated refresh token was replayed after its grace window. Captured from the
+ * self-host stand after triggering exactly that; see the fixture's manifest
+ * entry. The row is the trail's only record of a possible token theft, so the
+ * fields an operator reads it by must survive the route.
+ */
+describe("GET /api/audit — session.revoked", () => {
+  const revokedWire = readWireFixture<AuditLogResponseDto>("audit-log-session-revoked.json");
+
+  async function revokedBody() {
+    backendRequest.mockResolvedValueOnce(revokedWire);
+    return (await GET(new Request("http://localhost/api/audit?action=session.revoked"))).json() as Promise<{
+      events: {
+        action: string;
+        entity_type?: string;
+        metadata?: { ip?: string; user_agent?: string; session_id?: string; revoke_reason?: string };
+      }[];
+    }>;
+  }
+
+  it("delivers the revocation instead of dropping it as an unknown action", async () => {
+    const body = await revokedBody();
+
+    expect(body.events.length).toBeGreaterThan(0);
+    expect(body.events.length).toBe((revokedWire.logs ?? []).length);
+    for (const row of body.events) expect(row.action).toBe("session.revoked");
+  });
+
+  it("keeps the replaying request's context and the reason the backend names", async () => {
+    for (const row of (await revokedBody()).events) {
+      expect(row.entity_type).toBe("user");
+      expect(row.metadata?.ip).toEqual(expect.any(String));
+      expect(row.metadata?.user_agent).toEqual(expect.any(String));
+      expect(row.metadata?.session_id).toEqual(expect.any(String));
+      // The backend's enum value (apiauthmodels.AuditLogMetadata.revoke_reason),
+      // a literal rather than read back out of the fixture.
+      expect(row.metadata?.revoke_reason).toBe("token_reuse");
+    }
   });
 });
 

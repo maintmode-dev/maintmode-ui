@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 
 import { parseMaintmodeAuthConfig } from "@/shared/config/auth-config";
-import { readActiveSession } from "@/server/auth/session-token";
+import { hasActiveSession } from "@/server/auth/session-token";
 import { AUTH_ERROR_CODES, type AuthErrorCode } from "@/server/auth/contracts";
 import {
   clearOAuthBinding,
@@ -26,11 +26,36 @@ import type { LinkFailure } from "@/domain/auth/link-outcome";
  */
 
 /**
- * Sends the browser to the backend to begin the dance.
+ * Prepares the browser to begin the dance and answers the backend URL to leave for.
  *
  * Everything OAuth now happens on the backend: it mints the state and the PKCE
  * verifier, holds the client secret, and talks to the provider. This app's whole
- * part is one redirect.
+ * part is one navigation.
+ *
+ * RETURNS the `/start` URL rather than calling `redirect()`, and the button
+ * (`ProviderButton`) leaves with `window.location.assign`. In self-host and dev
+ * the public auth base is this app's own origin plus `/auth`, routed to the
+ * backend by the gateway — and Next's router treats a SAME-ORIGIN action
+ * redirect as an internal route: a client-side soft navigation that changes the
+ * address bar and never sends a request, so the gateway never sees `/start` and
+ * the button looks dead. Only a cross-origin target gets Next's hard navigation,
+ * and which one this is depends on deployment config. The cookies are still
+ * written here, on this action's response, so they are in place before the
+ * browser navigates.
+ *
+ * How it decides, and why `redirect()` used to work: for a same-origin target
+ * Next's SERVER fetches it from its own listener with `RSC: 1`, bypassing the
+ * gateway (`createRedirectRenderResult` in Next's action handler). An RSC answer
+ * becomes a soft navigation; a failed fetch falls back to a hard one. `/start`
+ * is not a route here, so that fetch lands in `proxy.ts`, which sends a
+ * signed-out visitor to `/login`. Under Auth.js the proxy's redirect was
+ * absolute, built from the PUBLIC origin — unreachable from inside the
+ * container — so the fetch failed and the browser happened to hard-navigate.
+ * Since the session layer replaced Auth.js the redirect stays on this server,
+ * the fetch gets `/login`'s RSC, and the router renders the login form under
+ * the `/start` address. A second click then posts the action to `/start`, which
+ * the gateway answers 404 (GET only). Navigating ourselves takes Next out of a
+ * route it does not own instead of relying on that fetch failing.
  *
  * The destination is stashed first, because it cannot survive the round trip any
  * other way (see `oauth-next-cookie.ts`). It is sanitized here as well as inside
@@ -53,7 +78,7 @@ export async function startOAuthDanceAction(
   providerId: string,
   next?: string,
   invitation?: string,
-): Promise<void> {
+): Promise<string> {
   // Refuse before anything else, and unconditionally — not gated on `invitation`.
   //
   // This action is exported, so it is invocable by action id with
@@ -64,14 +89,18 @@ export async function startOAuthDanceAction(
   // the backend claims the invitation in phase 2, INSIDE the dance — the
   // invitation is spent before our receiver ever sees the code.
   //
-  // `readActiveSession()`, matching `completeOAuthDanceAction` below: a Server
+  // `hasActiveSession()`, matching `completeOAuthDanceAction` below: a Server
   // Action may write cookies, so its refresh-and-persist is legitimate here. A
   // page render may not, which is why the page uses `readSessionUser()` instead.
   //
   // `/login`'s caller never reaches this in practice — `proxy.ts` bounces a
   // signed-in user off that path — so this fires for a direct invocation, which
   // is the case it exists for.
-  if (await readActiveSession()) {
+  //
+  // Still a `redirect()`, unlike the success path: `/` is this app's own route,
+  // so the router's soft navigation is exactly right, and the throw means the
+  // button never reaches its `assign`.
+  if (await hasActiveSession()) {
     redirect("/");
   }
 
@@ -92,7 +121,7 @@ export async function startOAuthDanceAction(
     query.set("invitation", token);
   }
 
-  redirect(`${base}?${query.toString()}`);
+  return `${base}?${query.toString()}`;
 }
 
 /**
@@ -214,7 +243,7 @@ export async function completeOAuthDanceAction(formData: FormData): Promise<void
   // link" copy. Misleading at worst — the copy is a closed set, nothing from
   // the URL is rendered — and telling the two apart would take a "link
   // pending" cookie for a stale-tab edge case.
-  if (await readActiveSession()) {
+  if (await hasActiveSession()) {
     // A pending link (backend M1): the callback no longer links, it hands back
     // a one-time `link_code` that only this session, with this browser's
     // nonce, can complete. No nonce means this browser did not start it.

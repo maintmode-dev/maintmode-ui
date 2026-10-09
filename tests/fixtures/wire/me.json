@@ -1,7 +1,7 @@
 {
   "id": "<uuid-1>",
   "email": "<email-1>",
-  "display_name": "User Name[<uuid-2>]",
+  "display_name": "<display-name-1>",
   "roles": [
     "guest",
     "admin"

@@ -126,6 +126,12 @@ export function ApprovalsPage() {
         maintenanceId={selectedId}
         open={selectedId !== null}
         onOpenChange={(open) => !open && setSelectedId(null)}
+        // Every row here is a draft, so a successful action — in practice
+        // Approve — takes it out of this queue. Left open, the sheet showed a
+        // PLANNED item that is no longer in the list, and its overlay ate the
+        // reviewer's next click on the list. The success toast still confirms
+        // the outcome; the refetched queue shows what is left.
+        onActionSucceeded={() => setSelectedId(null)}
       />
     </div>
   );
