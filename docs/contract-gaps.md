@@ -82,44 +82,53 @@ protected by a mechanism it does not have.
 
 ---
 
-### `refresh_token` on a grace refresh — the BFF requires it, the backend omits it
+### `refresh_token` on a grace refresh — CLOSED 2026-10-09
 
-| Field           | Where it is needed                                                                             | What is on the wire                                                                                | Ticket | Stub |
-| --------------- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------ | ---- |
-| `refresh_token` | `refreshBackendToken` (`backend-token-exchange.ts:384-386`) requires it on every refresh reply | absent (`omitempty`) when the token presented was rotated less than 30s ago (`refreshWithinGrace`) | —      | —    |
+| Field           | Where it is needed                                       | What is on the wire                                                                                | Ticket | Status                                   |
+| --------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------- |
+| `refresh_token` | `refreshBackendToken`, `refreshAndPersist` (BFF refresh) | absent (`omitempty`) when the token presented was rotated less than 30s ago (`refreshWithinGrace`) | —      | closed — the BFF reads absence as "keep" |
 
 `POST /api/v1/refresh` rotates on every call. A second request presenting the
 just-rotated token inside `refresh_token_grace_period` (30s) — a parallel tab,
 or a request that left the browser before the winner's cookie came back — gets
 a fresh access token and an EMPTY refresh token, meaning "keep the one you
-have". The BFF's shape check demands both tokens, throws, and
-`refreshAndPersist` answers every throw with `clearActiveSession()`: the losing
-request signs the user out, and its cookie-clear can land in the browser after
-the winner's fresh cookie. Pinned by the declared fixture
+have". The BFF's shape check demanded both tokens and threw, and
+`refreshAndPersist` answered every throw with `clearActiveSession()`: the losing
+request signed the user out, and its cookie-clear could land in the browser
+after the winner's fresh cookie. Pinned by the declared fixture
 [`refresh.json`](../tests/fixtures/wire/refresh.json) (`grace`).
 
-The same failure treatment hides three neighbouring discrepancies, recorded here
-so the repair addresses them together rather than as drive-bys:
+**How it was closed.** `refreshBackendToken` requires the access token only. An
+absent or empty `refresh_token` serves the new access token to THIS request and
+leaves the cookie as it is — an empty refresh token is never written. A reply
+that does carry one (the backend may return the successor during grace) is a
+rotation like any other. Each settled refresh stays the answer for the token it
+spent for 60s, so a straggler still carrying the old cookie gets the identical
+pair instead of spending the token again.
+
+The same failure path hid three neighbouring discrepancies:
 
 - **Lock busy is 429, not 409.** The swagger on `Refresh` documents 409 "Refresh
   lock busy or token reuse"; the code answers `ErrLockBusy` with **429**
   `lock is already held` and `Retry-After: 1`, and reuse with **401**. The BFF
-  treats a 429 — "try again in a second" — as a dead session.
+  now retries 429 and 409 alike — plus 5xx and a network error — once, after
+  `Retry-After` (capped at 2s), and then fails the request with 503
+  `BACKEND_UNAVAILABLE`, keeping the cookie. The swagger itself is the
+  backend's to correct.
 - **Only a 401 ends a session.** Reuse past grace, logout, idle/absolute expiry
   and an unknown token all answer **401 `unauthorized`** (`unauthorizedErrors`
-  in `httperrors/mapper.go`). The BFF clears the cookie on any failure,
-  including 5xx and a network error.
-- **The cookie outlives the session.** The backend ends a session
+  in `httperrors/mapper.go`). That is now the only refresh answer that clears
+  the cookie; it used to be every failure.
+- **The cookie outlives the session — still open.** The backend ends a session
   `session_max_lifetime` (720h) after sign-in, carried across rotations as
-  `SessionStartedAt`; the BFF re-arms the session cookie for 30 days on every
-  refresh (`session-token.ts:258`), so its lifetime has no relation to the
-  session's. The backend does not expose the sign-in time (no claim, no response
-  field).
+  `SessionStartedAt`, and exposes that instant nowhere (no claim, no response
+  field); the BFF re-arms the session cookie for 30 days on every refresh, so
+  its lifetime has no relation to the session's. Repaired separately.
 
-Executed by `contract-gaps.test.ts` ("refresh grace reply"): it feeds the
-recorded grace reply to the real `refreshBackendToken` and asserts it is
-REFUSED, so it fails — asking for this row to be closed — the moment the BFF
-accepts it.
+Kept executable by `contract-gaps.test.ts` ("refresh grace reply", now asserting
+the reply is ACCEPTED, so the gap cannot quietly reopen) and by
+[`refresh.contract.test.ts`](../tests/contracts/refresh.contract.test.ts), which
+drives every declared shape through the real session code.
 
 ---
 

@@ -18,7 +18,10 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
 // The module also holds the receiver action, which signs in. Mocked so this
 // file exercises the redirect without loading the session layer.
 vi.mock("@/server/auth/sign-in", () => ({ signInWithDanceCode: vi.fn() }));
-vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+// The action asks `hasActiveSession`, which is `readActiveSession` read as a boolean.
+vi.mock("@/server/auth/session-token", () => ({
+  hasActiveSession: async () => Boolean(await readActiveSession()),
+}));
 const mintOAuthBinding = vi.fn(async () => "BINDING-HASH");
 vi.mock("@/server/auth/oauth-binding-cookie", () => ({
   mintOAuthBinding: () => mintOAuthBinding(),

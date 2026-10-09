@@ -116,26 +116,27 @@ describe("registry — class B: fields the calendar wants and the wire does not 
 });
 
 /**
- * Class B — the BFF requires `refresh_token` on every refresh reply, and the
+ * CLOSED — the BFF required `refresh_token` on every refresh reply, and the
  * backend omits it inside the 30s grace window ("keep the one you have").
  *
  * Runs the REAL `refreshBackendToken` against the declared grace reply with only
- * `fetch` stubbed. INVERTED like the rest: it holds while the BFF refuses the
- * reply, and fails the day it accepts it — at which point the row in
- * docs/contract-gaps.md is stale and must be closed.
+ * `fetch` stubbed. While the gap was open this asserted the reply was REFUSED,
+ * and it went red when the repair landed. It now asserts the opposite, so the
+ * gap cannot reopen unnoticed; `refresh.contract.test.ts` pins what the session
+ * code then does with the reply.
  */
-describe("registry — class B: refresh grace reply without `refresh_token`", () => {
+describe("registry — closed: refresh grace reply without `refresh_token`", () => {
   type WireCase = { status: number; body: Record<string, unknown> };
   const grace = fixture("refresh.json").grace as WireCase;
 
   it("records a grace reply that carries an access token and no refresh token", () => {
     // Precondition, with literal field names: without it the assertion below
-    // could pass against a fixture that simply lost its access token.
+    // could pass against a fixture that simply gained a refresh token.
     expect(typeof grace.body.access_token).toBe("string");
     expect("refresh_token" in grace.body).toBe(false);
   });
 
-  it("is still refused by refreshBackendToken", async () => {
+  it("is accepted by refreshBackendToken", async () => {
     process.env.MAINTMODE_API_BASE_URL ??= "http://backend.test/maintmode";
     const { refreshBackendToken } = await import("@/server/auth/backend-token-exchange");
     const text = JSON.stringify(grace.body);
@@ -149,19 +150,19 @@ describe("registry — class B: refresh grace reply without `refresh_token`", ()
         () => "refused",
       );
       expect(
-        outcome === "refused"
-          ? "refused"
-          : "GAP IS STALE: the BFF now accepts a refresh reply without `refresh_token`. " +
-              "Close its row in docs/contract-gaps.md and replace this check with the contract test.",
-      ).toBe("refused");
+        outcome === "accepted"
+          ? "accepted"
+          : "GAP REOPENED: the BFF refuses a refresh reply without `refresh_token` again, " +
+              "which signs out every request that races a rotation. See docs/contract-gaps.md.",
+      ).toBe("accepted");
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("has a row in docs/contract-gaps.md", () => {
-    expect(`refresh grace row in registry: ${registry.includes("on a grace refresh")}`).toBe(
-      "refresh grace row in registry: true",
+  it("keeps its closed row in docs/contract-gaps.md", () => {
+    expect(`refresh grace row closed: ${registry.includes("on a grace refresh — CLOSED")}`).toBe(
+      "refresh grace row closed: true",
     );
   });
 });

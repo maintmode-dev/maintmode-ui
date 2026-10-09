@@ -17,7 +17,10 @@ vi.mock("@/server/auth/oauth-next-cookie", () => ({
   setOAuthNext: vi.fn(),
 }));
 vi.mock("@/server/auth/sign-in", () => ({ signInWithDanceCode: (...args: unknown[]) => signIn(...args) }));
-vi.mock("@/server/auth/session-token", () => ({ readActiveSession: () => readActiveSession() }));
+// The action asks `hasActiveSession`, which is `readActiveSession` read as a boolean.
+vi.mock("@/server/auth/session-token", () => ({
+  hasActiveSession: async () => Boolean(await readActiveSession()),
+}));
 const readOAuthBindingProof = vi.fn();
 const clearOAuthBinding = vi.fn();
 vi.mock("@/server/auth/oauth-binding-cookie", () => ({

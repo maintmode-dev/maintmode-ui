@@ -43,7 +43,15 @@ export async function POST(request: Request) {
   // Read once. `readActiveSession` rotates the refresh token when the access
   // token is close to expiry, so calling it twice — or letting anything else
   // refresh between the read and the send — puts a superseded token in the body.
-  const session = await readActiveSession();
+  // A refresh the backend could not complete right now throws rather than
+  // reading as "signed out": answered 503 through the shared envelope, so the
+  // card says "try again" instead of the browser being sent to /login.
+  let session: Awaited<ReturnType<typeof readActiveSession>>;
+  try {
+    session = await readActiveSession();
+  } catch (error) {
+    return routeErrorResponse(error);
+  }
   if (!session) {
     return NextResponse.json({ error: "Sign-in is required", code: "AUTH_REQUIRED" }, { status: 401 });
   }
