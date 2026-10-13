@@ -38,6 +38,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
   process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
+  process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
   readActiveSession.mockResolvedValue({
     accessToken: "access-1",
     refreshToken: "refresh-1",
@@ -79,7 +80,7 @@ describe("me/password — request forwarding", () => {
     const { url, init } = wireRequest();
     expect(url).toContain("/api/v1/me/password");
     expect(init.method).toBe("POST");
-    expect(init.headers.authorization).toBe("Bearer access-1");
+    expect(new Headers(init.headers).get("authorization")).toBe("Bearer access-1");
   });
 
   it("forwards refresh_token, which is what keeps the caller signed in", async () => {

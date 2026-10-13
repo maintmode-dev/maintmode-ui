@@ -138,6 +138,7 @@ describe("registry — closed: refresh grace reply without `refresh_token`", () 
 
   it("is accepted by refreshBackendToken", async () => {
     process.env.MAINTMODE_API_BASE_URL ??= "http://backend.test/maintmode";
+    process.env.MAINTMODE_BACKEND_S2S_TOKEN ??= "s2s-token-for-tests-0123456789abcdef";
     const { refreshBackendToken } = await import("@/server/auth/backend-token-exchange");
     const text = JSON.stringify(grace.body);
     vi.stubGlobal(

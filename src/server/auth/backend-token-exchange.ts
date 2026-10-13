@@ -1,6 +1,7 @@
 import "server-only";
 
 import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
+import { applyBackendS2SHeaders } from "@/server/backend/client/s2s-headers";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
 import {
   BackendAuthError,
@@ -482,8 +483,9 @@ export async function fetchBackendMe(accessToken: string): Promise<BackendMeResp
  * Resolves `path` against the auth base URL and runs one `fetch` under the
  * configured timeout.
  *
- * Owns the request scaffold ONLY — the URL, the abort timer and the browser's
- * forwarded address and User-Agent (see `forwardedClientHeaders`), identical at every call site. It deliberately does not touch the response:
+ * Owns the request scaffold ONLY — the URL, the abort timer, the browser's
+ * forwarded address and User-Agent (see `forwardedClientHeaders`) and the BFF's
+ * client credential (see `s2s-headers.ts`), identical at every call site. It deliberately does not touch the response:
  * these endpoints disagree about what a response even is (a shape-checked JSON
  * body, a bare 204, a 401 classified by what the REQUEST carried), and some
  * throw where others return a discriminated result. Folding that in would erase
@@ -506,11 +508,18 @@ async function backendFetch<T>(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
+  // Every call here targets the auth base, so every one carries the client
+  // credential. Applied last: the `init.headers` above are a fixed internal set
+  // today, and this keeps it true if a caller ever passes one of the same name.
+  const headers = new Headers(forwardedClient);
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  applyBackendS2SHeaders(headers);
+
   try {
     return await handleResponse(
       await fetch(target, {
         ...init,
-        headers: { ...forwardedClient, ...init.headers },
+        headers,
         signal: controller.signal,
       }),
     );

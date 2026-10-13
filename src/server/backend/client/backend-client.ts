@@ -1,6 +1,7 @@
 import "server-only";
 
 import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
+import { applyBackendS2SHeaders } from "@/server/backend/client/s2s-headers";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
 import {
   BackendRequestError,
@@ -35,6 +36,18 @@ export async function backendRequest<TResponse>({
   const baseUrl = useAuthBase ? config.authApiBaseUrl : config.apiBaseUrl;
   const target = resolveBackendUrl(baseUrl, path);
   const forwardedClient = await forwardedClientHeaders();
+  const headers = new Headers({
+    ...forwardedClient,
+    accept: "application/json",
+    ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
+  });
+  new Headers(init.headers).forEach((value, name) => headers.set(name, value));
+  // The BFF's client credential goes to the auth base only — every request
+  // there, not just the endpoints the backend checks today (RUK-311). Applied
+  // last, so a caller's header of the same name cannot replace it.
+  if (useAuthBase) {
+    applyBackendS2SHeaders(headers);
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
@@ -52,12 +65,7 @@ export async function backendRequest<TResponse>({
         signal: init.signal
           ? AbortSignal.any([init.signal as AbortSignal, controller.signal])
           : controller.signal,
-        headers: {
-          ...forwardedClient,
-          accept: "application/json",
-          ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
-          ...init.headers,
-        },
+        headers,
       });
       body = await response.text();
     } catch (error) {

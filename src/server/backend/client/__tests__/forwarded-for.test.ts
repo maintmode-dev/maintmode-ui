@@ -44,6 +44,7 @@ function sentHeaders(): Headers {
 beforeEach(() => {
   process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
   process.env.MAINTMODE_AUTH_API_BASE_URL = "http://backend.test/auth";
+  process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
   for (const name of [...incoming.keys()]) incoming.delete(name);
   outsideRequestScope = false;
   fetchMock.mockClear();

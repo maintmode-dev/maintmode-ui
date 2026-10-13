@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
   process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
+  process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
 });
 
 afterEach(() => {
