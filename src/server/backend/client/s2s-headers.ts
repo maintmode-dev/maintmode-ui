@@ -56,7 +56,9 @@ export function reportRejectedClientCredential(path: string, bodyText: string): 
     }
     logError({
       level: "ERROR",
-      msg: `auth backend refused the BFF client credential; check that ${BACKEND_S2S_TOKEN_ENV} equals the backend's s2s secret for ${S2S_APPNAME}`,
+      // `invalid_client` covers every cause the backend's s2s check has: wrong
+      // secret, unknown app name, or a path not allowed for this app.
+      msg: `auth backend refused the BFF client credential (wrong ${BACKEND_S2S_TOKEN_ENV}, app name, or a path not allowed for ${S2S_APPNAME}); check that ${BACKEND_S2S_TOKEN_ENV} equals the backend's s2s secret for ${S2S_APPNAME}`,
       err: `invalid_client on ${path.split(/[?#]/, 1)[0]}`,
     });
   } catch {

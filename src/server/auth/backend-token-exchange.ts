@@ -526,6 +526,10 @@ async function backendFetch<T>(
       ...init,
       headers,
       signal: controller.signal,
+      // Crossing origins, a followed redirect strips `Authorization` but keeps
+      // `X-S2S-TOKEN`, handing the client secret to wherever the auth base
+      // points. Nothing here legitimately redirects (JSON API), so refuse.
+      redirect: "error",
     });
     if (response.status === 401) {
       // Read from a copy so the handler below still gets the untouched body.

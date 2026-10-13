@@ -66,6 +66,10 @@ export async function backendRequest<TResponse>({
           ? AbortSignal.any([init.signal as AbortSignal, controller.signal])
           : controller.signal,
         headers,
+        // A followed cross-origin redirect keeps `X-S2S-TOKEN` (only
+        // `Authorization` is stripped), so the client secret would go wherever
+        // the auth base points. The auth API never redirects; refuse instead.
+        ...(useAuthBase ? { redirect: "error" as const } : {}),
       });
       body = await response.text();
     } catch (error) {

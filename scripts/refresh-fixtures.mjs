@@ -578,6 +578,8 @@ async function login() {
     response = await fetch(`${AUTH_BASE}${EXCHANGE_PATH}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Test-Roles": "admin", ...s2sHeaders() },
+      // A followed cross-origin redirect would keep X-S2S-TOKEN; refuse it.
+      redirect: "error",
       body: JSON.stringify({ id_token: "dev-bypass" }),
     });
   } catch (cause) {
@@ -658,6 +660,7 @@ async function capture(endpoint, token, ctx) {
       Authorization: `Bearer ${token}`,
       ...(endpoint.base === AUTH_BASE ? s2sHeaders() : {}),
     },
+    ...(endpoint.base === AUTH_BASE ? { redirect: "error" } : {}),
   });
 
   // Read as text and check the status BEFORE parsing. `response.json()` on an

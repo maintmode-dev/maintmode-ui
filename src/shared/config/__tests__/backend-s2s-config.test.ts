@@ -16,6 +16,11 @@ import {
 describe("backend-s2s-config", () => {
   const VALID = "s2s-token-for-tests-0123456789abcdef";
 
+  it("accepts exactly 32 characters", () => {
+    const boundary = "x".repeat(32);
+    expect(readBackendS2SToken({ MAINTMODE_BACKEND_S2S_TOKEN: boundary })).toBe(boundary);
+  });
+
   it("returns a valid token", () => {
     expect(readBackendS2SToken({ MAINTMODE_BACKEND_S2S_TOKEN: VALID })).toBe(VALID);
     expect(backendS2STokenIssue({ MAINTMODE_BACKEND_S2S_TOKEN: VALID })).toBeUndefined();

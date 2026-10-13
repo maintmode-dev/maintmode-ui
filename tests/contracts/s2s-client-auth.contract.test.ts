@@ -1,3 +1,6 @@
+import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { readWireFixture } from "./_harness";
@@ -356,5 +359,93 @@ describe("s2s client credential — not configured when a request is made", () =
     expect(failure).toMatchObject({ name: "BackendS2SConfigError" });
     expect(String((failure as Error).message)).not.toContain("x".repeat(64));
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("s2s client credential — never follows a redirect", () => {
+  /**
+   * `fetch` follows redirects by default and, crossing origins, strips only
+   * `Authorization`: a custom `X-S2S-TOKEN` goes along to wherever the auth
+   * base redirects. The auth API is JSON-only and nothing the BFF calls there
+   * redirects, so a redirect is refused outright. Real servers and the real
+   * `fetch` here — a stub would only prove an option was passed.
+   */
+  let authBase: Server;
+  let elsewhere: Server;
+  let elsewhereSaw: IncomingHttpHeaders[];
+  const previousAuthBase = process.env.MAINTMODE_AUTH_API_BASE_URL;
+
+  beforeEach(async () => {
+    vi.unstubAllGlobals();
+    elsewhereSaw = [];
+    elsewhere = createServer((request, response) => {
+      elsewhereSaw.push(request.headers);
+      response
+        .writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify(ACCEPTED_BY_EVERY_CALLER));
+    });
+    await new Promise<void>((resolve) => elsewhere.listen(0, "127.0.0.1", resolve));
+    const target = `http://localhost:${(elsewhere.address() as AddressInfo).port}/stolen`;
+    authBase = createServer((_request, response) => {
+      response.writeHead(302, { location: target }).end();
+    });
+    await new Promise<void>((resolve) => authBase.listen(0, "127.0.0.1", resolve));
+    process.env.MAINTMODE_AUTH_API_BASE_URL = `http://127.0.0.1:${(authBase.address() as AddressInfo).port}/auth`;
+  });
+
+  afterEach(async () => {
+    process.env.MAINTMODE_AUTH_API_BASE_URL = previousAuthBase;
+    await new Promise((resolve) => authBase.close(resolve));
+    await new Promise((resolve) => elsewhere.close(resolve));
+  });
+
+  it("a token-exchange call refuses a redirect to another origin", async () => {
+    await expect(exchange.fetchBackendMe("at")).rejects.toThrow();
+    expect(elsewhereSaw).toHaveLength(0);
+  });
+
+  it("an auth-base backendRequest refuses a redirect to another origin", async () => {
+    await expect(
+      client.backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true }),
+    ).rejects.toThrow();
+    expect(elsewhereSaw).toHaveLength(0);
+  });
+});
+
+describe("s2s client credential — business API 401s are not about the credential", () => {
+  it("does not report an invalid_client-shaped 401 from the business API", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => refusal(wire.invalidClient));
+    const { BackendUnauthorizedError } = await import("@/server/backend/errors/backend-request-error");
+
+    const failure = await client
+      .backendRequest({ path: "/api/v1/maintenances", accessToken: "at" })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(BackendUnauthorizedError);
+    expect(errors).not.toHaveBeenCalled();
+  });
+});
+
+describe("s2s client credential — a refused configuration leaves no timer behind", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["a token-exchange call", () => exchange.refreshBackendToken("refresh-placeholder")],
+    [
+      "an auth-base backendRequest",
+      () => client.backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true }),
+    ],
+  ])("%s throws before arming its abort timer", async (_label, call) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.stubEnv("MAINTMODE_BACKEND_S2S_TOKEN", "");
+    try {
+      await expect(call()).rejects.toThrow("MAINTMODE_BACKEND_S2S_TOKEN");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
