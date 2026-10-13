@@ -97,6 +97,9 @@ jobs:
           MAINTMODE_APP_BASE_URL: http://localhost:3000
           # A URL, not an opaque placeholder: config validation parses it.
           MAINTMODE_AUTH_PUBLIC_BASE_URL: http://localhost:9000/auth
+          # The BFF's client credential for the auth backend (RUK-311); validated
+          # with the rest of the auth config, so the build needs a placeholder.
+          MAINTMODE_BACKEND_S2S_TOKEN: build-time-placeholder-s2s-token-32chars
       # Stays in this job rather than one of its own: it reads the RSC manifests
       # out of `.next/`, so it needs the build that just ran. Fails when a heavy
       # dependency (FullCalendar, luxon, cmdk, react-day-picker) becomes

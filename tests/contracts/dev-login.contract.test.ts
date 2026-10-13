@@ -44,6 +44,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   vi.stubEnv("MAINTMODE_AUTH_SECRET", "a".repeat(32));
+  vi.stubEnv("MAINTMODE_BACKEND_S2S_TOKEN", "s2s-token-for-tests-0123456789abcdef");
   vi.stubEnv("MAINTMODE_APP_BASE_URL", "http://localhost:3000");
   vi.stubEnv("MAINTMODE_AUTH_PUBLIC_BASE_URL", "http://localhost:9000/auth");
   vi.stubEnv("MAINTMODE_AUTH_API_BASE_URL", "http://backend.test/auth");

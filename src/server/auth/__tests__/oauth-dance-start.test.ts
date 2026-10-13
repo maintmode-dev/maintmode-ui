@@ -33,6 +33,7 @@ const { startOAuthDanceAction } = await import("@/server/auth/oauth-dance-action
 
 const ENV = {
   MAINTMODE_AUTH_SECRET: "a".repeat(32),
+  MAINTMODE_BACKEND_S2S_TOKEN: "s2s-token-for-tests-0123456789abcdef",
   MAINTMODE_APP_BASE_URL: "http://localhost:3000",
   MAINTMODE_AUTH_PUBLIC_BASE_URL: "http://localhost:9000/auth",
 };

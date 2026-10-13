@@ -31,6 +31,7 @@ const COOKIE = "authjs.session-token";
 process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
 process.env.MAINTMODE_AUTH_API_BASE_URL = "http://backend.test/auth";
 process.env.MAINTMODE_AUTH_SECRET = SECRET;
+process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
 process.env.MAINTMODE_APP_BASE_URL = "http://localhost:3000";
 process.env.MAINTMODE_AUTH_PUBLIC_BASE_URL = "http://localhost:9000/auth";
 

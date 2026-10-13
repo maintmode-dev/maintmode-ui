@@ -55,6 +55,7 @@ beforeEach(() => {
   isSameOriginRequest.mockClear();
   isSameOriginRequest.mockReturnValue(true);
   vi.stubEnv("MAINTMODE_AUTH_SECRET", "a".repeat(32));
+  vi.stubEnv("MAINTMODE_BACKEND_S2S_TOKEN", "s2s-token-for-tests-0123456789abcdef");
   vi.stubEnv("MAINTMODE_APP_BASE_URL", "http://localhost:3000");
   vi.stubEnv("MAINTMODE_AUTH_PUBLIC_BASE_URL", "https://maintmode.example/auth");
 });
