@@ -61,14 +61,15 @@ is the selfhost compose stack.
 
 ### Required environment
 
-Three variables are **mandatory**. `src/shared/config/auth-config.ts` validates
+Four variables are **mandatory**. `src/shared/config/auth-config.ts` validates
 them **at module load**, and throws when any is missing or malformed:
 
-| Variable                         | Notes                                                                 |
-| -------------------------------- | --------------------------------------------------------------------- |
-| `MAINTMODE_AUTH_SECRET`          | at least 32 characters — `openssl rand -hex 32`                       |
-| `MAINTMODE_APP_BASE_URL`         | e.g. `http://localhost:3000`; must be a valid http/https URL          |
-| `MAINTMODE_AUTH_PUBLIC_BASE_URL` | the auth backend as the **browser** reaches it; see the warning below |
+| Variable                         | Notes                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `MAINTMODE_AUTH_SECRET`          | at least 32 characters — `openssl rand -hex 32`                                             |
+| `MAINTMODE_APP_BASE_URL`         | e.g. `http://localhost:3000`; must be a valid http/https URL                                |
+| `MAINTMODE_AUTH_PUBLIC_BASE_URL` | the auth backend as the **browser** reaches it; see the warning below                       |
+| `MAINTMODE_BACKEND_S2S_TOKEN`    | the BFF's client credential; must equal the backend's `s2s.maintmode-ui.secret` — see below |
 
 > **Without these, nothing starts at all — including `/login`.** The validation
 > runs when the config module is imported, not when someone tries to sign in, so
@@ -82,6 +83,16 @@ them **at module load**, and throws when any is missing or malformed:
 > and then fails at the first click on a provider button, with nothing in this
 > app's logs — the request never reaches it. Include any gateway path prefix:
 > `http://localhost:9000/auth`, not `http://localhost:9000`.
+
+> **`MAINTMODE_BACKEND_S2S_TOKEN` must equal the backend's `s2s.maintmode-ui.secret`.**
+> It goes out as `X-S2S-TOKEN` (with `X-S2S-APPNAME: maintmode-ui`) on every
+> request to the auth backend, which refuses its token endpoints without it
+> (RUK-311). At least 32 characters, printable ASCII, no whitespace. A value
+> that passes validation but differs from the backend's does not crash anything:
+> every sign-in fails as "invalid credentials" and every session ends at its
+> next refresh. The server log then has an ERROR line naming this variable —
+> look for `invalid_client`. Update the backend and this app together when you
+> rotate it.
 
 Backend wiring (see `.env.example` for the full annotated list):
 
