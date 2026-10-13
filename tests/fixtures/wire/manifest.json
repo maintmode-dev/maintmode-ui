@@ -374,7 +374,7 @@
       "method": "POST",
       "status": "401 (invalid_client / unauthorized, see the file)",
       "capturedAt": "2026-10-13",
-      "why": "RUK-311: the backend refuses a request whose X-S2S-* client credential is missing or wrong with 401 invalid_client, and a bad refresh token with 401 unauthorized. The BFF must log the first loudly (it is a deployment misconfiguration that signs everyone out) and must not let that logging change how either 401 is handled.",
+      "why": "RUK-311: the backend refuses a request whose X-S2S-* client credential is missing or wrong with 401 invalid_client, and a bad refresh token with 401 unauthorized. The BFF must log the first loudly (it is a deployment misconfiguration that fails every sign-in and refresh), must keep the session on it (the backend never read the refresh token), and must keep ending the session on unauthorized.",
       "handEdited": true,
       "handEditedReason": "NOT RECORDED - declared. The backend side (feat/bff-s2s-auth) was not merged when this was written, and scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx anyway. Envelopes are the backend owner's confirmed contract of 2026-10-13. Re-check against the merged backend once a capture path for POST/non-2xx exists."
     }

@@ -37,8 +37,9 @@ export function applyBackendS2SHeaders(headers: Headers): void {
 /**
  * Logs a `401` whose body says the backend refused THIS client — not the
  * user's token or credentials (`invalid_client`, the same envelope for every
- * cause). That is a deployment misconfiguration that signs everyone out at
- * their next refresh and fails every sign-in as "wrong credentials", so it has
+ * cause). That is a deployment misconfiguration that fails every sign-in as
+ * "wrong credentials" and every refresh as unavailable (503, session kept —
+ * see `endsSession` in `session-token.ts`), so it has
  * to be loud and name what to fix. The token is never logged; the path is
  * logged without its query string (an invitation preview carries a bearer
  * token there). The entry's own `path` field is left unset: in the log store it
@@ -50,8 +51,7 @@ export function applyBackendS2SHeaders(headers: Headers): void {
  */
 export function reportRejectedClientCredential(path: string, bodyText: string): void {
   try {
-    const parsed: unknown = JSON.parse(bodyText);
-    if ((parsed as { code?: unknown } | null)?.code !== "invalid_client") {
+    if (!isRejectedClientCredential(bodyText)) {
       return;
     }
     logError({
@@ -63,5 +63,19 @@ export function reportRejectedClientCredential(path: string, bodyText: string): 
     });
   } catch {
     // Not JSON, or nothing to report: the caller's handling is all that matters.
+  }
+}
+
+/**
+ * Whether a `401` body is the backend refusing THIS client (`invalid_client`)
+ * rather than the user's token or credentials (`unauthorized`). Never throws:
+ * anything that is not that JSON envelope is simply not one.
+ */
+export function isRejectedClientCredential(bodyText: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(bodyText);
+    return (parsed as { code?: unknown } | null)?.code === "invalid_client";
+  } catch {
+    return false;
   }
 }

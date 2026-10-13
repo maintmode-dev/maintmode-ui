@@ -19,6 +19,7 @@ import {
   sessionCookieNameFor,
   type SessionPayload,
 } from "@/server/auth/session-cookie";
+import { isRejectedClientCredential } from "@/server/backend/client/s2s-headers";
 import { BackendUnavailableError } from "@/server/backend/errors/backend-request-error";
 import { logError } from "@/server/observability/error-log";
 
@@ -317,6 +318,13 @@ function hasTimeLeft(payload: SessionPayload): boolean {
  * from sign-in (`token expired`). A refresh token presented by two users is
  * refused here and ends the session too: it is never legitimate.
  *
+ * Except a 401 `invalid_client` (RUK-311): the backend refused THIS client —
+ * its s2s credential — before reading the refresh token, so the session lives
+ * on there. Ending it here would turn a secret mismatch between the BFF and
+ * the backend into a mass sign-out that fixing the secret cannot undo. It
+ * fails the request as unavailable instead, and is not retried (`isTransient`):
+ * a configuration error does not change in a second.
+ *
  * Everything else leaves the cookie alone — see `isTransient` for which of
  * those are retried. Clearing on them signed out whichever request lost a
  * race, and its cookie-clear could reach the browser after the winner's fresh
@@ -326,7 +334,11 @@ function endsSession(error: unknown): boolean {
   if (error instanceof CrossUserRefreshError) {
     return true;
   }
-  return error instanceof BackendAuthError && error.status === 401;
+  return (
+    error instanceof BackendAuthError &&
+    error.status === 401 &&
+    !isRejectedClientCredential(error.responseBody)
+  );
 }
 
 /**

@@ -89,8 +89,9 @@ them **at module load**, and throws when any is missing or malformed:
 > request to the auth backend, which refuses its token endpoints without it
 > (RUK-311). At least 32 characters, printable ASCII, no whitespace. A value
 > that passes validation but differs from the backend's does not crash anything:
-> every sign-in fails as "invalid credentials" and every session ends at its
-> next refresh. The server log then has an ERROR line naming this variable —
+> every sign-in fails as "invalid credentials", and signed-in users get 503 once
+> their access token needs a refresh — their sessions are kept, and recover as
+> soon as the values match. The server log then has an ERROR line naming this variable —
 > look for `invalid_client`. Update the backend and this app together when you
 > rotate it.
 
