@@ -294,3 +294,67 @@ describe("s2s client credential — a refused credential", () => {
     });
   });
 });
+
+describe("s2s client credential — a reply that is not the JSON envelope", () => {
+  // A 401 from a gateway or proxy in front of the backend carries no JSON: an
+  // empty body or a plain-text page. Reporting parses it, and a parse failure
+  // escaping into `backendRequest` would replace `BackendUnauthorizedError` —
+  // the class the refresh-and-retry and the 401 → AUTH_REQUIRED mapping key on
+  // — with a `SyntaxError`.
+  it.each([
+    ["an empty body", ""],
+    ["a plain-text body", "Unauthorized"],
+  ])("leaves an auth-base backendRequest 401 with %s unreported and unauthorized", async (_label, body) => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => new Response(body, { status: 401, statusText: "Unauthorized" }));
+    const { BackendUnauthorizedError } = await import("@/server/backend/errors/backend-request-error");
+
+    const failure = await client
+      .backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true })
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(BackendUnauthorizedError);
+    expect(errors).not.toHaveBeenCalled();
+  });
+});
+
+describe("s2s client credential — not configured when a request is made", () => {
+  // `parseMaintmodeAuthConfig` fails pages on a bad value, but the request path
+  // reads the variable on its own. It must refuse there too, before anything is
+  // sent: no request without the credential, none with a value `Headers` would
+  // silently alter (a trailing CR is stripped, not rejected), and an error that
+  // names the variable rather than a `TypeError` the client reads as
+  // "backend unreachable".
+  afterEach(() => {
+    process.env.MAINTMODE_BACKEND_S2S_TOKEN = TOKEN;
+  });
+
+  const paths: Array<[string, () => Promise<unknown>]> = [
+    ["a token-exchange call", () => exchange.refreshBackendToken("refresh-placeholder")],
+    [
+      "an auth-base backendRequest",
+      () => client.backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true }),
+    ],
+  ];
+
+  it.each(paths)("%s refuses to send without the variable", async (_label, call) => {
+    delete process.env.MAINTMODE_BACKEND_S2S_TOKEN;
+
+    const failure = await call().catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ name: "BackendS2SConfigError" });
+    expect(String((failure as Error).message)).toContain("MAINTMODE_BACKEND_S2S_TOKEN");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(paths)("%s refuses to send a CR-suffixed value", async (_label, call) => {
+    const crSuffixed = `${"x".repeat(64)}\r`;
+    process.env.MAINTMODE_BACKEND_S2S_TOKEN = crSuffixed;
+
+    const failure = await call().catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ name: "BackendS2SConfigError" });
+    expect(String((failure as Error).message)).not.toContain("x".repeat(64));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
