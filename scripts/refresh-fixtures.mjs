@@ -56,6 +56,21 @@ const API_BASE = `${GATEWAY}/maintmode`;
 const EXCHANGE_PATH = "/api/v1/login/oauth/exchange/google";
 
 /**
+ * The BFF's client credential (RUK-311). The backend refuses its token
+ * endpoints without it — the dev-bypass exchange below among them — so this
+ * script sends it on every auth-base request, as the BFF does.
+ *
+ * An accepted second copy of the names in `src/server/backend/client/s2s-headers.ts`
+ * and `src/shared/config/backend-s2s-config.ts`: plain `.mjs` cannot import
+ * them. Drift shows up as a 401 while recording, not as a silent difference.
+ */
+const S2S_TOKEN_ENV = "MAINTMODE_BACKEND_S2S_TOKEN";
+
+function s2sHeaders() {
+  return { "X-S2S-APPNAME": "maintmode-ui", "X-S2S-TOKEN": process.env[S2S_TOKEN_ENV] ?? "" };
+}
+
+/**
  * Endpoints captured, and why each one is here.
  *
  * Every entry is an endpoint where drift has already occurred (SPEC §4.5). This
@@ -562,7 +577,7 @@ async function login() {
   try {
     response = await fetch(`${AUTH_BASE}${EXCHANGE_PATH}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Test-Roles": "admin" },
+      headers: { "Content-Type": "application/json", "X-Test-Roles": "admin", ...s2sHeaders() },
       body: JSON.stringify({ id_token: "dev-bypass" }),
     });
   } catch (cause) {
@@ -638,7 +653,12 @@ async function resolveContext(token) {
 async function capture(endpoint, token, ctx) {
   const path = typeof endpoint.path === "function" ? endpoint.path(ctx) : endpoint.path;
   const url = `${endpoint.base}${path}`;
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(endpoint.base === AUTH_BASE ? s2sHeaders() : {}),
+    },
+  });
 
   // Read as text and check the status BEFORE parsing. `response.json()` on an
   // HTML error page or an empty body throws a JSON syntax error, which would
@@ -748,6 +768,16 @@ async function main() {
   const selected = filter ? ENDPOINTS.filter((e) => e.name.includes(filter)) : ENDPOINTS;
   if (!selected.length) {
     console.error(`No endpoint matches "${filter}". Known: ${ENDPOINTS.map((e) => e.name).join(", ")}`);
+    process.exit(1);
+  }
+
+  // Up front, before any request: without it the first call — the dev-bypass
+  // exchange — answers 401 invalid_client, which reads like a backend problem.
+  if (!process.env[S2S_TOKEN_ENV]) {
+    console.error(
+      `${S2S_TOKEN_ENV} is not set. Export the same value the backend has as ` +
+        `s2s.maintmode-ui.secret (local stack: see .env.example), then re-run.`,
+    );
     process.exit(1);
   }
 
