@@ -485,11 +485,14 @@ export async function fetchBackendMe(accessToken: string): Promise<BackendMeResp
  *
  * Owns the request scaffold ONLY — the URL, the abort timer, the browser's
  * forwarded address and User-Agent (see `forwardedClientHeaders`) and the BFF's
- * client credential (see `s2s-headers.ts`), identical at every call site. It deliberately does not touch the response:
- * these endpoints disagree about what a response even is (a shape-checked JSON
- * body, a bare 204, a 401 classified by what the REQUEST carried), and some
- * throw where others return a discriminated result. Folding that in would erase
- * the distinctions their callers exist to act on.
+ * client credential (see `s2s-headers.ts`), identical at every call site. It
+ * deliberately does not interpret the response: these endpoints disagree about
+ * what a response even is (a shape-checked JSON body, a bare 204, a 401
+ * classified by what the REQUEST carried), and some throw where others return a
+ * discriminated result. Folding that in would erase the distinctions their
+ * callers exist to act on. The one thing it reads is a COPY of a 401's body, for
+ * the best-effort `invalid_client` report (`reportRejectedClientCredential`);
+ * the handler always receives the untouched response.
  *
  * `handleResponse` receives the response, and the timeout is cleared only once
  * it settles. That is why this takes a callback rather than returning the
@@ -505,15 +508,18 @@ async function backendFetch<T>(
   const config = readMaintmodeBackendConfig();
   const target = resolveBackendUrl(config.authApiBaseUrl, path);
   const forwardedClient = await forwardedClientHeaders();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   // Every call here targets the auth base, so every one carries the client
   // credential. Applied last: the `init.headers` above are a fixed internal set
   // today, and this keeps it true if a caller ever passes one of the same name.
+  // Built before the timer: a misconfigured token throws here, and a timer
+  // armed first would be left running with nothing to clear it.
   const headers = new Headers(forwardedClient);
   new Headers(init.headers).forEach((value, name) => headers.set(name, value));
   applyBackendS2SHeaders(headers);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.requestTimeoutMs);
 
   try {
     const response = await fetch(target, {

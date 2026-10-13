@@ -85,12 +85,6 @@ describe("auth-config", () => {
   });
 
   /**
-   * The Google pair is no longer read at all (RUK-292 removed the NextAuth
-   * provider). Asserted rather than assumed: leaving the required-ness behind
-   * would keep every deployment setting two variables nothing consumes, and the
-   * next person to delete them would take the app's startup down with them.
-   */
-  /**
    * RUK-311. Validated here only so a bad value fails the way
    * `MAINTMODE_AUTH_SECRET` does — every page 500s naming the variable — rather
    * than at the first sign-in. The value itself is NOT returned: this object is
@@ -112,6 +106,12 @@ describe("auth-config", () => {
     expect(Object.values(config)).not.toContain("s2s-token-for-tests-0123456789abcdef");
   });
 
+  /**
+   * The Google pair is no longer read at all (RUK-292 removed the NextAuth
+   * provider). Asserted rather than assumed: leaving the required-ness behind
+   * would keep every deployment setting two variables nothing consumes, and the
+   * next person to delete them would take the app's startup down with them.
+   */
   it("no longer requires the google client id and secret", () => {
     expect(() =>
       parseMaintmodeAuthConfig({
