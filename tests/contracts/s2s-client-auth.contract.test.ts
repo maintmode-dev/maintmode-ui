@@ -224,7 +224,9 @@ describe("s2s client credential — a refused credential", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     fetchMock.mockImplementation(async () => refusal(wire.invalidClient));
 
-    const failure = await exchange.refreshBackendToken("refresh-placeholder").catch((error: unknown) => error);
+    const failure = await exchange
+      .refreshBackendToken("refresh-placeholder")
+      .catch((error: unknown) => error);
 
     expect(failure).toMatchObject({ status: 401 });
     expect(JSON.parse((failure as { responseBody: string }).responseBody)).toMatchObject({
@@ -266,7 +268,9 @@ describe("s2s client credential — a refused credential", () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     fetchMock.mockImplementation(async () => refusal(wire.unauthorized));
 
-    await expect(client.backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true })).rejects.toThrow();
+    await expect(
+      client.backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true }),
+    ).rejects.toThrow();
     expect(errors).not.toHaveBeenCalled();
   });
 
