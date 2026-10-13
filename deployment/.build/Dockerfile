@@ -35,12 +35,14 @@ COPY . .
 # These are NOT baked into the image — they are
 # placeholder values that exist only for the duration of `next build`. The real
 # runtime values come from --env-file at `docker run` time. AUTH_SECRET must be
-# >= 32 chars, and both URLs must be valid http(s) URLs to pass validation —
+# >= 32 chars (BACKEND_S2S_TOKEN too, printable ASCII), and both URLs must be
+# valid http(s) URLs to pass validation —
 # AUTH_PUBLIC_BASE_URL is a URL, not an opaque string, so it cannot take the
 # `build-time-placeholder` form the Google pair used before RUK-292.
 ENV MAINTMODE_AUTH_SECRET=build-time-placeholder-secret-32chars-min \
     MAINTMODE_APP_BASE_URL=http://localhost:3000 \
-    MAINTMODE_AUTH_PUBLIC_BASE_URL=http://localhost:9000/auth
+    MAINTMODE_AUTH_PUBLIC_BASE_URL=http://localhost:9000/auth \
+    MAINTMODE_BACKEND_S2S_TOKEN=build-time-placeholder-s2s-token-32chars
 RUN --mount=type=cache,id=maintmode-ui-next,target=/app/.next/cache \
     npm run build
 

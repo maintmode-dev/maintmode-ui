@@ -31,6 +31,7 @@ const COOKIE = "authjs.session-token";
 process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
 process.env.MAINTMODE_AUTH_API_BASE_URL = "http://backend.test/auth";
 process.env.MAINTMODE_AUTH_SECRET = SECRET;
+process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
 process.env.MAINTMODE_APP_BASE_URL = "http://localhost:3000";
 process.env.MAINTMODE_AUTH_PUBLIC_BASE_URL = "http://localhost:9000/auth";
 
@@ -161,6 +162,54 @@ describe("refresh — as declared", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     },
   );
+
+  /**
+   * RUK-311. A refused client credential (`invalid_client`) says nothing about
+   * this session: the backend checks the client before it reads the refresh
+   * token, so the session lives on there. Ending it here would turn a secret
+   * mismatch into a mass sign-out that fixing the secret cannot undo. So the
+   * cookie stays, the request fails as unavailable (503), and nothing retries —
+   * a configuration error does not change in a second. The reply is a real
+   * `Response`, so the BFF's best-effort `invalid_client` report runs too.
+   */
+  it("keeps the session on the declared invalid_client refusal, failing the request as unavailable without a retry", async () => {
+    const s2s = readWireFixture<Record<"invalidClient", WireCase>>("s2s-client-auth.json");
+    expect(s2s.invalidClient.status).toBe(401);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify(s2s.invalidClient.body), { status: s2s.invalidClient.status }),
+    );
+    const jar = await signedInJar();
+    const before = jar.get(COOKIE);
+
+    const error = await requestJar
+      .run(jar, () => session.readActiveSession())
+      .then(
+        () => null,
+        (failure: unknown) => failure,
+      );
+
+    expect(error).toBeInstanceOf(session.SessionRefreshUnavailableError);
+    const { normalizeRouteError } = await import("@/server/backend/errors/bff-error");
+    expect(normalizeRouteError(error)).toMatchObject({ status: 503, code: "BACKEND_UNAVAILABLE" });
+    expect(jar.get(COOKIE)).toBe(before);
+    expect(jar.writes).toBe(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still ends the session on an unauthorized 401 shaped like the s2s fixture's", async () => {
+    // The control for the case above: only the `invalid_client` code keeps the
+    // session; the same status with `unauthorized` is the session being over.
+    const s2s = readWireFixture<Record<"unauthorized", WireCase>>("s2s-client-auth.json");
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify(s2s.unauthorized.body), { status: s2s.unauthorized.status }),
+    );
+    const jar = await signedInJar();
+
+    expect(await requestJar.run(jar, () => session.readActiveSession())).toBeNull();
+    expect(jar.get(COOKIE)).toBe("");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 
   /** Wraps a reply so a test can await the BFF reading its body. */
   function readTracked(reply: ReturnType<typeof respond>) {

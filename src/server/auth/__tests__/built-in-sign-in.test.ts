@@ -24,6 +24,7 @@ let fetchMock: FetchMock;
 beforeEach(() => {
   process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
   process.env.MAINTMODE_AUTH_API_BASE_URL = "http://backend.test/auth";
+  process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
   process.env.MAINTMODE_API_TIMEOUT_MS = "5000";
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);

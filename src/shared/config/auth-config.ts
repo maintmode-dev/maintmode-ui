@@ -1,3 +1,5 @@
+import { BACKEND_S2S_TOKEN_ENV, backendS2STokenIssue } from "@/shared/config/backend-s2s-config";
+
 export type MaintmodeAuthConfig = {
   authSecret: string;
   appBaseUrl: string;
@@ -22,7 +24,11 @@ export type MaintmodeAuthConfig = {
 };
 
 export type AuthConfigIssue = {
-  field: "MAINTMODE_AUTH_SECRET" | "MAINTMODE_APP_BASE_URL" | "MAINTMODE_AUTH_PUBLIC_BASE_URL";
+  field:
+    | "MAINTMODE_AUTH_SECRET"
+    | "MAINTMODE_APP_BASE_URL"
+    | "MAINTMODE_AUTH_PUBLIC_BASE_URL"
+    | typeof BACKEND_S2S_TOKEN_ENV;
   message: string;
 };
 
@@ -89,6 +95,16 @@ export function parseMaintmodeAuthConfig(env: Record<string, string | undefined>
     } catch {
       issues.push({ field: "MAINTMODE_AUTH_PUBLIC_BASE_URL", message: "must be a valid URL" });
     }
+  }
+
+  // RUK-311. Validated here, where a bad value fails every page the way a bad
+  // `MAINTMODE_AUTH_SECRET` does, instead of at the first sign-in. The value is
+  // deliberately not returned: this object travels through route and action
+  // code, and a secret on it is one prop away from an RSC payload. The backend
+  // client reads it on its own (`s2s-headers.ts`).
+  const s2sTokenIssue = backendS2STokenIssue(env);
+  if (s2sTokenIssue) {
+    issues.push({ field: BACKEND_S2S_TOKEN_ENV, message: s2sTokenIssue });
   }
 
   if (issues.length > 0) {

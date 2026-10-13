@@ -7,6 +7,7 @@ describe("auth-config", () => {
     MAINTMODE_AUTH_SECRET: "a".repeat(32),
     MAINTMODE_APP_BASE_URL: "http://localhost:3000",
     MAINTMODE_AUTH_PUBLIC_BASE_URL: "http://localhost:9000/auth",
+    MAINTMODE_BACKEND_S2S_TOKEN: "s2s-token-for-tests-0123456789abcdef",
   };
 
   it("parses a complete env into a normalized config", () => {
@@ -81,6 +82,28 @@ describe("auth-config", () => {
     // The gateway path prefix is part of the value, not something the caller
     // appends: Caddy serves the backend under `handle_path /auth/*`.
     expect(config.authPublicBaseUrl).toBe("https://auth.test/auth");
+  });
+
+  /**
+   * RUK-311. Validated here only so a bad value fails the way
+   * `MAINTMODE_AUTH_SECRET` does — every page 500s naming the variable — rather
+   * than at the first sign-in. The value itself is NOT returned: this object is
+   * handed around route and action code, and a secret on it is one prop away
+   * from an RSC payload.
+   */
+  it.each([
+    ["missing", undefined],
+    ["short", "x".repeat(31)],
+    ["CR-suffixed", `${"x".repeat(64)}\r`],
+  ])("reports a %s backend s2s token by name", (_label, value) => {
+    expect(() => parseMaintmodeAuthConfig({ ...validEnv, MAINTMODE_BACKEND_S2S_TOKEN: value })).toThrow(
+      "MAINTMODE_BACKEND_S2S_TOKEN",
+    );
+  });
+
+  it("keeps the backend s2s token off the returned config", () => {
+    const config = parseMaintmodeAuthConfig(validEnv);
+    expect(Object.values(config)).not.toContain("s2s-token-for-tests-0123456789abcdef");
   });
 
   /**

@@ -27,6 +27,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   fetchMock.mockReset();
   process.env.MAINTMODE_API_BASE_URL = "http://backend.test/maintmode";
+  process.env.MAINTMODE_BACKEND_S2S_TOKEN = "s2s-token-for-tests-0123456789abcdef";
 });
 
 afterEach(() => {
@@ -185,7 +186,7 @@ describe("changeBackendPassword — what goes on the wire", () => {
 
     await changeBackendPassword({ accessToken: "access-1", newPassword: "a-long-enough-password" });
 
-    expect(fetchMock.mock.calls[0][1].headers.authorization).toBe("Bearer access-1");
+    expect(new Headers(fetchMock.mock.calls[0][1].headers).get("authorization")).toBe("Bearer access-1");
     expect(String(fetchMock.mock.calls[0][0])).toContain("/api/v1/me/password");
   });
 });

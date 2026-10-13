@@ -1,0 +1,19 @@
+{
+  "_recorded": "DECLARED, not recorded: the backend owner's confirmed RUK-311 contract, 2026-10-13 (backend branch feat/bff-s2s-auth, not merged at the time of writing). The s2s middleware answers the same invalid_client envelope for every cause: missing header, unknown app name, path not allowed for the app, wrong secret. A bad refresh token keeps the unauthorized envelope (transcribed in refresh.json). See the manifest entry for why this could not be captured.",
+  "invalidClient": {
+    "_note": "The BFF's X-S2S-* credential was refused. Checked in middleware before the refresh token is read: no reuse detection, no family revocation.",
+    "status": 401,
+    "body": {
+      "code": "invalid_client",
+      "message": "client authentication failed"
+    }
+  },
+  "unauthorized": {
+    "_note": "The credential passed; the refresh token did not (ErrInvalidRefreshToken). Same envelope as refresh.json's invalid case.",
+    "status": 401,
+    "body": {
+      "code": "unauthorized",
+      "message": "invalid refresh token"
+    }
+  }
+}
