@@ -1,7 +1,7 @@
 import "server-only";
 
 import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
-import { applyBackendS2SHeaders } from "@/server/backend/client/s2s-headers";
+import { applyBackendS2SHeaders, reportRejectedClientCredential } from "@/server/backend/client/s2s-headers";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
 import {
   BackendAuthError,
@@ -516,13 +516,21 @@ async function backendFetch<T>(
   applyBackendS2SHeaders(headers);
 
   try {
-    return await handleResponse(
-      await fetch(target, {
-        ...init,
-        headers,
-        signal: controller.signal,
-      }),
-    );
+    const response = await fetch(target, {
+      ...init,
+      headers,
+      signal: controller.signal,
+    });
+    if (response.status === 401) {
+      // Read from a copy so the handler below still gets the untouched body.
+      // Best-effort: a reply that cannot be copied or read just goes unreported.
+      try {
+        reportRejectedClientCredential(path, await response.clone().text());
+      } catch {
+        // Nothing to report; the handler decides what the 401 means.
+      }
+    }
+    return await handleResponse(response);
   } finally {
     clearTimeout(timeout);
   }

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { readWireFixture } from "./_harness";
+
 /**
  * RUK-311 — the BFF authenticates itself to the auth backend.
  *
@@ -33,6 +35,21 @@ vi.mock("next/headers", () => ({
 }));
 
 const fetchMock = vi.fn();
+
+type WireCase = { status: number; body: Record<string, unknown> };
+const wire = readWireFixture<Record<"invalidClient" | "unauthorized", WireCase>>("s2s-client-auth.json");
+
+function refusal({ status, body }: WireCase) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/** The ERROR lines `logError` wrote, parsed. */
+function errorLines(spy: { mock: { calls: unknown[][] } }): Array<Record<string, unknown>> {
+  return spy.mock.calls.map((args) => JSON.parse(String(args[0])) as Record<string, unknown>);
+}
 
 /** Satisfies every token-exchange caller's shape check. */
 const ACCEPTED_BY_EVERY_CALLER = {
@@ -175,5 +192,101 @@ describe("s2s client credential — auth backend requests carry it", () => {
     expect(request.headers.get("authorization")).toBe("Bearer at");
     expect(request.headers.get("x-request-id")).toBe("rid");
     expect(request.headers.get("accept")).toBe("application/json");
+  });
+});
+
+describe("s2s client credential — a refused credential", () => {
+  // Precondition with literal codes: the cases below only mean something if
+  // the declared envelopes really carry them.
+  it("is declared as the backend owner confirmed it", () => {
+    expect(wire.invalidClient.status).toBe(401);
+    expect(wire.invalidClient.body.code).toBe("invalid_client");
+    expect(wire.unauthorized.status).toBe(401);
+    expect(wire.unauthorized.body.code).toBe("unauthorized");
+  });
+
+  it("stays an error on a token endpoint and is logged once, naming the variable, never the value", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => refusal(wire.invalidClient));
+
+    const failure = await exchange.loginWithBreakGlass("pw-placeholder").catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ name: "BackendAuthError", status: 401 });
+    const lines = errorLines(errors);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].level).toBe("ERROR");
+    expect(String(lines[0].msg)).toContain("MAINTMODE_BACKEND_S2S_TOKEN");
+    expect(lines[0].err).toBe("invalid_client on /api/v1/login/break-glass");
+    expect(JSON.stringify(lines[0])).not.toContain(TOKEN);
+  });
+
+  it("hands the caller the untouched body after logging", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => refusal(wire.invalidClient));
+
+    const failure = await exchange.refreshBackendToken("refresh-placeholder").catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ status: 401 });
+    expect(JSON.parse((failure as { responseBody: string }).responseBody)).toMatchObject({
+      code: "invalid_client",
+    });
+  });
+
+  it("does not log a refused refresh token or credential", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => refusal(wire.unauthorized));
+
+    await expect(exchange.refreshBackendToken("refresh-placeholder")).rejects.toMatchObject({ status: 401 });
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("is logged on the auth-base backendRequest path too, without the query string", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => refusal(wire.invalidClient));
+    const { BackendUnauthorizedError } = await import("@/server/backend/errors/backend-request-error");
+
+    const failure = await client
+      .backendRequest({
+        path: "/api/v1/users/invitations/preview?token=invite-secret-value",
+        useAuthBase: true,
+      })
+      .catch((error: unknown) => error);
+
+    // The class `authenticatedBackendRequest`'s refresh-and-retry and the 401 →
+    // AUTH_REQUIRED mapping key on: reporting must not change it.
+    expect(failure).toBeInstanceOf(BackendUnauthorizedError);
+    const lines = errorLines(errors);
+    expect(lines).toHaveLength(1);
+    expect(lines[0].err).toBe("invalid_client on /api/v1/users/invitations/preview");
+    expect(JSON.stringify(lines[0])).not.toContain("invite-secret-value");
+    expect(JSON.stringify(lines[0])).not.toContain(TOKEN);
+  });
+
+  it("does not log an ordinary 401 on the backendRequest path", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(async () => refusal(wire.unauthorized));
+
+    await expect(client.backendRequest({ path: "/api/v1/auth/providers", useAuthBase: true })).rejects.toThrow();
+    expect(errors).not.toHaveBeenCalled();
+  });
+
+  it("never changes the caller's outcome when the reply cannot be read for the report", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const text = JSON.stringify(wire.invalidClient.body);
+    // A reply without clone(): the report cannot read a copy, and must give up
+    // silently rather than throw into the caller's handling.
+    fetchMock.mockImplementation(async () => ({
+      ok: false,
+      status: 401,
+      statusText: "Unauthorized",
+      headers: new Headers(),
+      text: async () => text,
+    }));
+
+    await expect(exchange.refreshBackendToken("refresh-placeholder")).rejects.toMatchObject({
+      name: "BackendAuthError",
+      status: 401,
+      responseBody: text,
+    });
   });
 });

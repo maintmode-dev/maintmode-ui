@@ -1,7 +1,7 @@
 import "server-only";
 
 import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
-import { applyBackendS2SHeaders } from "@/server/backend/client/s2s-headers";
+import { applyBackendS2SHeaders, reportRejectedClientCredential } from "@/server/backend/client/s2s-headers";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
 import {
   BackendRequestError,
@@ -76,6 +76,9 @@ export async function backendRequest<TResponse>({
     }
 
     if (response.status === 401) {
+      if (useAuthBase) {
+        reportRejectedClientCredential(path, body);
+      }
       throw new BackendUnauthorizedError(body || response.statusText);
     }
 

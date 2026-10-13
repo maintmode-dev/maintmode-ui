@@ -368,6 +368,15 @@
       "why": "POST /api/v1/refresh rotates on every call. A request that races the rotation inside the 30s grace window gets an access token and NO refresh_token (omitempty), and the lock answers 429 rather than the documented 409. The BFF must tell \"keep your refresh token\" and \"try again\" apart from \"the session is over\" (401 unauthorized), so every shape it branches on is pinned here.",
       "handEdited": true,
       "handEditedReason": "NOT RECORDED — transcribed. scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx, and the shapes that matter here are a POST whose interesting answers are a 200 missing a field, four 401 envelopes and a 429. Producing them on a stand means signing in, spending a refresh token twice inside and past the grace window (which revokes the session) and racing the lock. Transcribed from backend release/v0.3.1 @ 03e1621 (files and lines named in the fixture _recorded field); tokens are placeholders. Re-record from a stand once a capture path for POST/non-2xx exists, and re-check after the backend change that returns the successor during grace and lets the lock wait."
+    },
+    "s2s-client-auth": {
+      "url": "http://localhost:9000/auth/api/v1/refresh",
+      "method": "POST",
+      "status": "401 (invalid_client / unauthorized, see the file)",
+      "capturedAt": "2026-10-13",
+      "why": "RUK-311: the backend refuses a request whose X-S2S-* client credential is missing or wrong with 401 invalid_client, and a bad refresh token with 401 unauthorized. The BFF must log the first loudly (it is a deployment misconfiguration that signs everyone out) and must not let that logging change how either 401 is handled.",
+      "handEdited": true,
+      "handEditedReason": "NOT RECORDED - declared. The backend side (feat/bff-s2s-auth) was not merged when this was written, and scripts/refresh-fixtures.mjs issues GET only and refuses non-2xx anyway. Envelopes are the backend owner's confirmed contract of 2026-10-13. Re-check against the merged backend once a capture path for POST/non-2xx exists."
     }
   },
   "gateway": "http://localhost:9000"

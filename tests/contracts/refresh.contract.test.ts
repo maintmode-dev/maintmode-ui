@@ -163,6 +163,27 @@ describe("refresh — as declared", () => {
     },
   );
 
+  /**
+   * RUK-311. A refused client credential is a 401 like any other here: the
+   * session ends and nothing retries. The reply is a real `Response`, so the
+   * BFF's best-effort `invalid_client` report actually runs — a report that
+   * threw would turn this terminal refusal into a "transient" one, retried and
+   * kept.
+   */
+  it("ends the session on the declared invalid_client refusal, without a retry", async () => {
+    const s2s = readWireFixture<Record<"invalidClient", WireCase>>("s2s-client-auth.json");
+    expect(s2s.invalidClient.status).toBe(401);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockImplementation(
+      async () => new Response(JSON.stringify(s2s.invalidClient.body), { status: s2s.invalidClient.status }),
+    );
+    const jar = await signedInJar();
+
+    expect(await requestJar.run(jar, () => session.readActiveSession())).toBeNull();
+    expect(jar.get(COOKIE)).toBe("");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   /** Wraps a reply so a test can await the BFF reading its body. */
   function readTracked(reply: ReturnType<typeof respond>) {
     let markRead!: () => void;

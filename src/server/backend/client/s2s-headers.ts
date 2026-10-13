@@ -1,6 +1,7 @@
 import "server-only";
 
-import { readBackendS2SToken } from "@/shared/config/backend-s2s-config";
+import { logError } from "@/server/observability/error-log";
+import { BACKEND_S2S_TOKEN_ENV, readBackendS2SToken } from "@/shared/config/backend-s2s-config";
 
 /**
  * The BFF's client credential on requests to the auth backend (RUK-311).
@@ -31,4 +32,34 @@ export const S2S_APPNAME = "maintmode-ui";
 export function applyBackendS2SHeaders(headers: Headers): void {
   headers.set(S2S_APPNAME_HEADER, S2S_APPNAME);
   headers.set(S2S_TOKEN_HEADER, readBackendS2SToken(process.env));
+}
+
+/**
+ * Logs a `401` whose body says the backend refused THIS client — not the
+ * user's token or credentials (`invalid_client`, the same envelope for every
+ * cause). That is a deployment misconfiguration that signs everyone out at
+ * their next refresh and fails every sign-in as "wrong credentials", so it has
+ * to be loud and name what to fix. The token is never logged; the path is
+ * logged without its query string (an invitation preview carries a bearer
+ * token there). The entry's own `path` field is left unset: in the log store it
+ * means the inbound BFF request.
+ *
+ * Best-effort and never throws: it runs inside the caller's error handling,
+ * and a throw there would change how the 401 is classified (`session-token.ts`
+ * reads any non-`BackendAuthError` as transient and keeps the session).
+ */
+export function reportRejectedClientCredential(path: string, bodyText: string): void {
+  try {
+    const parsed: unknown = JSON.parse(bodyText);
+    if ((parsed as { code?: unknown } | null)?.code !== "invalid_client") {
+      return;
+    }
+    logError({
+      level: "ERROR",
+      msg: `auth backend refused the BFF client credential; check that ${BACKEND_S2S_TOKEN_ENV} equals the backend's s2s secret for ${S2S_APPNAME}`,
+      err: `invalid_client on ${path.split(/[?#]/, 1)[0]}`,
+    });
+  } catch {
+    // Not JSON, or nothing to report: the caller's handling is all that matters.
+  }
 }
