@@ -77,8 +77,14 @@ async function requestsReachedRefresh(count: number): Promise<void> {
 }
 
 const refreshBackendToken = vi.fn<(refreshToken: string) => Promise<BackendRefreshReply>>();
+// Settles at the first backend refresh call of a test, so `untilRetryScheduled`
+// can await it instead of guessing how many event-loop turns it takes.
+const firstRefreshCall = vi.hoisted(() => ({ reached: Promise.resolve(), signal: () => {} }));
 vi.mock("@/server/auth/backend-token-exchange", () => ({
-  refreshBackendToken: (refreshToken: string) => refreshBackendToken(refreshToken),
+  refreshBackendToken: (refreshToken: string) => {
+    firstRefreshCall.signal();
+    return refreshBackendToken(refreshToken);
+  },
 }));
 
 // The module keeps settled refreshes for a minute, so every test gets a fresh
@@ -91,6 +97,9 @@ beforeEach(async () => {
   session = await import("@/server/auth/session-token");
   ({ BackendAuthError } = await import("@/server/auth/contracts"));
   refreshBackendToken.mockReset();
+  firstRefreshCall.reached = new Promise((resolve) => {
+    firstRefreshCall.signal = resolve;
+  });
   decodes.settled = 0;
   clockReads.parse.length = 0;
   clockReads.maxAge.length = 0;
@@ -147,12 +156,19 @@ async function cookiePayload(jar: Jar) {
 /**
  * Resolves once the retry's timer is armed. Not `vi.waitFor`: under fake timers
  * it advances the clock on every poll, which would eat into the delay a test
- * is measuring. `setImmediate` is left real, so this only lets I/O settle.
+ * is measuring.
+ *
+ * Awaited on the backend call, not polled for a number of event-loop turns.
+ * Reaching the call means decrypting the session cookie first (HKDF + JWE on
+ * libuv's thread pool), whose duration a turn count cannot bound: a loaded CI
+ * runner took longer than the 1 000 turns this used to allow, the test failed
+ * here, and its orphaned refresh then consumed the next test's mocks. From the
+ * call on, the refusal is classified and the timer armed in microtasks, so one
+ * more (real) `setImmediate` turn settles it — as in `refresh.contract.test.ts`.
  */
 async function untilRetryScheduled(): Promise<void> {
-  for (let i = 0; i < 1_000 && vi.getTimerCount() === 0; i += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+  await firstRefreshCall.reached;
+  await new Promise((resolve) => setImmediate(resolve));
   expect(vi.getTimerCount()).toBe(1);
   expect(refreshBackendToken).toHaveBeenCalledTimes(1);
 }
