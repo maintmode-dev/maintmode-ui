@@ -508,9 +508,10 @@ async function requestRefresh(refreshToken: string): Promise<RefreshResult> {
 }
 
 /**
- * `now` is the instant the session end was validated against
- * (`parseSessionExpiresAt`), so the lifetime computed here cannot round to 0
- * for a value that passed as at least a second ahead.
+ * `now` is the instant a reported session end was validated against
+ * (`parseSessionExpiresAt`), so a value that passed as at least a second ahead
+ * cannot round to Max-Age 0 here. A stored end carried through a refresh is
+ * not re-validated, and near its end 0 is the intended answer.
  */
 async function writeSessionCookie(name: string, payload: SessionPayload, now: number): Promise<void> {
   // The cookie and the sealed JWT inside it both end with the session: never

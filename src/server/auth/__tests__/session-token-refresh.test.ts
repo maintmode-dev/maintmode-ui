@@ -46,10 +46,21 @@ vi.mock("@/shared/config/auth-config", () => ({
 // claimed its place in the in-flight map. That replaces a fixed sleep, which
 // under a loaded full-suite run let the requests arrive in the opposite order.
 const decodes = vi.hoisted(() => ({ settled: 0 }));
+// The `now` each session-end computation was given, so a test can tell one
+// clock read per cookie write from two (SPEC §2.1 rule 3).
+const clockReads = vi.hoisted(() => ({ parse: [] as number[], maxAge: [] as number[] }));
 vi.mock("@/server/auth/session-cookie", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/server/auth/session-cookie")>();
   return {
     ...actual,
+    parseSessionExpiresAt: (value: unknown, now: number) => {
+      clockReads.parse.push(now);
+      return actual.parseSessionExpiresAt(value, now);
+    },
+    sessionCookieMaxAgeSeconds: (...args: Parameters<typeof actual.sessionCookieMaxAgeSeconds>) => {
+      clockReads.maxAge.push(args[1] ?? Number.NaN);
+      return actual.sessionCookieMaxAgeSeconds(...args);
+    },
     decodeSession: async (...args: Parameters<typeof actual.decodeSession>) => {
       try {
         return await actual.decodeSession(...args);
@@ -81,6 +92,8 @@ beforeEach(async () => {
   ({ BackendAuthError } = await import("@/server/auth/contracts"));
   refreshBackendToken.mockReset();
   decodes.settled = 0;
+  clockReads.parse.length = 0;
+  clockReads.maxAge.length = 0;
 });
 
 afterEach(() => {
@@ -670,6 +683,25 @@ describe("the session cookie ends when the backend says the session does", () =>
     await requestJar.run(jar, () => session.readActiveSession());
 
     expect(jar.maxAge).toBe(0);
+  });
+
+  // One clock read per write: the reply's end is validated as at least a
+  // second ahead at the same instant the cookie's lifetime is measured from,
+  // so a value that passed cannot round to Max-Age 0.
+  it("measures the rotated cookie's lifetime from the instant the reply's end was validated at", async () => {
+    refreshBackendToken.mockResolvedValue({
+      ...ROTATED,
+      session_expires_at: new Date(Date.now() + DAY_MS).toISOString(),
+    });
+    let tick = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => (tick += 10));
+    const jar = await jarFor("user-a", "refresh-a", { sessionStartedAt: tick });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    expect(jar.writes).toBe(1);
+    expect(clockReads.parse).toHaveLength(1);
+    expect(clockReads.maxAge).toEqual(clockReads.parse);
   });
 
   it("takes the end from the reply for a cookie that never had one", async () => {

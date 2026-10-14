@@ -136,9 +136,17 @@ describe("registry — class B: `session_expires_at` on token pairs (RUK-310)", 
       // a reply that is a token pair at all.
       expect(typeof reply.body.access_token).toBe("string");
 
-      expect("session_expires_at" in reply.body ? STALE("session_expires_at", name) : "absent").toBe(
-        "absent",
-      );
+      // Not the shared STALE(): its "delete the row and implement the feature"
+      // is wrong here — the feature is built; what is left is the follow-up the
+      // registry row describes.
+      expect(
+        "session_expires_at" in reply.body
+          ? `GAP IS STALE: \`session_expires_at\` is now on the wire in ${name}. Do not just delete ` +
+              `its row: replace this absence assertion with a positive break-glass ≈24h contract ` +
+              `test and retire the legacy-fallback case in login-break-glass.contract.test.ts ` +
+              `(docs/contract-gaps.md, \`session_expires_at\`).`
+          : "absent",
+      ).toBe("absent");
     });
   }
 
