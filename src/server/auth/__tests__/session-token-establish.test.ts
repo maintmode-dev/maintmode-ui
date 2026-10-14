@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { decodeSession, encodeSession, type SessionPayload } from "@/server/auth/session-cookie";
 
@@ -87,6 +87,71 @@ describe("establishSession — starting a session from a fresh pair", () => {
   ])("refuses a pair with %s instead of writing a dying session", async (_label, pair) => {
     await expect(establishSession(pair, USER)).rejects.toThrow();
     expect(jar.size).toBe(0);
+  });
+});
+
+/**
+ * The backend's `session_expires_at` (RUK-310) ends the cookie — both its
+ * `Max-Age` and the sealed JWT's `exp`, which is what actually signs the user
+ * out server-side: a cookie the browser still sends but whose `exp` has passed
+ * decodes to no session.
+ */
+describe("establishSession — the cookie ends when the backend says the session does", () => {
+  const NAME = "__Secure-authjs.session-token";
+  // 2026-10-14T12:00:00Z
+  const NOW = Date.UTC(2026, 9, 14, 12, 0, 0);
+  const DAY = 24 * 60 * 60;
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Whether the written cookie still opens at `at` (beyond the 15 s decode tolerance either side). */
+  async function opensAt(at: number): Promise<boolean> {
+    vi.setSystemTime(at);
+    return (await decodeSession(jar.get(NAME)!.value, NAME, SECRET)) !== null;
+  }
+
+  async function signInAt(sessionExpiresAt: unknown) {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    await establishSession({ ...PAIR, session_expires_at: sessionExpiresAt }, USER);
+  }
+
+  it.each([
+    ["60 days — past the 720h the BFF used to assume", "2026-12-13T12:00:00Z", 60 * DAY],
+    ["24 hours — a break-glass session", "2026-10-15T12:00:00Z", DAY],
+  ])("caps Max-Age and exp at a %s end", async (_label, value, seconds) => {
+    await signInAt(value);
+
+    expect(jar.get(NAME)?.options).toMatchObject({ maxAge: seconds });
+    expect(await opensAt(NOW + seconds * 1000 - 60_000)).toBe(true);
+    expect(await opensAt(NOW + seconds * 1000 + 60_000)).toBe(false);
+    vi.setSystemTime(NOW);
+    expect(await decodeSession(jar.get(NAME)!.value, NAME, SECRET)).toMatchObject({
+      sessionStartedAt: NOW,
+      sessionExpiresAt: NOW + seconds * 1000,
+    });
+  });
+
+  it.each([
+    ["no field", undefined],
+    ["null", null],
+    ["a number", 1797163200],
+    ["a zone-less instant", "2026-12-13T12:00:00"],
+    ["a loose date", "Dec 13 2026"],
+    ["a past instant", "2026-10-13T12:00:00Z"],
+    ["an instant under a second ahead", "2026-10-14T12:00:00.400Z"],
+  ])("keeps today's 720h cookie for %s", async (_label, value) => {
+    await signInAt(value);
+
+    expect(jar.get(NAME)?.options).toMatchObject({ maxAge: 30 * DAY });
+    expect(await opensAt(NOW + 30 * DAY * 1000 - 60_000)).toBe(true);
+    expect(await opensAt(NOW + 30 * DAY * 1000 + 60_000)).toBe(false);
+    vi.setSystemTime(NOW);
+    const stored = await decodeSession(jar.get(NAME)!.value, NAME, SECRET);
+    expect(stored?.sessionStartedAt).toBe(NOW);
+    expect(stored && "sessionExpiresAt" in stored).toBe(false);
   });
 });
 

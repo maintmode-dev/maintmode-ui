@@ -14,6 +14,7 @@ import {
   SESSION_COOKIE_NAMES,
   decodeSession,
   encodeSession,
+  parseSessionExpiresAt,
   sessionCookieAttributes,
   sessionCookieMaxAgeSeconds,
   sessionCookieNameFor,
@@ -139,18 +140,21 @@ export async function establishSession(
     throw new Error("token pair cannot sustain a session");
   }
   const now = Date.now();
+  const sessionExpiresAt = parseSessionExpiresAt(pair.session_expires_at, now);
   const payload: SessionPayload = {
     accessToken: pair.access_token,
     refreshToken: pair.refresh_token,
     accessTokenExpiresAt: now + expiresIn * 1000,
     user,
-    // The sign-in instant, carried through every refresh: the cookie ends when
+    // The sign-in instant and, when the backend reported it, the session's
+    // absolute end, both carried through every refresh: the cookie ends when
     // the session does (`sessionCookieMaxAgeSeconds`).
     sessionStartedAt: now,
+    ...(sessionExpiresAt !== undefined ? { sessionExpiresAt } : {}),
   };
   const name = sessionCookieNameFor(getAuthConfig().appBaseUrl);
   await clearActiveSession();
-  await writeSessionCookie(name, payload);
+  await writeSessionCookie(name, payload, now);
   return payload;
 }
 
@@ -412,7 +416,7 @@ async function refreshAndPersist(
   };
   if (rotatedRefreshToken) {
     // Under the name it was found under: the name is the encryption key's salt.
-    await writeSessionCookie(entry.name, next);
+    await writeSessionCookie(entry.name, next, Date.now());
   }
   return next;
 }
@@ -496,10 +500,16 @@ async function requestRefresh(refreshToken: string): Promise<RefreshResult> {
   return { reply, receivedAt: Date.now() };
 }
 
-async function writeSessionCookie(name: string, payload: SessionPayload): Promise<void> {
+/**
+ * `now` is the instant the session end was validated against
+ * (`parseSessionExpiresAt`), so the lifetime computed here cannot round to 0
+ * for a value that passed as at least a second ahead.
+ */
+async function writeSessionCookie(name: string, payload: SessionPayload, now: number): Promise<void> {
   // The cookie and the sealed JWT inside it both end with the session: never
-  // past `sessionStartedAt` + the backend's maximum lifetime.
-  const maxAge = sessionCookieMaxAgeSeconds(payload);
+  // past the end the backend reported, or `sessionStartedAt` + its default
+  // maximum lifetime when it reported none.
+  const maxAge = sessionCookieMaxAgeSeconds(payload, now);
   const cookieStore = await cookies();
   cookieStore.set({
     name,
