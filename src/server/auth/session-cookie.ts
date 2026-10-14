@@ -77,6 +77,9 @@ export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
  */
 const COOKIE_MAX_AGE_CEILING_SECONDS = 400 * 24 * 60 * 60;
 
+/** How far ahead a reported session end must be to count: a `Max-Age` of at least 1. */
+const MIN_SESSION_END_LEAD_MS = 1000;
+
 /**
  * RFC 3339 date-time with an explicit zone, as Go's `time.RFC3339` writes it.
  * Checked before `Date.parse`, which reads a zone-less ISO string as
@@ -97,7 +100,7 @@ export function parseSessionExpiresAt(value: unknown, now: number): number | und
     return undefined;
   }
   const at = Date.parse(value);
-  if (!Number.isFinite(at) || at - now < 1000) {
+  if (!Number.isFinite(at) || at - now < MIN_SESSION_END_LEAD_MS) {
     return undefined;
   }
   return at;

@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { decodeSession } from "@/server/auth/session-cookie";
+import { decodeSession, encodeSession } from "@/server/auth/session-cookie";
 
 /**
  * RUK-310: the backend's `session_expires_at` must reach the session cookie
- * through every production sign-in path. Each path copies the backend pair
- * through its own assignment on the way to `establishSession`, and a hop that
- * rebuilds the pair from named fields would drop the new one silently — every
+ * through every production sign-in path, and through refresh. Each path
+ * copies the backend pair through its own assignment on the way to the
+ * session writer, and a hop that rebuilds the pair from named fields would
+ * drop the new one silently — every
  * type still checks, every other test stays green. So nothing between `fetch`
  * and the cookie jar is mocked here: the real HTTP client, the real runners,
  * the real session writer.
@@ -43,6 +44,7 @@ vi.mock("next/headers", () => ({
 const fetchMock = vi.fn();
 
 const { signInWithBackendLogin, signInWithDanceCode } = await import("@/server/auth/sign-in");
+const { readActiveSession } = await import("@/server/auth/session-token");
 
 const ME = { id: "u-1", email: "a@example.test", display_name: "A", oauth_provider: "", roles: ["admin"] };
 
@@ -101,6 +103,45 @@ describe("the backend's session end reaches the cookie through every sign-in pat
     expect(jar.get(NAME)?.maxAge).toBe(60 * DAY);
     expect(await decodeSession(jar.get(NAME)!.value, NAME, SECRET)).toMatchObject({
       sessionExpiresAt: NOW + 60 * DAY * 1000,
+    });
+  });
+});
+
+describe("the backend's session end reaches the cookie through refresh", () => {
+  // `refreshBackendToken` hands the parsed reply on whole; a version that
+  // rebuilt it from named fields would drop the end here, with every mocked
+  // refresh test still green.
+  it("a rotating reply's end caps the rewritten cookie", async () => {
+    const user = { id: "u-1", email: "a@example.test", displayName: "A", roles: ["admin"] };
+    jar.set(NAME, {
+      value: await encodeSession(
+        {
+          accessToken: "at-old",
+          refreshToken: "rt-old",
+          accessTokenExpiresAt: 0,
+          user,
+          sessionStartedAt: NOW,
+        },
+        NAME,
+        SECRET,
+      ),
+    });
+    fetchMock.mockResolvedValueOnce(
+      respond({
+        access_token: "at-2",
+        refresh_token: "rt-2",
+        expires_in: 900,
+        session_expires_at: "2026-10-15T12:00:00Z",
+      }),
+    );
+
+    await readActiveSession();
+
+    expect(String(fetchMock.mock.calls[0][0])).toMatch(/\/api\/v1\/refresh$/);
+    expect(jar.get(NAME)?.maxAge).toBe(DAY);
+    expect(await decodeSession(jar.get(NAME)!.value, NAME, SECRET)).toMatchObject({
+      refreshToken: "rt-2",
+      sessionExpiresAt: NOW + DAY * 1000,
     });
   });
 });

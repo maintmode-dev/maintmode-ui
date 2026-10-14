@@ -135,6 +135,16 @@ describe("establishSession — the cookie ends when the backend says the session
     });
   });
 
+  // A garbage far-future end must not seal a session that never expires
+  // server-side: the cookie and its exp both stop at the browsers' 400 days.
+  it("clamps Max-Age and exp at 400 days for an end further out", async () => {
+    await signInAt("2040-01-01T00:00:00Z");
+
+    expect(jar.get(NAME)?.options).toMatchObject({ maxAge: 400 * DAY });
+    expect(await opensAt(NOW + 400 * DAY * 1000 - 60_000)).toBe(true);
+    expect(await opensAt(NOW + 400 * DAY * 1000 + 60_000)).toBe(false);
+  });
+
   // SPEC §2.1 rule 3: ONE clock read per write. An end accepted as exactly a
   // second ahead must give a one-second cookie even though the clock moves on
   // while the cookie is written — a second read would round it to Max-Age 0
