@@ -104,6 +104,7 @@ describe("establishSession — the cookie ends when the backend says the session
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   /** Whether the written cookie still opens at `at` (beyond the 15 s decode tolerance either side). */
@@ -132,6 +133,19 @@ describe("establishSession — the cookie ends when the backend says the session
       sessionStartedAt: NOW,
       sessionExpiresAt: NOW + seconds * 1000,
     });
+  });
+
+  // SPEC §2.1 rule 3: ONE clock read per write. An end accepted as exactly a
+  // second ahead must give a one-second cookie even though the clock moves on
+  // while the cookie is written — a second read would round it to Max-Age 0
+  // and delete the cookie at the moment of sign-in.
+  it("measures the cookie's lifetime from the same instant the end was validated at", async () => {
+    let tick = 0;
+    vi.spyOn(Date, "now").mockImplementation(() => NOW + 10 * tick++);
+
+    await establishSession({ ...PAIR, session_expires_at: "2026-10-14T12:00:01Z" }, USER);
+
+    expect(jar.get(NAME)?.options).toMatchObject({ maxAge: 1 });
   });
 
   it.each([

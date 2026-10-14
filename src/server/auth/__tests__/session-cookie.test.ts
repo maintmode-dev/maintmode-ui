@@ -106,6 +106,7 @@ describe("parseSessionExpiresAt — the backend's absolute session end (RUK-310)
     ["Z", "2026-11-13T12:00:00Z", Date.UTC(2026, 10, 13, 12, 0, 0)],
     ["fractional seconds", "2026-11-13T12:00:00.250Z", Date.UTC(2026, 10, 13, 12, 0, 0, 250)],
     ["a numeric offset", "2026-11-13T15:00:00+03:00", Date.UTC(2026, 10, 13, 12, 0, 0)],
+    ["a negative numeric offset", "2026-11-13T07:00:00-05:00", Date.UTC(2026, 10, 13, 12, 0, 0)],
     ["exactly one second ahead", "2026-10-14T12:00:01Z", Date.UTC(2026, 9, 14, 12, 0, 1)],
   ])("accepts an instant with %s", (_label, value, expected) => {
     expect(parseSessionExpiresAt(value, NOW)).toBe(expected);
