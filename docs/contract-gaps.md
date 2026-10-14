@@ -82,6 +82,33 @@ protected by a mechanism it does not have.
 
 ---
 
+### `session_expires_at` on token pairs — the BFF reads it, the backend does not send it yet
+
+| Field                | Where it is needed                                                      | What is on the wire                                                                                        | Ticket  | Stub                                                                           |
+| -------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------ |
+| `session_expires_at` | `establishSession`, `refreshAndPersist` — the session cookie's lifetime | absent from both recorded token-pair replies (`login-break-glass.json`, `invitation-accept-password.json`) | RUK-310 | none — a fallback: `sessionCookieMaxAgeSeconds` legacy branch (sign-in + 720h) |
+
+The backend will report the session's absolute end (RFC 3339 UTC, sign-in +
+`session_max_lifetime`, 24h for break-glass, constant across rotations) with
+every token pair. The BFF already reads it, stores it in the sealed cookie and
+ends the cookie with it; until it arrives, the cookie falls back to the 720h
+the BFF used to assume — 29 days too long for a break-glass session, too
+short for an operator who raised the lifetime. Released either side first.
+
+Executable: `contract-gaps.test.ts` asserts the field is ABSENT from the two
+recorded token-pair replies and fails with "gap is stale" once they are
+re-recorded from a backend that sends it.
+
+**When it fires**, do not just delete this row: replace the absence assertion
+with a positive contract test on the re-recorded fixture (break-glass cookie ≈
+24h), and retire with it the legacy-fallback case in
+`login-break-glass.contract.test.ts`. `refresh.json` is DECLARED, not recorded
+(see its manifest entry), so it never trips this check: re-transcribe it from
+the backend source after the backend change lands — a declaration, not an
+invented field.
+
+---
+
 ### `refresh_token` on a grace refresh — CLOSED 2026-10-09
 
 | Field           | Where it is needed                                       | What is on the wire                                                                                | Ticket | Status                                   |
@@ -125,6 +152,8 @@ The same failure path hid three neighbouring discrepancies, closed together:
   field). The BFF now records its own sign-in time in the sealed session
   (`sessionStartedAt`) and caps every cookie it writes at that plus 30 days. A
   cookie from before the field existed keeps the old 30-days-from-now lifetime.
+  Superseded by the backend's own `session_expires_at` once it ships — see the
+  `session_expires_at` row above (RUK-310); 720h stays as the fallback.
 
 Kept executable by `contract-gaps.test.ts` ("refresh grace reply", now asserting
 the reply is ACCEPTED, so the gap cannot quietly reopen) and by

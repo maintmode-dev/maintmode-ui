@@ -28,13 +28,22 @@ export type SessionPayload = {
   user: AuthSessionUser;
   /**
    * Epoch ms of the sign-in that started this session, carried unchanged
-   * through every refresh. The backend ends a session a fixed time after
-   * sign-in (`jwt.session_max_lifetime`, its `SessionStartedAt`) and exposes
-   * that instant nowhere — no claim, no response field — so the BFF keeps its
-   * own copy to end the cookie with the session. Absent in a cookie written
-   * before the field existed.
+   * through every refresh. The fallback for the cookie's end when the backend
+   * did not report one (`sessionExpiresAt`): its default
+   * `jwt.session_max_lifetime` after sign-in. Also what a build from before
+   * `sessionExpiresAt` reads, so it is written even when that is known.
+   * Absent in a cookie written before the field existed.
    */
   sessionStartedAt?: number;
+  /**
+   * Epoch ms the backend ends this session at the latest — its
+   * `session_expires_at` (RUK-310): sign-in + `session_max_lifetime`, 24h for
+   * break-glass. Constant for the session, so it is carried through every
+   * refresh whose reply omits it. An upper bound only: the session can end
+   * earlier (idle, logout, revocation), which the refresh 401 handles. Absent
+   * when the backend never sent it (a backend from before RUK-310).
+   */
+  sessionExpiresAt?: number;
 };
 
 /** Under https the cookie carries `__Secure-`, which a browser only accepts with `Secure`. */
@@ -53,25 +62,68 @@ export const SESSION_COOKIE_NAMES = [
 ] as const;
 
 /**
- * The longest a session lives, from sign-in. Matches the backend's default
- * `jwt.session_max_lifetime` (720h, the same in every shipped deployment
- * config); the BFF has no setting of its own for it. A backend configured
- * shorter (or the 24h break-glass session) still ends the session first: its
- * refresh answers 401 and the cookie is cleared then.
+ * The longest a session lives, from sign-in, when the backend did not say
+ * (`sessionExpiresAt` absent — a backend from before RUK-310). Matches the
+ * backend's default `jwt.session_max_lifetime` (720h); the BFF has no setting
+ * of its own for it.
  */
 export const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
 
 /**
+ * The most a cookie may live, whatever the backend reports: the cap browsers
+ * apply to `Max-Age` themselves. Applied here too so the sealed JWT `exp`
+ * stays equal to the cookie's own lifetime, and a garbage far-future value
+ * cannot seal a session that never expires server-side.
+ */
+const COOKIE_MAX_AGE_CEILING_SECONDS = 400 * 24 * 60 * 60;
+
+/** How far ahead a reported session end must be to count: a `Max-Age` of at least 1. */
+const MIN_SESSION_END_LEAD_MS = 1000;
+
+/**
+ * RFC 3339 date-time with an explicit zone, as Go's `time.RFC3339` writes it.
+ * Checked before `Date.parse`, which reads a zone-less ISO string as
+ * server-local time and accepts loose forms like "Nov 13 2026".
+ */
+const RFC3339_WITH_ZONE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * The backend's `session_expires_at` as epoch ms, or `undefined` for anything
+ * not usable — absent, `null`, not a string, not RFC 3339 with a zone,
+ * unparseable, or less than a second after `now`. The backend has just issued
+ * live tokens with it, so a value not in the future is skew or garbage, and
+ * honouring it would delete the cookie on the spot. `undefined` means "fall
+ * back", exactly as for a backend that never sends the field.
+ */
+export function parseSessionExpiresAt(value: unknown, now: number): number | undefined {
+  if (typeof value !== "string" || !RFC3339_WITH_ZONE.test(value)) {
+    return undefined;
+  }
+  const at = Date.parse(value);
+  if (!Number.isFinite(at) || at - now < MIN_SESSION_END_LEAD_MS) {
+    return undefined;
+  }
+  return at;
+}
+
+/**
  * Seconds the session cookie may live when written at `now`: until the
  * session's absolute end, never past it (RFC 10017 §6.1.2.2 — the BFF session
- * ends with the refresh token's maximum lifetime). A refresh therefore no longer
- * re-arms a fresh 30 days. A cookie from before `sessionStartedAt` existed keeps
- * the old behaviour, a full `SESSION_MAX_AGE_SECONDS` from now.
+ * ends with the refresh token's maximum lifetime), so a refresh never re-arms
+ * a fresh lifetime. The end is the backend's own `sessionExpiresAt` when it
+ * reported one — not capped at 30 days, since an operator may raise
+ * `session_max_lifetime` — else `sessionStartedAt` + `SESSION_MAX_AGE_SECONDS`,
+ * else (a cookie from before either existed) a full `SESSION_MAX_AGE_SECONDS`
+ * from now.
  */
 export function sessionCookieMaxAgeSeconds(
-  payload: Pick<SessionPayload, "sessionStartedAt">,
+  payload: Pick<SessionPayload, "sessionStartedAt" | "sessionExpiresAt">,
   now = Date.now(),
 ): number {
+  if (typeof payload.sessionExpiresAt === "number" && Number.isFinite(payload.sessionExpiresAt)) {
+    const remaining = Math.floor((payload.sessionExpiresAt - now) / 1000);
+    return Math.min(COOKIE_MAX_AGE_CEILING_SECONDS, Math.max(0, remaining));
+  }
   if (typeof payload.sessionStartedAt !== "number" || !Number.isFinite(payload.sessionStartedAt)) {
     return SESSION_MAX_AGE_SECONDS;
   }
@@ -161,7 +213,7 @@ export async function decodeSession(
     return null;
   }
 
-  const { accessToken, refreshToken, accessTokenExpiresAt, user, sessionStartedAt, error } =
+  const { accessToken, refreshToken, accessTokenExpiresAt, user, sessionStartedAt, sessionExpiresAt, error } =
     claims as Partial<SessionPayload> & {
       error?: unknown;
     };
@@ -176,6 +228,9 @@ export async function decodeSession(
     user,
     ...(typeof sessionStartedAt === "number" && Number.isFinite(sessionStartedAt)
       ? { sessionStartedAt }
+      : {}),
+    ...(typeof sessionExpiresAt === "number" && Number.isFinite(sessionExpiresAt)
+      ? { sessionExpiresAt }
       : {}),
   };
 }

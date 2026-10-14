@@ -116,6 +116,48 @@ describe("registry — class B: fields the calendar wants and the wire does not 
 });
 
 /**
+ * Class B — `session_expires_at` (RUK-310). The BFF reads the backend's session
+ * end from every token pair; the backend does not send it yet, and the cookie
+ * falls back to sign-in + 720h. Not a mapper stub — a fallback — so it is its
+ * own block over the RECORDED token-pair replies, not a CALENDAR_EVENT_GAPS
+ * entry. `refresh.json` is left out on purpose: it is declared, not recorded,
+ * so it would never go stale on its own (see the registry row).
+ */
+describe("registry — class B: `session_expires_at` on token pairs (RUK-310)", () => {
+  type WireCase = { status: number; body: Record<string, unknown> };
+  const replies = [
+    ["login-break-glass.json", fixture("login-break-glass.json").success as WireCase],
+    ["invitation-accept-password.json", fixture("invitation-accept-password.json").success as WireCase],
+  ] as const;
+
+  for (const [name, reply] of replies) {
+    it(`is still absent from the recorded token pair in ${name}`, () => {
+      // Precondition with literal field names: absence means something only on
+      // a reply that is a token pair at all.
+      expect(typeof reply.body.access_token).toBe("string");
+
+      // Not the shared STALE(): its "delete the row and implement the feature"
+      // is wrong here — the feature is built; what is left is the follow-up the
+      // registry row describes.
+      expect(
+        "session_expires_at" in reply.body
+          ? `GAP IS STALE: \`session_expires_at\` is now on the wire in ${name}. Do not just delete ` +
+              `its row: replace this absence assertion with a positive break-glass ≈24h contract ` +
+              `test and retire the legacy-fallback case in login-break-glass.contract.test.ts ` +
+              `(docs/contract-gaps.md, \`session_expires_at\`).`
+          : "absent",
+      ).toBe("absent");
+    });
+  }
+
+  it("has its row in docs/contract-gaps.md", () => {
+    expect(`session_expires_at in registry: ${registry.includes("`session_expires_at`")}`).toBe(
+      "session_expires_at in registry: true",
+    );
+  });
+});
+
+/**
  * CLOSED — the BFF required `refresh_token` on every refresh reply, and the
  * backend omits it inside the 30s grace window ("keep the one you have").
  *
@@ -407,7 +449,7 @@ describe("the registry file itself", () => {
     // leaving them would have kept this assertion green (they are still named in
     // the registry, now under Class C) while claiming an enforcement that no
     // longer happens — a false statement no test would ever catch.
-    const enforced = ["resources", "details", "facets.integration", "refresh_token"];
+    const enforced = ["resources", "details", "facets.integration", "refresh_token", "session_expires_at"];
     const undocumented = enforced.filter((field) => !registry.includes(field));
 
     expect(`undocumented enforced gaps: ${undocumented.join(", ") || "none"}`).toBe(

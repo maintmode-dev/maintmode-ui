@@ -11,6 +11,12 @@ export type BackendTokenPair = {
   access_token: string;
   refresh_token: string;
   expires_in: number;
+  /**
+   * The session's absolute end, RFC 3339 UTC (RUK-310). Absent from a backend
+   * that predates it. Typed `unknown` on purpose: read it only through
+   * `parseSessionExpiresAt`.
+   */
+  session_expires_at?: unknown;
 };
 
 /**
@@ -25,6 +31,8 @@ export type BackendRefreshReply = {
   access_token: string;
   refresh_token?: string;
   expires_in: number;
+  /** As on `BackendTokenPair`; constant for the session, so it may be absent here too. */
+  session_expires_at?: unknown;
 };
 
 export type BackendOAuthCallbackJsonResponse = {
