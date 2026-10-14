@@ -403,6 +403,12 @@ async function refreshAndPersist(
   // one you have". It is never written into the cookie — the cookie keeps its
   // own refresh token — and the new access token serves this request only.
   const rotatedRefreshToken = reply.refresh_token || null;
+  // The session's end is constant, so a reply without a usable one — a backend
+  // from before RUK-310, or a grace reply that omits it — keeps the end the
+  // cookie already holds, as is. Never re-checked or dropped: near the end that
+  // correctly yields a cookie about to expire, not a fresh 720h.
+  const now = Date.now();
+  const sessionExpiresAt = parseSessionExpiresAt(reply.session_expires_at, now) ?? current.sessionExpiresAt;
   // `user` is the caller's own, decoded from its own cookie: the backend pair
   // carries no identity, and it was minted for this caller's refresh token.
   // The expiry counts from when the reply ARRIVED, so a caller served from
@@ -413,10 +419,11 @@ async function refreshAndPersist(
     accessTokenExpiresAt: receivedAt + expiresIn * 1000,
     user: current.user,
     ...(current.sessionStartedAt !== undefined ? { sessionStartedAt: current.sessionStartedAt } : {}),
+    ...(sessionExpiresAt !== undefined ? { sessionExpiresAt } : {}),
   };
   if (rotatedRefreshToken) {
     // Under the name it was found under: the name is the encryption key's salt.
-    await writeSessionCookie(entry.name, next, Date.now());
+    await writeSessionCookie(entry.name, next, now);
   }
   return next;
 }

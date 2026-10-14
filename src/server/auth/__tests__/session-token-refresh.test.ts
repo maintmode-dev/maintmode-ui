@@ -107,7 +107,11 @@ function backendError(status: number, message = "", retryAfter?: string) {
 async function jarFor(
   userId: string,
   refreshToken: string,
-  { expiresAt = 0, sessionStartedAt }: { expiresAt?: number; sessionStartedAt?: number } = {},
+  {
+    expiresAt = 0,
+    sessionStartedAt,
+    sessionExpiresAt,
+  }: { expiresAt?: number; sessionStartedAt?: number; sessionExpiresAt?: number } = {},
 ): Promise<Jar> {
   const payload: SessionPayload = {
     accessToken: `access-${userId}-old`,
@@ -115,6 +119,7 @@ async function jarFor(
     accessTokenExpiresAt: expiresAt,
     user: { id: userId, email: `${userId}@example.test`, displayName: userId, roles: [] },
     ...(sessionStartedAt !== undefined ? { sessionStartedAt } : {}),
+    ...(sessionExpiresAt !== undefined ? { sessionExpiresAt } : {}),
   };
   const jar = new Jar();
   jar.set(COOKIE, await encodeSession(payload, COOKIE, SECRET));
@@ -606,6 +611,76 @@ describe("the session cookie ends with the session", () => {
 
     expect(jar.maxAge).toBe(THIRTY_DAYS_S);
     expect((await cookiePayload(jar))?.sessionStartedAt).toBeUndefined();
+  });
+});
+
+/**
+ * RUK-310: the backend reports the session's absolute end with every token
+ * pair. It is constant for the session, so a reply that omits it — a backend
+ * from before RUK-310 — or carries something unusable keeps the end already in
+ * the cookie, as is, rather than re-arming the 720h fallback.
+ */
+describe("the session cookie ends when the backend says the session does", () => {
+  const HOUR_MS = 60 * 60 * 1000;
+
+  it("caps the rotated cookie and its exp at the end the reply reports", async () => {
+    const end = Date.now() + 2 * DAY_MS;
+    refreshBackendToken.mockResolvedValue({ ...ROTATED, session_expires_at: new Date(end).toISOString() });
+    const jar = await jarFor("user-a", "refresh-a", {
+      sessionStartedAt: Date.now() - HOUR_MS,
+      sessionExpiresAt: Date.now() + 10 * DAY_MS,
+    });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    expect(jar.maxAge).toBeLessThanOrEqual(2 * 24 * 60 * 60);
+    expect(jar.maxAge).toBeGreaterThan(2 * 24 * 60 * 60 - 60);
+    expect(await cookiePayload(jar)).toMatchObject({ refreshToken: "refresh-a-2", sessionExpiresAt: end });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(end + 60_000);
+    expect(await cookiePayload(jar)).toBeNull();
+  });
+
+  it.each([
+    ["omits the field", ROTATED],
+    ["carries an unusable value", { ...ROTATED, session_expires_at: "2026-12-01T00:00:00" }],
+  ])("keeps the stored end when the reply %s", async (_label, reply) => {
+    refreshBackendToken.mockResolvedValue(reply);
+    const end = Date.now() + 23 * HOUR_MS;
+    const jar = await jarFor("user-a", "refresh-a", {
+      sessionStartedAt: Date.now() - HOUR_MS,
+      sessionExpiresAt: end,
+    });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    // 23h, not the ~29 days left of a 720h session started an hour ago.
+    expect(jar.maxAge).toBeLessThanOrEqual(23 * 60 * 60);
+    expect(jar.maxAge).toBeGreaterThan(23 * 60 * 60 - 60);
+    expect(await cookiePayload(jar)).toMatchObject({ refreshToken: "refresh-a-2", sessionExpiresAt: end });
+  });
+
+  it("ends the cookie at a stored end that has passed, never re-arming 720h", async () => {
+    refreshBackendToken.mockResolvedValue(ROTATED);
+    const jar = await jarFor("user-a", "refresh-a", {
+      sessionStartedAt: Date.now() - 25 * HOUR_MS,
+      sessionExpiresAt: Date.now() - 1000,
+    });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    expect(jar.maxAge).toBe(0);
+  });
+
+  it("takes the end from the reply for a cookie that never had one", async () => {
+    const end = Date.now() + 40 * DAY_MS;
+    refreshBackendToken.mockResolvedValue({ ...ROTATED, session_expires_at: new Date(end).toISOString() });
+    const jar = await jarFor("user-a", "refresh-a", { sessionStartedAt: Date.now() - HOUR_MS });
+
+    await requestJar.run(jar, () => session.readActiveSession());
+
+    expect(jar.maxAge).toBeGreaterThan(40 * 24 * 60 * 60 - 60);
+    expect((await cookiePayload(jar))?.sessionExpiresAt).toBe(end);
   });
 });
 
