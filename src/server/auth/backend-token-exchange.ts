@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { Role } from "@/domain/auth/permissions";
 import { forwardedClientHeaders } from "@/server/backend/client/forwarded-for";
 import { applyBackendS2SHeaders, reportRejectedClientCredential } from "@/server/backend/client/s2s-headers";
 import { readMaintmodeBackendConfig, resolveBackendUrl } from "@/server/backend/config";
@@ -10,7 +11,7 @@ import {
   type BackendTokenPair,
 } from "@/server/auth/contracts";
 
-const EXCHANGE_GOOGLE_PATH = "/api/v1/login/oauth/exchange/google";
+const DEV_LOGIN_PATH = "/api/v1/login/dev";
 const DANCE_CODE_EXCHANGE_PATH = "/api/v1/login/oauth/code/exchange";
 const ACCEPT_INVITATION_PASSWORD_PATH = "/api/v1/users/invitations/accept/password";
 const REFRESH_PATH = "/api/v1/refresh";
@@ -26,38 +27,26 @@ const PASSWORD_RESET_CONFIRM_PATH = "/api/v1/password/reset/confirm";
 const CHANGE_PASSWORD_PATH = "/api/v1/me/password";
 
 /**
- * BFF-owned OAuth.
+ * Dev-only "Login as {role}" (RUK-308): a fresh user holding `roles`.
  *
- * NOT a live sign-in path since RUK-292. The frontend stopped being an OAuth
- * client, so nothing here ever holds a real provider `id_token` any more; the
- * live path is `redeemOAuthDanceCode`. The ONLY remaining caller is the dev-only
- * bypass provider, which passes the literal string "dev-bypass" and relies on
- * the backend accepting it in non-production.
+ * Takes no provider credential. It replaced `POST /login/oauth/exchange/google`
+ * with the literal id_token "dev-bypass" and an `X-Test-Roles` header; that
+ * route and that header are gone from the backend in every environment.
  *
- * Kept rather than deleted for exactly that reason. Deleting the backend route
- * without moving the dev stub with it breaks the project's role-switching tool.
+ * Every call mints a NEW user (random subject, `<uuid>@mail.com`) with `roles`
+ * on top of the defaults, invite-only signup notwithstanding; `[]` is a plain
+ * guest. Role names are exact and lowercase — `Admin` answers 400, there is no
+ * normalisation any more. A 403 is the seats limit (`seats_limit_exceeded`).
  *
- * Real route mounted at `/api/v1/login/oauth/exchange/google` (the swagger
- * `summary` lists `/api/v1/auth/exchange/google` — that is a doc bug; the
- * canonical mount lives under `loginOAuthGr` in the backend router).
- *
- * The backend gates this endpoint with the `NotAllowedInProd` middleware, so it
- * is reachable only in dev/staging — which is all the dev bypass needs.
- *
- * `testRoles` (dev-only) seeds the `X-Test-Roles` header so a freshly created
- * dev user gets the given roles (comma-separated, e.g. `admin,editor`). The
- * only caller that passes it is `signInWithDevBypass`, which refuses to run
- * unless `devAuthBypassEnabled` (off in production) — so the header can never ship in a prod build. We only send it
- * when the value is non-empty. The header is deliberately absent from the
- * public swagger, so it is added here in the fetch layer by hand.
+ * The backend registers the route only on a dev stand running the stub login
+ * provider (`environment: dev` + `oauth_providers.use_stub`); everywhere else,
+ * prod included, it answers 404. The only caller is `signInWithDevBypass`,
+ * which refuses to run unless `devAuthBypassEnabled` (off in production).
  */
-export async function exchangeGoogleIdToken(idToken: string, testRoles = ""): Promise<BackendTokenPair> {
-  const headers = testRoles ? { "X-Test-Roles": testRoles } : undefined;
-  return postBackendJson<BackendTokenPair>(
-    EXCHANGE_GOOGLE_PATH,
-    { id_token: idToken },
-    (parsed) => Boolean(parsed?.access_token && parsed?.refresh_token),
-    headers,
+export async function loginAsDevUser(roles: readonly Role[]): Promise<BackendTokenPair> {
+  return postBackendJson<BackendTokenPair>(DEV_LOGIN_PATH, { roles }, (parsed) =>
+    // BOTH tokens, as for every call that mints a session.
+    Boolean(parsed?.access_token && parsed?.refresh_token),
   );
 }
 
@@ -127,7 +116,7 @@ export async function verifyOtpCode(args: {
     OTP_VERIFY_PATH,
     { email: args.email, code: args.code, session_nonce: args.sessionNonce },
     // `refresh_token` carries `omitempty` and may legitimately be absent, so —
-    // unlike the Google path — it is not required here.
+    // unlike dev login and the dance — it is not required here.
     (parsed) => Boolean(parsed?.access_token),
   );
 }
@@ -550,16 +539,12 @@ async function postBackendJson<TResponse>(
   path: string,
   body: Record<string, unknown>,
   isShapeValid: (parsed: TResponse | undefined) => boolean,
-  extraHeaders?: Record<string, string>,
 ): Promise<TResponse> {
   return backendFetch(
     path,
     {
       method: "POST",
       headers: {
-        // Spread extra headers first so the fixed accept/content-type below
-        // always win — a caller can never override the JSON content contract.
-        ...extraHeaders,
         accept: "application/json",
         "content-type": "application/json",
       },

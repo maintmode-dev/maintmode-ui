@@ -2,15 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Contract test — `POST /api/auth/dev-login` → backend
- * `POST /api/v1/login/oauth/exchange/google` (dev stub) + `GET /api/v1/me`.
+ * `POST /api/v1/login/dev` (RUK-308) + `GET /api/v1/me`.
  *
  * Dev-only: it replaces the Auth.js `/api/auth/callback/dev-bypass` endpoint
- * that headless tooling signed in through. No recorded fixture: the exchange
- * mints a user on every call and exists only on dev backends (405 in prod), so
- * the four questions are answered against a stubbed `fetch`, as for
- * `me-password.contract.test.ts`:
+ * that headless tooling signed in through. No recorded fixture: the dev login
+ * mints a user on every call and exists only on dev stands running the stub
+ * provider (404 everywhere else), so the four questions are answered against a
+ * stubbed `fetch`, as for `me-password.contract.test.ts`:
  *
- *   1. is the role forwarded — as `X-Test-Roles`, with the dev placeholder token?
+ *   1. is the role forwarded — in the `roles` body, and nothing of the retired
+ *      id_token exchange (`X-Test-Roles`, `id_token`) along with it?
  *   2. does success reach the client — 204 and a session cookie?
  *   3. does a backend failure stay an error rather than a silent 204?
  *   4. are expectations read off the `fetch` stub, not off the inputs?
@@ -59,7 +60,7 @@ afterEach(() => {
 function backendSignsIn() {
   fetchMock.mockImplementation(async (input) => {
     const url = String(input);
-    if (url.endsWith("/exchange/google")) {
+    if (url.endsWith("/login/dev")) {
       return Response.json({ access_token: "at", refresh_token: "rt", expires_in: 900 });
     }
     return Response.json({ id: "u-1", email: "dev@example.test", display_name: "Dev", roles: ["admin"] });
@@ -74,15 +75,17 @@ const post = (role: string, origin?: string) =>
   });
 
 describe("POST /api/auth/dev-login", () => {
-  it("forwards the role as X-Test-Roles with the dev placeholder token", async () => {
+  it("forwards the role in the dev login's roles body", async () => {
     backendSignsIn();
 
     await POST(post("reviewer"));
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe("http://backend.test/auth/api/v1/login/oauth/exchange/google");
-    expect(new Headers(init?.headers).get("x-test-roles")).toBe("reviewer");
-    expect(JSON.parse(String(init?.body))).toEqual({ id_token: "dev-bypass" });
+    expect(String(url)).toBe("http://backend.test/auth/api/v1/login/dev");
+    expect(init?.method).toBe("POST");
+    // `toEqual` on the whole body: a leftover `id_token` fails it too.
+    expect(JSON.parse(String(init?.body))).toEqual({ roles: ["reviewer"] });
+    expect(new Headers(init?.headers).get("x-test-roles")).toBeNull();
   });
 
   it("answers 204 and leaves a session cookie behind", async () => {

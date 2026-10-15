@@ -2,14 +2,9 @@ import "server-only";
 
 import { isRole } from "@/domain/auth/permissions";
 import { isWellFormedOtpCode } from "@/domain/auth/sign-in-method";
-import { exchangeGoogleIdToken, fetchBackendMe } from "@/server/auth/backend-token-exchange";
+import { fetchBackendMe, loginAsDevUser } from "@/server/auth/backend-token-exchange";
 import { BuiltInSignInError, runBuiltInSignIn } from "@/server/auth/built-in-sign-in";
-import {
-  AUTH_ERROR_CODES,
-  BackendAuthError,
-  type AuthSessionUser,
-  type BackendTokenPair,
-} from "@/server/auth/contracts";
+import { AUTH_ERROR_CODES, type AuthSessionUser, type BackendTokenPair } from "@/server/auth/contracts";
 import { DEV_BYPASS_ENABLED } from "@/server/auth/dev-bypass";
 import { OAuthDanceError, runDanceRedemption } from "@/server/auth/oauth-dance-redemption";
 import { establishSession } from "@/server/auth/session-token";
@@ -120,27 +115,20 @@ export async function signInWithDanceCode(code: string, proof: string): Promise<
 }
 
 /**
- * Dev-only "Login as {role}". The backend's stub exchange accepts the literal
- * id_token "dev-bypass" and, given `X-Test-Roles`, mints a fresh user with that
- * role. Refused outright unless the bypass is on, which it never is in a
- * production build (`parseMaintmodeAuthConfig`).
+ * Dev-only "Login as {role}". The backend's dev login (`POST /login/dev`) mints
+ * a fresh user holding `role`. Refused outright unless the bypass is on, which
+ * it never is in a production build (`parseMaintmodeAuthConfig`).
  */
 export async function signInWithDevBypass(role: string): Promise<void> {
   if (!DEV_BYPASS_ENABLED || !isRole(role)) throw new SignInError(MALFORMED);
 
-  // The exchange and the profile load are caught separately so the failure is
+  // The login and the profile load are caught separately so the failure is
   // attributed to the stage that actually failed.
   let tokens: BackendTokenPair;
   try {
-    tokens = await exchangeGoogleIdToken("dev-bypass", role);
-  } catch (error) {
-    // Signup closed (403 `signup_disabled`): surfaced distinctly so /login can
-    // tell the user an invitation is required.
-    throw new SignInError(
-      backendErrorCode(error) === "signup_disabled"
-        ? AUTH_ERROR_CODES.signupDisabled
-        : AUTH_ERROR_CODES.oauthHandoffFailed,
-    );
+    tokens = await loginAsDevUser([role]);
+  } catch {
+    throw new SignInError(AUTH_ERROR_CODES.oauthHandoffFailed);
   }
 
   const account: Account = {};
@@ -168,16 +156,5 @@ async function startSession(account: Account): Promise<void> {
     await establishSession(account.maintmodeTokens, account.maintmodeUser);
   } catch {
     throw new SignInError(AUTH_ERROR_CODES.identityLookupFailed);
-  }
-}
-
-/** The backend's error `code` from a `BackendAuthError` body, when it has one. */
-function backendErrorCode(error: unknown): string | undefined {
-  if (!(error instanceof BackendAuthError)) return undefined;
-  try {
-    const parsed = JSON.parse(error.responseBody) as { code?: unknown };
-    return typeof parsed.code === "string" ? parsed.code : undefined;
-  } catch {
-    return undefined;
   }
 }

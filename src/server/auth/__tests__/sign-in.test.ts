@@ -4,7 +4,7 @@ import { BackendAuthError } from "@/server/auth/contracts";
 
 const runBuiltInSignIn = vi.fn();
 const runDanceRedemption = vi.fn();
-const exchangeGoogleIdToken = vi.fn();
+const loginAsDevUser = vi.fn();
 const fetchBackendMe = vi.fn();
 const establishSession = vi.fn();
 const devBypass = vi.hoisted(() => ({ enabled: true }));
@@ -22,7 +22,7 @@ vi.mock("@/server/auth/oauth-dance-redemption", async () => {
   return { ...actual, runDanceRedemption: (...args: unknown[]) => runDanceRedemption(...args) };
 });
 vi.mock("@/server/auth/backend-token-exchange", () => ({
-  exchangeGoogleIdToken: (...args: unknown[]) => exchangeGoogleIdToken(...args),
+  loginAsDevUser: (...args: unknown[]) => loginAsDevUser(...args),
   fetchBackendMe: (...args: unknown[]) => fetchBackendMe(...args),
 }));
 vi.mock("@/server/auth/session-token", () => ({
@@ -163,8 +163,8 @@ describe("signInWithDanceCode", () => {
 });
 
 describe("signInWithDevBypass", () => {
-  it("exchanges the dev placeholder with the role and writes the session", async () => {
-    exchangeGoogleIdToken.mockResolvedValue(PAIR);
+  it("asks the dev login for a user with the role and writes the session", async () => {
+    loginAsDevUser.mockResolvedValue(PAIR);
     fetchBackendMe.mockResolvedValue({
       id: "u-1",
       email: "a@example.test",
@@ -174,7 +174,7 @@ describe("signInWithDevBypass", () => {
 
     await signInWithDevBypass("admin");
 
-    expect(exchangeGoogleIdToken).toHaveBeenCalledWith("dev-bypass", "admin");
+    expect(loginAsDevUser).toHaveBeenCalledWith(["admin"]);
     expect(establishSession).toHaveBeenCalledWith(PAIR, USER);
   });
 
@@ -182,22 +182,19 @@ describe("signInWithDevBypass", () => {
     devBypass.enabled = false;
 
     expect(await codeOf(signInWithDevBypass("admin"))).toBe("credentials");
-    expect(exchangeGoogleIdToken).not.toHaveBeenCalled();
+    expect(loginAsDevUser).not.toHaveBeenCalled();
   });
 
   it("refuses a role that is not one of ours before the backend sees it", async () => {
     expect(await codeOf(signInWithDevBypass("root"))).toBe("credentials");
-    expect(exchangeGoogleIdToken).not.toHaveBeenCalled();
+    expect(loginAsDevUser).not.toHaveBeenCalled();
   });
 
-  it("tells closed signup apart from any other exchange failure, and both from a profile failure", async () => {
-    exchangeGoogleIdToken.mockRejectedValueOnce(new BackendAuthError(403, '{"code":"signup_disabled"}'));
-    expect(await codeOf(signInWithDevBypass("admin"))).toBe("signup_disabled");
-
-    exchangeGoogleIdToken.mockRejectedValueOnce(new BackendAuthError(500, "boom"));
+  it("tells a login failure apart from a profile failure", async () => {
+    loginAsDevUser.mockRejectedValueOnce(new BackendAuthError(403, '{"code":"seats_limit_exceeded"}'));
     expect(await codeOf(signInWithDevBypass("admin"))).toBe("oauth_handoff_failed");
 
-    exchangeGoogleIdToken.mockResolvedValueOnce(PAIR);
+    loginAsDevUser.mockResolvedValueOnce(PAIR);
     fetchBackendMe.mockRejectedValueOnce(new Error("me down"));
     expect(await codeOf(signInWithDevBypass("admin"))).toBe("identity_lookup_failed");
   });

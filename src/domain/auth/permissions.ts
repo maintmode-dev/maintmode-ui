@@ -3,9 +3,10 @@ export type Role = "guest" | "editor" | "reviewer" | "admin";
 
 /**
  * Every assignable role, in the order the dev "Login as" selector lists them.
- * These are exactly the values the backend accepts in the dev-only
- * `X-Test-Roles` header (`admin`/`editor`/`reviewer`/`guest`); anything else is
- * rejected with HTTP 400, so the selector must never offer another value.
+ * These are exactly the values the backend's dev-only `POST /login/dev` accepts
+ * in `roles` (`admin`/`editor`/`reviewer`/`guest`, lowercase, no normalisation);
+ * anything else is rejected with HTTP 400, so the selector must never offer
+ * another value.
  */
 export const DEV_LOGIN_ROLES = ["admin", "reviewer", "editor", "guest"] as const satisfies readonly Role[];
 

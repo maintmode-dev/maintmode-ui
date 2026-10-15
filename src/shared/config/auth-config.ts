@@ -13,12 +13,12 @@ export type MaintmodeAuthConfig = {
   authPublicBaseUrl: string;
   /**
    * When `true` AND `NODE_ENV !== "production"`, the login page exposes a
-   * dev-only "Login as {role}" block (a role selector + button) that runs the
-   * same backend exchange as Google but with a placeholder `id_token` and an
-   * `X-Test-Roles` header seeding the chosen role onto the freshly-created dev
-   * user. Real Google OAuth stays available alongside. Double-gated on
-   * `NODE_ENV`: forced `false` in any production build, so the block is never
-   * rendered and the dev-bypass provider is never registered there.
+   * dev-only "Login as {role}" block (a role selector + button) that signs in
+   * through the backend's dev login (`POST /api/v1/login/dev`), which mints a
+   * fresh user holding the chosen role. The backend registers that route only
+   * on a dev stand with the stub provider. Double-gated on `NODE_ENV`: forced
+   * `false` in any production build, so the block is never rendered and the
+   * dev sign-in refuses to run there.
    */
   devAuthBypassEnabled: boolean;
 };

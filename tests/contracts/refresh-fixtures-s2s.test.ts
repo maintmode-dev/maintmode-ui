@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
  * RUK-311 — `scripts/refresh-fixtures.mjs` authenticates as the BFF does.
  *
  * The backend refuses its token endpoints without the s2s credential, the
- * dev-bypass exchange the script logs in with among them. So the script must
+ * dev login the script signs in with among them. So the script must
  * send `X-S2S-APPNAME: maintmode-ui` + `X-S2S-TOKEN` there, and refuse to start
  * without the variable — otherwise the first thing a recorder sees is a 401
  * that reads like "backend down".
@@ -61,14 +61,14 @@ function runScript(token: string | undefined) {
 }
 
 describe("refresh-fixtures — s2s client credential", () => {
-  it("sends the app name and the token on the dev-bypass exchange", async () => {
+  it("sends the app name and the token on the dev login", async () => {
     const result = await runScript(TOKEN);
 
     // Stopped by the stand-in's 401 at login, before any capture.
     expect(result.code).toBe(1);
     expect(received).toHaveLength(1);
     expect(received[0].method).toBe("POST");
-    expect(received[0].url).toBe("/auth/api/v1/login/oauth/exchange/google");
+    expect(received[0].url).toBe("/auth/api/v1/login/dev");
     expect(received[0].headers["x-s2s-appname"]).toBe("maintmode-ui");
     expect(received[0].headers["x-s2s-token"]).toBe(TOKEN);
   }, 20_000);

@@ -25,7 +25,7 @@ vi.mock("@/server/auth/backend-token-exchange", () => ({
   acceptInvitationWithPassword: (...args: unknown[]) => acceptInvitationWithPassword(...args),
   loginWithBreakGlass: (...args: unknown[]) => loginWithBreakGlass(...args),
   fetchBackendMe: (...args: unknown[]) => fetchBackendMe(...args),
-  exchangeGoogleIdToken: vi.fn(),
+  loginAsDevUser: vi.fn(),
   refreshBackendToken: vi.fn(),
 }));
 

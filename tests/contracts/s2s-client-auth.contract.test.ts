@@ -100,7 +100,7 @@ describe("s2s client credential — auth backend requests carry it", () => {
   // Every exported function of backend-token-exchange.ts. A new one added
   // there without a row here is a gap this list should be extended for.
   const calls: Array<[string, () => Promise<unknown>]> = [
-    ["exchangeGoogleIdToken", () => exchange.exchangeGoogleIdToken("dev-bypass", "admin")],
+    ["loginAsDevUser", () => exchange.loginAsDevUser(["admin"])],
     [
       "acceptInvitationWithPassword",
       () => exchange.acceptInvitationWithPassword({ invitationToken: "inv", password: "pw-placeholder" }),

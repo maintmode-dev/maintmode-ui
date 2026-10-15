@@ -45,9 +45,9 @@ export async function signOutAction(): Promise<void> {
  * toolbar (a client component) the same way `signOutAction` is shared with the
  * header — a client component can't declare a `"use server"` action inline.
  *
- * Signs in through the dev bypass (`signInWithDevBypass`), which seeds the backend
- * `X-Test-Roles` header so the stub OAuth mints a fresh user with `role`. The
- * dev backend creates a new user per login, so this is a genuine re-login as a
+ * Signs in through the dev bypass (`signInWithDevBypass`), which asks the
+ * backend's dev login to mint a fresh user with `role`. The dev backend creates
+ * a new user per login, so this is a genuine re-login as a
  * different role rather than an in-place role change (the backend never changes
  * an existing user's roles).
  *
