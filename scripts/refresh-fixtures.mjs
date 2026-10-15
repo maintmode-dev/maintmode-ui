@@ -19,12 +19,12 @@
  *
  * ## Auth
  *
- * Endpoints are session-gated. Rather than driving NextAuth's cookie flow, this
- * calls the same backend exchange the dev-bypass provider calls
- * (`auth-config.ts` → `exchangeGoogleIdToken("dev-bypass", roles)`), which
- * answers a real token pair. `X-Test-Roles: admin` seeds an admin so
- * permission-gated endpoints answer with data instead of 403 — a 403 captured as
- * a fixture would silently become "the contract".
+ * Endpoints are session-gated. Rather than driving the BFF's cookie flow, this
+ * calls the same backend dev login the "Login as" toolbar calls
+ * (`sign-in.ts` → `loginAsDevUser([role])`), which answers a real token pair.
+ * `roles: ["admin"]` seeds an admin so permission-gated endpoints answer with
+ * data instead of 403 — a 403 captured as a fixture would silently become "the
+ * contract".
  *
  * ## Normalisation
  *
@@ -53,11 +53,11 @@ const manifestPath = join(outDir, "manifest.json");
 const GATEWAY = process.env.FIXTURE_GATEWAY_URL ?? "http://localhost:9000";
 const AUTH_BASE = `${GATEWAY}/auth`;
 const API_BASE = `${GATEWAY}/maintmode`;
-const EXCHANGE_PATH = "/api/v1/login/oauth/exchange/google";
+const DEV_LOGIN_PATH = "/api/v1/login/dev";
 
 /**
  * The BFF's client credential (RUK-311). The backend refuses its token
- * endpoints without it — the dev-bypass exchange below among them — so this
+ * endpoints without it — the dev login below among them — so this
  * script sends it on every auth-base request, as the BFF does.
  *
  * An accepted second copy of the names in `src/server/backend/client/s2s-headers.ts`
@@ -530,7 +530,7 @@ function normalize(value, seen = new Map(), key = "", counters = new Map(), pers
   }
 
   // Ids embedded INSIDE a larger string — the seed builds display names like
-  // `User Name[019ff1ae-…]`, and dev-bypass mints a fresh user on every run, so
+  // `User Name[019ff1ae-…]`, and dev login mints a fresh user on every run, so
   // without this the fixture diffs on each refresh for no contract reason.
   // Verified by capturing twice and diffing (SPEC step 1).
   // `replace` runs unconditionally rather than behind a `.test()` guard: the
@@ -554,8 +554,8 @@ function normalize(value, seen = new Map(), key = "", counters = new Map(), pers
 }
 
 async function login() {
-  // The dev-bypass exchange mints an ADMIN session from a literal string. The
-  // backend is what gates it to non-production, but this script should not be
+  // The dev login mints an ADMIN session with no credential at all. The
+  // backend is what gates it to dev stands, but this script should not be
   // the convenient tool that points that door at a shared environment, so a
   // non-local gateway has to be stated out loud.
   // Case-insensitive: `http://LOCALHOST:9000` is a legitimate local run, and
@@ -564,7 +564,7 @@ async function login() {
   const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|$)/i.test(GATEWAY);
   if (!isLocal && !process.argv.includes("--allow-remote")) {
     throw new Error(
-      `refusing to run a dev-bypass admin login against a non-local gateway (${GATEWAY}). ` +
+      `refusing to run a dev admin login against a non-local gateway (${GATEWAY}). ` +
         `Pass --allow-remote if that is genuinely what you want.`,
     );
   }
@@ -575,12 +575,12 @@ async function login() {
   // is the one message that most needs to name the cause and the fix.
   let response;
   try {
-    response = await fetch(`${AUTH_BASE}${EXCHANGE_PATH}`, {
+    response = await fetch(`${AUTH_BASE}${DEV_LOGIN_PATH}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-Test-Roles": "admin", ...s2sHeaders() },
+      headers: { "Content-Type": "application/json", ...s2sHeaders() },
       // A followed cross-origin redirect would keep X-S2S-TOKEN; refuse it.
       redirect: "error",
-      body: JSON.stringify({ id_token: "dev-bypass" }),
+      body: JSON.stringify({ roles: ["admin"] }),
     });
   } catch (cause) {
     throw new Error(
@@ -592,12 +592,13 @@ async function login() {
   }
   if (!response.ok) {
     throw new Error(
-      `dev-bypass exchange failed (${response.status}). Is the backend up at ${GATEWAY}? ` +
-        `Start the local stack, then re-run.`,
+      `dev login failed (${response.status}). Is the backend up at ${GATEWAY}? ` +
+        `Start the local stack, then re-run. A 404 means the stand does not register ` +
+        `POST /login/dev: it needs environment dev with oauth_providers.use_stub on.`,
     );
   }
   const pair = await response.json();
-  if (!pair.access_token) throw new Error("exchange returned no access_token");
+  if (!pair.access_token) throw new Error("dev login returned no access_token");
   return pair.access_token;
 }
 
@@ -682,7 +683,7 @@ async function capture(endpoint, token, ctx) {
   } catch {
     throw new Error(`${endpoint.name}: 200 with a non-JSON body — ${raw.slice(0, 200)}`);
   }
-  // Row counts that move on their own. Every dev-bypass login mints a user, so
+  // Row counts that move on their own. Every dev login mints a user, so
   // `total` on a user-listing endpoint climbs by one per refresh — a diff on
   // every run, for no contract reason.
   //
@@ -774,8 +775,8 @@ async function main() {
     process.exit(1);
   }
 
-  // Up front, before any request: without it the first call — the dev-bypass
-  // exchange — answers 401 invalid_client, which reads like a backend problem.
+  // Up front, before any request: without it the first call — the dev
+  // login — answers 401 invalid_client, which reads like a backend problem.
   if (!process.env[S2S_TOKEN_ENV]) {
     console.error(
       `${S2S_TOKEN_ENV} is not set. Export the same value the backend has as ` +
@@ -829,7 +830,7 @@ async function main() {
       // Where the real count sits relative to the RUK-218 review threshold.
       //
       // The raw number was recorded here at first, and it churned by +1 on every
-      // run (each dev-bypass login mints a user, each capture writes audit rows)
+      // run (each dev login mints a user, each capture writes audit rows)
       // — re-creating, in the manifest, exactly the diff-noise the fixture
       // bodies are normalised to avoid. What a reviewer needs is not the digits
       // but the answer to "are we past the threshold, and by how far", which is
