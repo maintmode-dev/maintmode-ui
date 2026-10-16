@@ -141,6 +141,16 @@ describe("GET /api/maintenance/{id} — the recorded response still matches the 
     expect("notify_targets" in maintenance).toBe(true);
     expect(Array.isArray(maintenance.notify_targets)).toBe(true);
   });
+
+  it("records `task_tracker_url` as a string key the backend always sends", () => {
+    // `""` in this capture (the seed sets no link), but PRESENT. That presence
+    // is load-bearing: the form reads an absent key as "this backend predates
+    // the link" and hides the input, so a backend that stopped sending it would
+    // silently take the field away rather than fail anywhere.
+    const maintenance = (wire.maintenance ?? {}) as unknown as Record<string, unknown>;
+
+    expect(`task_tracker_url: ${typeof maintenance.task_tracker_url}`).toBe("task_tracker_url: string");
+  });
 });
 
 describe("GET /api/maintenance/{id} — response pass-through", () => {
@@ -169,6 +179,15 @@ describe("GET /api/maintenance/{id} — response pass-through", () => {
 
     expect(body.resources).toHaveLength(recorded.length);
     expect(body.resources.length).toBeGreaterThan(0);
+  });
+
+  it('passes `task_tracker_url` through, `""` included, rather than dropping it', async () => {
+    // A mapper that dropped the key — or turned `""` into an absent one — would
+    // read on the client as an old backend and hide the link input on every
+    // maintenance.
+    const body = await (await call("m-1")).json();
+
+    expect(`task_tracker_url: ${typeof body.task_tracker_url}`).toBe("task_tracker_url: string");
   });
 
   it("passes the action flags through so the button row is not silently disabled", async () => {
