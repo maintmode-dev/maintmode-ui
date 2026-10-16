@@ -92,7 +92,12 @@ const ENDPOINTS = [
     // and a full month of seed data is ~900 events — a fixture that large is
     // never read, so a contract change inside it would not be noticed. The
     // shape of one event is what this fixture exists to pin.
-    path: "/ui/v1/calendar?from=2026-08-10&to=2026-08-12",
+    //
+    // The dates are read from the data (see `resolveWindow`), not written here:
+    // a hardcoded window went empty the day the database was reseeded, exactly
+    // as a hardcoded seed id would.
+    needs: ["window"],
+    path: (ctx) => `/ui/v1/calendar?from=${ctx.window.from}&to=${ctx.window.to}`,
     why: "RUK-256 (`resources` absent from events) and RUK-252 (`meta.truncated`).",
   },
   {
@@ -100,6 +105,7 @@ const ENDPOINTS = [
     base: API_BASE,
     // Resolved at capture time from the calendar: hardcoding a seed id makes the
     // script rot the moment the database is reseeded.
+    needs: ["window", "maintenanceId"],
     path: (ctx) => `/ui/v1/maintenances/${ctx.maintenanceId}`,
     why: "RUK-156: built against an invented shape. Also the counterpart to the calendar gap — detail DOES carry `resources`, calendar does not.",
   },
@@ -603,20 +609,97 @@ async function login() {
 }
 
 /**
- * Resolve values some endpoints need in their path (currently a maintenance id).
+ * The calendar window, read from the data rather than written in this file.
+ *
+ * Why derived and not a flag or env var with a default: the local seed is
+ * written by the backend's integration tests, which build every period from
+ * `UTCNow()` and run it hours to days forward. A reseed moves the whole data
+ * set to the reseed date — the August window answered nothing after the
+ * October reseed. A default only moves the hardcoded date somewhere else,
+ * where it rots the same way and the next recorder rediscovers it by hand.
+ *
+ * Why not "today ± n": the window must be a function of the DATA, not of the
+ * clock. A clock-relative window captures different events on different days
+ * against the same database, so `sampleRows` — deterministic only for a fixed
+ * input — would rewrite the fixture on every run, and a diff on every run is
+ * a diff nobody reads.
+ *
+ * The rule: `WINDOW_DAYS` days starting on the earliest day any maintenance
+ * occupies, looking back `LOOKBACK_DAYS`. The earliest day is the stable end:
+ * the tests build periods at or after their own "now", so later runs land
+ * later and leave it alone, while the latest day moves with every backend
+ * test run. On a fresh seed it is also the reseed day, the densest one, so the
+ * window still truncates (RUK-252) and the detail probe has candidates.
+ * Measured on the 2026-10-15 seed: nothing before 10-15, 1000+ events on
+ * 10-15..10-17, a thin tail to 10-21. Two captures in a row are identical.
+ *
+ * Found exactly despite truncation. The backend orders by period DESC and cuts
+ * at 1000, so a truncated answer keeps the LATEST events — the minimum of a
+ * response is not the minimum of its range. Whether a range is EMPTY is never
+ * affected by truncation, so only emptiness is asked: the first non-empty
+ * chunk walking forward, then the first non-empty day inside it by bisection.
+ */
+const WINDOW_DAYS = 3;
+// The backend's "≤ 90 days" counts `to` inclusively: from + 89 is accepted,
+// from + 90 is a 400. Verified against the local stack.
+const MAX_SPAN_DAYS = 89;
+const LOOKBACK_DAYS = 360;
+// Seed periods run days ahead of the date they were written.
+const LOOKAHEAD_DAYS = 90;
+const DAY_MS = 86_400_000;
+
+const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+async function fetchCalendar(token, from, to) {
+  const response = await fetch(`${API_BASE}/ui/v1/calendar?from=${from}&to=${to}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  // Thrown, never read as "empty": a 400 taken for an empty range would skip
+  // straight past the data and pick a window that is wrong without a word.
+  if (!response.ok) {
+    throw new Error(
+      `calendar ${from}..${to} answered ${response.status} — ${(await response.text()).slice(0, 200)}`,
+    );
+  }
+  const { events = [] } = await response.json();
+  return events;
+}
+
+async function resolveWindow(token) {
+  const hasEvents = async (fromMs, toMs) =>
+    (await fetchCalendar(token, isoDay(fromMs), isoDay(toMs))).length > 0;
+  const today = Date.parse(isoDay(Date.now()));
+  const horizonStart = today - LOOKBACK_DAYS * DAY_MS;
+  const horizonEnd = today + LOOKAHEAD_DAYS * DAY_MS;
+
+  for (let chunkStart = horizonStart; chunkStart <= horizonEnd; chunkStart += (MAX_SPAN_DAYS + 1) * DAY_MS) {
+    const chunkEnd = Math.min(chunkStart + MAX_SPAN_DAYS * DAY_MS, horizonEnd);
+    if (!(await hasEvents(chunkStart, chunkEnd))) continue;
+    // The smallest day `d` for which chunkStart..d is non-empty.
+    let lo = chunkStart;
+    let hi = chunkEnd;
+    while (lo < hi) {
+      const mid = lo + Math.floor((hi - lo) / DAY_MS / 2) * DAY_MS;
+      if (await hasEvents(chunkStart, mid)) hi = mid;
+      else lo = mid + DAY_MS;
+    }
+    return { from: isoDay(lo), to: isoDay(lo + (WINDOW_DAYS - 1) * DAY_MS) };
+  }
+  throw new Error(
+    `no maintenances between ${isoDay(horizonStart)} and ${isoDay(horizonEnd)} — seed the local database`,
+  );
+}
+
+/**
+ * Resolve the maintenance id the detail capture needs in its path.
  *
  * Read live rather than hardcoded: a pinned seed id turns into a 404 the first
  * time the database is reseeded, and a 404 is refused by `capture`, so the
  * script would fail loudly but for an irrelevant reason.
  */
-async function resolveContext(token) {
-  const response = await fetch(`${API_BASE}/ui/v1/calendar?from=2026-08-10&to=2026-08-12`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok)
-    throw new Error(`could not resolve a maintenance id (calendar answered ${response.status})`);
-  const { events = [] } = await response.json();
-  if (!events.length) throw new Error("no maintenances in the capture window — reseed or widen the window");
+async function resolveMaintenanceId(token, window) {
+  const events = await fetchCalendar(token, window.from, window.to);
+  if (!events.length) throw new Error(`no maintenances in the capture window ${window.from}..${window.to}`);
 
   // Prefer a maintenance that actually HAS resources.
   //
@@ -627,19 +710,22 @@ async function resolveContext(token) {
   // that only sometimes controls is not a control.
   //
   // Resources are not on calendar events (that IS the gap), so candidates are
-  // probed until one qualifies. Bounded, and it falls back to the first event so
-  // a seed with no resourced maintenance still captures something.
-  // Measured on the dev seed: about 1 in 5 maintenances carries resources, so a
-  // 10-candidate probe missed on an unlucky draw. 40 makes that vanishingly
-  // unlikely without making the capture slow.
-  for (const candidate of events.slice(0, 40)) {
+  // probed until one qualifies.
+  //
+  // Every event in the window is a candidate, not a fixed head of it. The
+  // share of resourced maintenances depends on which backend tests wrote the
+  // seed: about 1 in 5 on the August seed, where 40 candidates sufficed, and
+  // 25 in 1000 on the October 2026 one, where the first resourced event sat at
+  // index 167 and a 40-candidate cap failed every run. The calendar's own
+  // 1000-event cap already bounds the probe — about 6 s locally at worst.
+  for (const candidate of events) {
     const probe = await fetch(`${API_BASE}/ui/v1/maintenances/${candidate.id}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!probe.ok) continue;
     const detail = await probe.json();
     if ((detail?.maintenance?.resources ?? []).length > 0) {
-      return { maintenanceId: candidate.id };
+      return candidate.id;
     }
   }
 
@@ -648,8 +734,8 @@ async function resolveContext(token) {
   // BOTH endpoints, which reads as "the backend never sends resources" and
   // quietly destroys the RUK-256 comparison.
   throw new Error(
-    "no maintenance with resources among the first 40 candidates — the detail fixture is the " +
-      "RUK-256 control and must carry populated `resources`. Seed one, or widen the capture window.",
+    `no maintenance with resources in ${window.from}..${window.to} — the detail fixture is the ` +
+      "RUK-256 control and must carry populated `resources`. Seed one.",
   );
 }
 
@@ -791,8 +877,14 @@ async function main() {
   // Only resolved when something in THIS run needs it. It reads the calendar and
   // throws when the window holds no maintenances — which used to fail a capture
   // of, say, `channels` alone for a reason that had nothing to do with it.
-  const needsContext = selected.some((e) => typeof e.path === "function");
-  const ctx = needsContext ? await resolveContext(token) : {};
+  // Likewise a calendar-only run does not probe for a resourced maintenance.
+  const needs = new Set(selected.flatMap((e) => e.needs ?? []));
+  const ctx = {};
+  if (needs.has("window")) {
+    ctx.window = await resolveWindow(token);
+    console.log(`  calendar window ${ctx.window.from}..${ctx.window.to} (earliest day with data)`);
+  }
+  if (needs.has("maintenanceId")) ctx.maintenanceId = await resolveMaintenanceId(token, ctx.window);
   const capturedAt = new Date().toISOString();
 
   for (const endpoint of selected) {
@@ -818,7 +910,11 @@ async function main() {
     manifest.endpoints[endpoint.name] = {
       // Ids are masked here too: an un-masked id would make the manifest churn
       // on every reseed, which is the diff-noise the normaliser exists to stop.
-      url: url.replace(new RegExp(UUID_RE.source.slice(1, -1), "gi"), "<uuid>"),
+      // Dates for the same reason: the calendar window follows the seed
+      // (`resolveWindow`), and the window rule is documented there, not here.
+      url: url
+        .replace(new RegExp(UUID_RE.source.slice(1, -1), "gi"), "<uuid>")
+        .replace(/\b\d{4}-\d{2}-\d{2}\b/g, "<date>"),
       method: "GET",
       status,
       capturedAt,

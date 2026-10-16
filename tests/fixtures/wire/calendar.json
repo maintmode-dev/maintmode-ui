@@ -30,11 +30,11 @@
     },
     {
       "id": "<uuid-5>",
-      "title": "DB migration",
+      "title": "Updated without touching mentions",
       "start": "<ts-4>",
       "end": "<ts-5>",
       "scope": "global",
-      "impact": "none",
+      "impact": "full_outage",
       "status": "draft",
       "created_by": {
         "id": "<uuid-6>",
@@ -44,11 +44,11 @@
     },
     {
       "id": "<uuid-7>",
-      "title": "Resource maintenance",
+      "title": "Updated title",
       "start": "<ts-6>",
       "end": "<ts-7>",
-      "scope": "resource",
-      "impact": "partial_outage",
+      "scope": "global",
+      "impact": "full_outage",
       "status": "draft",
       "created_by": {
         "id": "<uuid-8>",
@@ -58,115 +58,99 @@
     },
     {
       "id": "<uuid-9>",
-      "title": "Test Maintenance",
+      "title": "DB migration",
       "start": "<ts-8>",
       "end": "<ts-9>",
-      "scope": "resource",
+      "scope": "global",
       "impact": "none",
       "status": "draft",
       "created_by": {
         "id": "<uuid-10>",
-        "display_name": "<display-name-1>",
-        "email": "<email-1>"
+        "display_name": "Unknown user",
+        "email": ""
       }
     },
     {
-      "id": "<uuid-12>",
-      "title": "Test Maintenance",
+      "id": "<uuid-11>",
+      "title": "Updated title",
       "start": "<ts-10>",
       "end": "<ts-11>",
-      "scope": "resource",
-      "impact": "none",
+      "scope": "global",
+      "impact": "full_outage",
       "status": "draft",
       "created_by": {
-        "id": "<uuid-10>",
-        "display_name": "<display-name-1>",
-        "email": "<email-1>"
+        "id": "<uuid-12>",
+        "display_name": "Unknown user",
+        "email": ""
       }
     },
     {
       "id": "<uuid-13>",
-      "title": "Test Maintenance",
+      "title": "Updated title",
       "start": "<ts-12>",
       "end": "<ts-13>",
-      "scope": "resource",
-      "impact": "none",
-      "status": "planned",
+      "scope": "global",
+      "impact": "full_outage",
+      "status": "draft",
       "created_by": {
-        "id": "<uuid-10>",
-        "display_name": "<display-name-1>",
-        "email": "<email-1>"
-      }
-    },
-    {
-      "id": "<uuid-14>",
-      "title": "Test Maintenance with Channel",
-      "start": "<ts-14>",
-      "end": "<ts-15>",
-      "scope": "resource",
-      "impact": "none",
-      "status": "in_progress",
-      "created_by": {
-        "id": "<uuid-10>",
-        "display_name": "<display-name-1>",
-        "email": "<email-1>"
+        "id": "<uuid-14>",
+        "display_name": "Unknown user",
+        "email": ""
       }
     },
     {
       "id": "<uuid-15>",
-      "title": "Test Maintenance",
-      "start": "<ts-16>",
-      "end": "<ts-17>",
+      "title": "Resource maintenance",
+      "start": "<ts-14>",
+      "end": "<ts-15>",
       "scope": "resource",
-      "impact": "none",
-      "status": "canceled",
-      "created_by": {
-        "id": "<uuid-16>",
-        "display_name": "<display-name-2>",
-        "email": "<email-2>"
-      }
-    },
-    {
-      "id": "<uuid-18>",
-      "title": "Test Maintenance",
-      "start": "<ts-18>",
-      "end": "<ts-19>",
-      "scope": "resource",
-      "impact": "none",
+      "impact": "partial_outage",
       "status": "draft",
       "created_by": {
         "id": "<uuid-16>",
-        "display_name": "<display-name-2>",
-        "email": "<email-2>"
+        "display_name": "Unknown user",
+        "email": ""
       }
+    },
+    {
+      "id": "<uuid-17>",
+      "title": "Title<uuid-18>",
+      "start": "<ts-16>",
+      "end": "<ts-17>",
+      "scope": "resource",
+      "impact": "full_outage",
+      "status": "draft",
+      "created_by": null
     },
     {
       "id": "<uuid-19>",
-      "title": "Test Maintenance",
+      "title": "Title<uuid-20>",
+      "start": "<ts-18>",
+      "end": "<ts-19>",
+      "scope": "resource",
+      "impact": "full_outage",
+      "status": "draft",
+      "created_by": null
+    },
+    {
+      "id": "<uuid-21>",
+      "title": "Title<uuid-22>",
       "start": "<ts-20>",
       "end": "<ts-21>",
       "scope": "resource",
-      "impact": "none",
-      "status": "planned",
-      "created_by": {
-        "id": "<uuid-10>",
-        "display_name": "<display-name-1>",
-        "email": "<email-1>"
-      }
+      "impact": "full_outage",
+      "status": "draft",
+      "created_by": null
     },
     {
-      "id": "<uuid-20>",
-      "title": "Test Maintenance",
+      "id": "<uuid-23>",
+      "title": "Title<uuid-24>",
       "start": "<ts-22>",
       "end": "<ts-23>",
       "scope": "resource",
-      "impact": "none",
-      "status": "planned",
-      "created_by": {
-        "id": "<uuid-10>",
-        "display_name": "<display-name-1>",
-        "email": "<email-1>"
-      }
+      "impact": "full_outage",
+      "status": "draft",
+      "created_by": null
     }
   ],
   "meta": {
