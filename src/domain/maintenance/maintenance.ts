@@ -234,6 +234,18 @@ export interface MaintenanceDetail extends Maintenance {
    * means the contract is there and nobody was tagged.
    */
   mentions?: MaintenanceMention[];
+  /**
+   * Link to the maintenance's task in an external tracker. Lives on the detail
+   * for the same reason as {@link reminders}: the calendar projection does not
+   * carry it.
+   *
+   * Three answers, kept apart for the same reason as {@link mentions}: a URL,
+   * `""` (no link set), or `undefined` — the backend predates the field and never
+   * sent the key, so the form hides the input rather than let an old backend
+   * accept a link with a 200 and drop it. Render it only through
+   * `taskTrackerLink`, which re-checks the protocol.
+   */
+  task_tracker_url?: string;
 }
 
 /**
@@ -327,6 +339,15 @@ export interface MaintenanceDraftInput {
    * body; `assertValidDraftInput` matches.
    */
   mention_user_ids?: string[];
+  /**
+   * Link to the task in an external tracker, as typed (the mapper trims it —
+   * the backend does not, and refuses a padded value).
+   *
+   * `undefined` means "the form did not offer the field" and leaves a saved link
+   * untouched on edit; `""` means the operator has no link and clears one on
+   * edit. Create treats the two alike.
+   */
+  task_tracker_url?: string;
 }
 
 /**
