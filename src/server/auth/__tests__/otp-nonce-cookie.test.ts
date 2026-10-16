@@ -134,7 +134,7 @@ describe("otp-nonce-cookie — the binding never reaches browser JavaScript", ()
     await clear();
 
     const header = await serializeDelete(store.delete.mock.calls[0]?.[0]);
-    expect(header).toMatch(new RegExp(`^${name.replace(/\./g, "\\.")}=;`));
+    expect(header.split(";")[0]).toBe(`${name}=`);
     expect(header).toContain("Secure");
     expect(header).toContain("Path=/");
     expect(header).toMatch(/Expires=Thu, 01 Jan 1970/);

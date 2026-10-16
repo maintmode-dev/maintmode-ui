@@ -322,13 +322,19 @@ describe("TzInitScript", () => {
   // the early `return` sails past them — found in review. These execute the
   // emitted script, which is the only way to cover the exit branch.
   describe("the emitted script, executed", () => {
-    /** Runs the real script text from the rendered tag against jsdom's document. */
+    /**
+     * Runs the real script text from the rendered tag against jsdom's document.
+     * The HTML parser extracts it, so the text is what a browser would execute:
+     * a script body is raw text, never entity-decoded. A `<template>` keeps the
+     * parsed script inert until `new Function` runs it.
+     */
     function runEmittedScript() {
       const html = renderToString(<TzInitScript />);
-      const body = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html);
-      expect(body, `no script body in: ${html}`).not.toBeNull();
-      const source = body![1].replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
-      new Function(source)();
+      const template = document.createElement("template");
+      template.innerHTML = html;
+      const source = template.content.querySelector("script")?.textContent;
+      expect(source, `no script body in: ${html}`).toBeTruthy();
+      new Function(source!)();
     }
 
     /** Clears the cookie between cases; jsdom persists it across a file. */
