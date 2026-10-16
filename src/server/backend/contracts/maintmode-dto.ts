@@ -131,6 +131,13 @@ export interface MaintenanceViewDto {
    * mapper must keep it distinguishable from `[]`. No defensive `?? []`.
    */
   mentions?: MentionViewDto[];
+  /**
+   * Link to the maintenance's task in an external tracker; `""` when none is
+   * set. Like `mentions`, the backend always sends the key (a plain Go `string`,
+   * no `omitempty`), so an ABSENT key means the deployed backend predates the
+   * field — the mapper keeps that apart from `""`.
+   */
+  task_tracker_url?: string;
   steps?: MaintenanceViewStepDto[];
   cancel_reason?: string;
   cancel_reason_comment?: string;
@@ -394,16 +401,23 @@ export interface CreateDraftMaintRequestDto {
    * distinguish, so `[]` and an absent field mean the same thing.
    */
   mentions?: MentionDto[];
+  /**
+   * Link to the task in an external tracker: an absolute http(s) URL, at most
+   * 2048 printable ASCII characters, no spaces. Omitted when there is none; on
+   * create `""` and an absent field mean the same thing.
+   */
+  task_tracker_url?: string;
 }
 
 /**
  * `apimodels.UpdateDraftMaintRequest` — body for
  * `POST /api/v1/maintenances/{id}/edit`. Same as create EXCEPT
- * `deferred_notifications` and `mentions`, which are tri-state here.
+ * `deferred_notifications`, `mentions` and `task_tracker_url`, which are
+ * tri-state here.
  */
 export interface UpdateDraftMaintRequestDto extends Omit<
   CreateDraftMaintRequestDto,
-  "deferred_notifications" | "mentions"
+  "deferred_notifications" | "mentions" | "task_tracker_url"
 > {
   /**
    * Tri-state, carried by `*[]*DeferredNotification` on the Go side and gated
@@ -434,6 +448,17 @@ export interface UpdateDraftMaintRequestDto extends Omit<
    * failed to resolve — that clears mentions the operator never saw.
    */
   mentions?: MentionDto[] | null;
+  /**
+   * Tri-state, carried by `*string` on the Go side:
+   *
+   * - **omitted / `null`** → leave the saved link unchanged
+   * - **`""`** → clear it
+   * - **a URL** → replace it
+   *
+   * Clearing is a string, not an empty list, but the trap is the mentions one:
+   * an operator who empties the field must send `""`, or the old link stays.
+   */
+  task_tracker_url?: string | null;
 }
 
 /** `uimodels.AssignableUser` — `GET /api/v1/users/assignable`. */

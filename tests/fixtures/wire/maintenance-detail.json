@@ -1,8 +1,8 @@
 {
   "maintenance": {
     "id": "<uuid-1>",
-    "title": "TitleTestListApprovals/ok_limit_and_offset_page_the_queue",
-    "description": "DescriptionTestListApprovals/ok_limit_and_offset_page_the_queue",
+    "title": "TitleTestUpdateDraft/ok/PlannedPeriod",
+    "description": "DescriptionTestUpdateDraft/ok/PlannedPeriod",
     "planned_time_start": "<ts-1>",
     "planned_time_end": "<ts-2>",
     "resources": [
@@ -21,7 +21,7 @@
     "cancel_reason": "",
     "cancel_reason_comment": "",
     "created_at": "<ts-3>",
-    "updated_at": null,
+    "updated_at": "<ts-4>",
     "revision": "<revision>",
     "created_by": null,
     "approver": {
@@ -33,17 +33,18 @@
       {
         "id": "<uuid-7>",
         "order": 1,
-        "description": "Step 1TestListApprovals/ok_limit_and_offset_page_the_queue",
-        "rollback_description": "Rollback Step 1TestListApprovals/ok_limit_and_offset_page_the_queue",
+        "description": "Step 1TestUpdateDraft/ok/PlannedPeriod",
+        "rollback_description": "Rollback Step 1TestUpdateDraft/ok/PlannedPeriod",
         "status": "planned",
         "duration": "1m0s",
         "planned_time_start": "<ts-1>",
-        "planned_time_end": "<ts-4>"
+        "planned_time_end": "<ts-5>"
       }
     ],
     "notify_targets": [],
     "deferred_notifications": [],
-    "mentions": []
+    "mentions": [],
+    "task_tracker_url": ""
   },
   "conflicts": [],
   "actions": {

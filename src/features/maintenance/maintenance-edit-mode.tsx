@@ -28,6 +28,7 @@ import type {
 } from "@/domain/maintenance/maintenance";
 
 import { MAX_MENTIONS, mergeMentionChips, type MentionChip } from "@/domain/maintenance/mentions";
+import { taskTrackerUrlError } from "@/domain/maintenance/task-tracker-url";
 import { MAX_REMINDERS, offsetLabel, toFireAt, toOffsetFromFireAt } from "@/domain/maintenance/reminders";
 
 import { MaintenanceRemindersField } from "./maintenance-reminders-field";
@@ -147,6 +148,7 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
 
   const [title, setTitle] = useState(detail?.title ?? "");
   const [description, setDescription] = useState(detail?.description ?? "");
+  const [trackerUrl, setTrackerUrl] = useState(detail?.task_tracker_url ?? "");
   const [impact, setImpact] = useState<MaintenanceImpact>(detail?.impact ?? "none");
   const [scope, setScope] = useState<MaintenanceScope>(detail?.scope ?? "resource");
   // Seed the picker from the loaded draft's UTC start, rendered as wall-clock in
@@ -483,6 +485,10 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
   // selection would be accepted with a 200 and silently thrown away. On create
   // there is no detail to read the capability from, so the field always shows.
   const showMentions = creating || detail?.mentions !== undefined;
+  // Same version detect for the tracker link: the backend always sends the key,
+  // so `undefined` on an existing maintenance means an old backend that would
+  // accept the link with a 200 and drop it.
+  const showTrackerUrl = creating || detail?.task_tracker_url !== undefined;
 
   const errors = useMemo<Record<string, string>>(() => {
     const e: Record<string, string> = {};
@@ -496,6 +502,8 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     if (channelIds.length === 0) e.channels = "Pick at least one notification channel.";
     if (channelIds.length > MAX_CHANNELS) e.channels = `At most ${MAX_CHANNELS} channels.`;
     if (mentionIds.length > MAX_MENTIONS) e.mentions = `At most ${MAX_MENTIONS} people.`;
+    const trackerUrlError = showTrackerUrl ? taskTrackerUrlError(trackerUrl.trim()) : null;
+    if (trackerUrlError) e.trackerUrl = trackerUrlError;
     if (reminderOffsets.length > MAX_REMINDERS) e.reminders = `At most ${MAX_REMINDERS} reminders.`;
     const stepBad =
       steps.length === 0 ||
@@ -525,6 +533,8 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
     creating,
     mentionIds,
     reminderOffsets,
+    showTrackerUrl,
+    trackerUrl,
   ]);
 
   /**
@@ -564,6 +574,9 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
       notify_target_channel_ids: channelIds,
       mention_user_ids: mentionIds,
       reminder_offsets_minutes: reminderOffsets,
+      // `undefined` when the field is hidden, so edit leaves the saved link
+      // alone; otherwise the value as shown, `""` included, which clears it.
+      task_tracker_url: showTrackerUrl ? trackerUrl.trim() : undefined,
       steps: steps.map((s, i) => ({
         order: i + 1,
         description: s.description.trim(),
@@ -692,6 +705,28 @@ export function MaintenanceEditMode({ detail, creating = false, onClose }: Maint
             ariaLabel="Approver"
           />
         </Field>
+        {showTrackerUrl ? (
+          <Field
+            label="Task tracker link"
+            htmlFor="m-tracker-url"
+            hint="Optional · shown on the card and in the started and reminder messages"
+            error={show("trackerUrl")}
+          >
+            {/* No `maxLength`: it would silently cut a pasted URL to a different
+                link. An over-long one gets the length error instead. */}
+            <Input
+              id="m-tracker-url"
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              value={trackerUrl}
+              onChange={(e) => setTrackerUrl(e.target.value)}
+              placeholder="https://jira.example.com/browse/OPS-42"
+              aria-invalid={Boolean(show("trackerUrl"))}
+            />
+          </Field>
+        ) : null}
       </SectionCard>
 
       <SectionCard label="Impact & targets">

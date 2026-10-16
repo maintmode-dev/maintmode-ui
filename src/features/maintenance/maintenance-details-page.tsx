@@ -34,6 +34,7 @@ import { cn } from "@/shared/ui/lib/cn";
 import { BffError } from "@/features/_shared/api/bff-fetch";
 
 import { MaintenanceQuickSheet } from "./maintenance-quick-sheet";
+import { TaskTrackerLink } from "./task-tracker-link";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useCancelMaintenance, useMaintenanceAction } from "./queries/use-maintenance-actions";
 import { useStepAction } from "./queries/use-step-actions";
@@ -214,6 +215,14 @@ function MaintenanceDetailView({ id }: { id: string }) {
                     <span className="text-fg-dim">—</span>
                   )}
                 </Section>
+                {/* Empty renders nothing, like Mentions: no link is the normal
+                    case and `—` would be noise. `min-w-0` lets a long URL
+                    truncate instead of widening the grid. */}
+                {detail.task_tracker_url ? (
+                  <Section label="Task" className="min-w-0">
+                    <TaskTrackerLink url={detail.task_tracker_url} />
+                  </Section>
+                ) : null}
               </div>
             </SectionCard>
 

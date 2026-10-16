@@ -487,6 +487,33 @@ describe("mapMaintenanceView", () => {
     ]);
   });
 
+  /**
+   * The tracker link has the same three answers as `mentions`: the backend
+   * always sends the key, so absent = old deployment (the form hides the input),
+   * `""` = no link, anything else = the link.
+   */
+  describe("task_tracker_url", () => {
+    it("carries the link through to the detail", () => {
+      const detail = mapMaintenanceView({
+        ...base,
+        maintenance: { ...base.maintenance, task_tracker_url: "https://jira.example.com/browse/OPS-42" },
+      });
+      expect(detail.task_tracker_url).toBe("https://jira.example.com/browse/OPS-42");
+    });
+
+    it('keeps "" as "" (supported, no link set)', () => {
+      const detail = mapMaintenanceView({
+        ...base,
+        maintenance: { ...base.maintenance, task_tracker_url: "" },
+      });
+      expect(detail.task_tracker_url).toBe("");
+    });
+
+    it("leaves it undefined when the backend omits the key (old deployment)", () => {
+      expect(mapMaintenanceView(base).task_tracker_url).toBeUndefined();
+    });
+  });
+
   it("maps notify_targets defensively", () => {
     const detail = mapMaintenanceView({
       ...base,
@@ -785,6 +812,30 @@ describe("mapDraftToCreateRequest", () => {
       expect(req.mentions).toEqual([{ user_id: "u-1" }]);
     });
   });
+
+  describe("task_tracker_url", () => {
+    it("sends the link", () => {
+      const req = mapDraftToCreateRequest({
+        ...base,
+        task_tracker_url: "https://jira.example.com/browse/OPS-42",
+      });
+      expect(req.task_tracker_url).toBe("https://jira.example.com/browse/OPS-42");
+    });
+
+    // The backend does not trim: " https://x " is a 400 there.
+    it("trims the link before sending it", () => {
+      const req = mapDraftToCreateRequest({ ...base, task_tracker_url: "  https://x.io/t  " });
+      expect(req.task_tracker_url).toBe("https://x.io/t");
+    });
+
+    // No "unchanged" state on create, so no link at all is the tersest body.
+    it("omits the key for an empty, blank or absent link", () => {
+      for (const url of ["", "   ", undefined]) {
+        const body = JSON.parse(JSON.stringify(mapDraftToCreateRequest({ ...base, task_tracker_url: url })));
+        expect(Object.keys(body)).not.toContain("task_tracker_url");
+      }
+    });
+  });
 });
 
 /**
@@ -807,11 +858,11 @@ describe("mapDraftToUpdateRequest", () => {
 
   it("matches the create body on every non-tri-state field", () => {
     const withReminders = { ...base, reminder_offsets_minutes: [60] };
-    // Strips BOTH tri-state fields: they are the only two whose empty-list
-    // meaning diverges between the directions, so they are also the only two the
-    // bodies are allowed to differ on. Update types `mentions` as
-    // `MentionDto[] | null`, which is why it cannot stay in a
-    // `Partial<CreateDraftMaintRequestDto>`.
+    // Strips ALL THREE tri-state fields: they are the only ones whose empty
+    // value means something different in each direction, so they are also the
+    // only ones the bodies are allowed to differ on. Update types `mentions` as
+    // `MentionDto[] | null` (and `task_tracker_url` as `string | null`), which
+    // is why they cannot stay in a `Partial<CreateDraftMaintRequestDto>`.
     const withoutTriState = (
       req: CreateDraftMaintRequestDto | UpdateDraftMaintRequestDto,
     ): Partial<CreateDraftMaintRequestDto> => {
@@ -819,9 +870,11 @@ describe("mapDraftToUpdateRequest", () => {
         ...req,
         deferred_notifications: undefined,
         mentions: undefined,
+        task_tracker_url: undefined,
       };
       delete copy.deferred_notifications;
       delete copy.mentions;
+      delete copy.task_tracker_url;
       return copy;
     };
     expect(withoutTriState(mapDraftToUpdateRequest(withReminders))).toEqual(
@@ -996,6 +1049,35 @@ describe("mapDraftToUpdateRequest", () => {
       expect(req.mentions).toEqual([{ user_id: "u-1" }]);
     });
   });
+
+  /**
+   * Tri-state on update: absent/null = unchanged, `""` = clear, URL = replace.
+   * Each case is asserted on the serialised body, because `JSON.stringify`
+   * dropping a key is exactly how "clear" turns into "unchanged".
+   */
+  describe("task_tracker_url", () => {
+    const wire = (input: MaintenanceDraftInput) =>
+      JSON.parse(JSON.stringify(mapDraftToUpdateRequest(input))) as Record<string, unknown>;
+
+    it("replaces the link with the trimmed value", () => {
+      expect(wire({ ...base, task_tracker_url: " https://x.io/t " }).task_tracker_url).toBe("https://x.io/t");
+    });
+
+    // THE case: an emptied field must clear the saved link, not keep it.
+    it('sends "" to clear when the operator empties the field', () => {
+      for (const url of ["", "   "]) {
+        const body = wire({ ...base, task_tracker_url: url });
+        expect(Object.keys(body)).toContain("task_tracker_url");
+        expect(body.task_tracker_url).toBe("");
+      }
+    });
+
+    // The form leaves it `undefined` only when it did not offer the field (an
+    // old backend). Sending "" there would wipe a link nobody saw.
+    it("omits the key when the form did not offer the field, leaving the link unchanged", () => {
+      expect(Object.keys(wire(base))).not.toContain("task_tracker_url");
+    });
+  });
 });
 
 describe("assertValidDraftInput", () => {
@@ -1123,6 +1205,46 @@ describe("assertValidDraftInput", () => {
     for (const bad of [[""], ["  "], [42], [null], ["u-1", ""]]) {
       expect(() => assertValidDraftInput({ ...valid, mention_user_ids: bad })).toThrow(BffValidationError);
     }
+  });
+
+  describe("task_tracker_url", () => {
+    const fieldsOf = (input: unknown): string[] => {
+      try {
+        assertValidDraftInput(input);
+      } catch (error) {
+        return (error as BffValidationError).fieldErrors.map((f) => f.field);
+      }
+      return [];
+    };
+
+    it("passes a valid link, an empty one, and none at all", () => {
+      for (const url of ["https://jira.example.com/browse/OPS-42", "http://jira.internal/x", "", undefined]) {
+        expect(fieldsOf({ ...valid, task_tracker_url: url })).toEqual([]);
+      }
+    });
+
+    // Judged as the mappers send it, so surrounding spaces are not the problem.
+    it("judges the link trimmed", () => {
+      expect(fieldsOf({ ...valid, task_tracker_url: "  https://x.io/t  " })).toEqual([]);
+    });
+
+    it("rejects a link the backend would refuse, attributed to the field", () => {
+      for (const bad of [
+        "javascript:alert(1)",
+        "ftp://x.io/f",
+        "https://u:p@x.io",
+        "jira/ABC-1",
+        "https://x.io/a b",
+      ]) {
+        expect(fieldsOf({ ...valid, task_tracker_url: bad })).toEqual(["task_tracker_url"]);
+      }
+    });
+
+    it("rejects a non-string link", () => {
+      for (const bad of [42, null, ["https://x.io"]]) {
+        expect(fieldsOf({ ...valid, task_tracker_url: bad })).toEqual(["task_tracker_url"]);
+      }
+    });
   });
 
   it("requires resource_ids only for resource scope", () => {

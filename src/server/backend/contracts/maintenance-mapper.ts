@@ -35,6 +35,7 @@ import type {
   StepStatus,
 } from "@/domain/maintenance/maintenance";
 import { MAX_MENTIONS } from "@/domain/maintenance/mentions";
+import { taskTrackerUrlError } from "@/domain/maintenance/task-tracker-url";
 import { MAX_OFFSET_MINUTES, MAX_REMINDERS, toFireAt } from "@/domain/maintenance/reminders";
 
 import { BffValidationError, type FieldError } from "@/server/backend/errors/bff-error";
@@ -263,6 +264,9 @@ export function mapMaintenanceView(dto: MaintenanceViewResponseDto): Maintenance
     // deployed backend predates mentions and the form hides the field entirely.
     // `[]` is the other answer — the contract is there, nobody was tagged.
     mentions: m.mentions ? m.mentions.map(mapMention) : undefined,
+    // Passed through as-is, `undefined` included: the key is always sent, so its
+    // absence is the same version detect as `mentions` above. Not `?? ""`.
+    task_tracker_url: m.task_tracker_url,
     steps: (m.steps ?? []).map(mapStep),
     cancel_reason: mapCancelReason(m.cancel_reason),
     cancel_reason_comment: m.cancel_reason_comment,
@@ -419,6 +423,19 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
     }
   }
 
+  // Value-level, unlike the structural checks above: the backend answers a bad
+  // link with a 400 too, but the BFF is a trust boundary of its own and the
+  // client copy of the rule must not be the only one this side of the wire.
+  // Judged trimmed, because that is what the mappers send.
+  if (record.task_tracker_url !== undefined) {
+    if (typeof record.task_tracker_url !== "string") {
+      fieldErrors.push({ field: "task_tracker_url", message: "task_tracker_url must be a string" });
+    } else {
+      const linkError = taskTrackerUrlError(record.task_tracker_url.trim());
+      if (linkError) fieldErrors.push({ field: "task_tracker_url", message: linkError });
+    }
+  }
+
   if (fieldErrors.length > 0) {
     throw new BffValidationError(fieldErrors, "Malformed request body");
   }
@@ -437,6 +454,7 @@ export function assertValidDraftInput(input: unknown): asserts input is Maintena
 export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDraftMaintRequestDto {
   const notifications = remindersToFireAt(input);
   const mentions = mentionsToWire(input);
+  const taskTrackerUrl = input.task_tracker_url?.trim();
   return {
     ...mapDraftCommon(input),
     // On create there is no "unchanged" state, so nothing-to-send (an empty
@@ -445,15 +463,18 @@ export function mapDraftToCreateRequest(input: MaintenanceDraftInput): CreateDra
     // Same reasoning for mentions: on create `[]` and an absent key say the same
     // thing, so an empty picker omits it.
     ...(mentions.length ? { mentions } : {}),
+    // And for the link: `""` and an absent key both mean "no link" on create.
+    ...(taskTrackerUrl ? { task_tracker_url: taskTrackerUrl } : {}),
   };
 }
 
 /**
  * Domain `MaintenanceDraftInput` → `UpdateDraftMaintRequest`.
  *
- * Identical to create except `deferred_notifications` and `mentions`, both of
- * which the backend made tri-state (`53d3ba0c` and RUK-218): omitted = leave
- * unchanged, `[]` = clear, non-empty = replace. The edit form always knows the
+ * Identical to create except `deferred_notifications`, `mentions` and
+ * `task_tracker_url`, all of which the backend made tri-state (`53d3ba0c`,
+ * RUK-218, and the tracker link): omitted = leave unchanged, empty = clear,
+ * a value = replace. The edit form always knows the
  * operator's full intent, so this always sends the keys — `[]` included. That is
  * what makes "clear everything, save" actually clear them instead of silently
  * keeping them.
@@ -473,17 +494,24 @@ export function mapDraftToUpdateRequest(input: MaintenanceDraftInput): UpdateDra
     // would read as "leave unchanged" and the mentions the operator just removed
     // would stay tagged. This is the exact inverse of the reminders trap.
     mentions: mentionsToWire(input),
+    // `undefined` — the form did not offer the field (a backend predating it) —
+    // omits the key, which leaves the saved link alone. Anything else is sent,
+    // `""` included: that is how an emptied field clears the link instead of
+    // silently keeping it. Trimmed because the backend does not trim and 400s a
+    // padded value.
+    ...(input.task_tracker_url === undefined ? {} : { task_tracker_url: input.task_tracker_url.trim() }),
   };
 }
 
 /**
- * The fields create and update share verbatim. `deferred_notifications` and
- * `mentions` are excluded because their empty-list semantics diverge between the
- * two directions — each mapper adds its own one-line spread.
+ * The fields create and update share verbatim. `deferred_notifications`,
+ * `mentions` and `task_tracker_url` are excluded because their empty-value
+ * semantics diverge between the two directions — each mapper adds its own
+ * one-line spread.
  */
 function mapDraftCommon(
   input: MaintenanceDraftInput,
-): Omit<CreateDraftMaintRequestDto, "deferred_notifications" | "mentions"> {
+): Omit<CreateDraftMaintRequestDto, "deferred_notifications" | "mentions" | "task_tracker_url"> {
   const resourceIds = input.scope === "resource" ? input.resource_ids : [];
   return {
     approver_user_id: input.approver_user_id || undefined,
