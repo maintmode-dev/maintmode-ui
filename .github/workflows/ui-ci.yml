@@ -25,6 +25,11 @@ on:
     tags:
       - "v*"
 
+# Read-only by default, so a check job never inherits the repository's token
+# defaults. The image job widens it to `packages: write` for itself alone.
+permissions:
+  contents: read
+
 jobs:
   # Split into separate jobs so a red run names what broke on the run list
   # itself, and so the slow ones stop queueing behind the fast ones. Each job
