@@ -19,6 +19,7 @@ import { useTimezone } from "@/features/_shared/timezone/use-timezone";
 import { isUnreviewedConflict, type MaintenanceDetail } from "@/domain/maintenance/maintenance";
 import { useMaintenanceDetailQuery } from "./queries/use-maintenance-detail-query";
 import { useMaintenanceAction, type MaintenanceAction } from "./queries/use-maintenance-actions";
+import { TaskTrackerLink } from "./task-tracker-link";
 import { Skeleton } from "@/shared/ui/domain/skeleton";
 
 export interface MaintenanceQuickSheetProps {
@@ -121,6 +122,12 @@ function QuickSheetBody({
               <span className="text-fg-dim">—</span>
             )}
           </Field>
+          {/* Same rule as the details page: no link renders nothing. */}
+          {detail.task_tracker_url ? (
+            <Field label="Task">
+              <TaskTrackerLink url={detail.task_tracker_url} />
+            </Field>
+          ) : null}
         </Card>
 
         {/* ─── CARD 2 · IMPACT & TARGETS (scope/impact/resources/notify) ─── */}
