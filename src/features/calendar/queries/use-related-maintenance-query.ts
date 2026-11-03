@@ -50,8 +50,7 @@ function toIsoDate(d: Date): string {
  * unfiltered calendar (which would be a much larger response) by omitting it.
  */
 export type RelatedMaintenanceFilter =
-  | { resourceId: string; channelId?: never }
-  | { channelId: string; resourceId?: never };
+  { resourceId: string; channelId?: never } | { channelId: string; resourceId?: never };
 
 export type RelatedMaintenanceFeed = ReturnType<typeof useRelatedMaintenanceQuery>;
 
